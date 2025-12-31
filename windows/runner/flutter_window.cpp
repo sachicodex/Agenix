@@ -1,6 +1,8 @@
 #include "flutter_window.h"
 
 #include <optional>
+#include <windows.h>
+#include <shellscalingapi.h>
 
 #include "flutter/generated_plugin_registrant.h"
 
@@ -29,6 +31,30 @@ bool FlutterWindow::OnCreate() {
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();
+    // Center the window after showing
+    HWND hwnd = this->GetHandle();
+    if (hwnd) {
+      RECT windowRect;
+      GetWindowRect(hwnd, &windowRect);
+      int windowWidth = windowRect.right - windowRect.left;
+      int windowHeight = windowRect.bottom - windowRect.top;
+      
+      // Get the monitor that contains the window
+      HMONITOR hMonitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+      MONITORINFO mi = {};
+      mi.cbSize = sizeof(MONITORINFO);
+      GetMonitorInfo(hMonitor, &mi);
+      
+      // Calculate center position using work area (excludes taskbar)
+      int workAreaWidth = mi.rcWork.right - mi.rcWork.left;
+      int workAreaHeight = mi.rcWork.bottom - mi.rcWork.top;
+      int centerX = mi.rcWork.left + (workAreaWidth - windowWidth) / 2;
+      int centerY = mi.rcWork.top + (workAreaHeight - windowHeight) / 2;
+      
+      // Center the window
+      SetWindowPos(hwnd, nullptr, centerX, centerY, 0, 0, 
+                   SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    }
   });
 
   // Flutter can complete the first frame before the "show window" callback is

@@ -6,6 +6,8 @@ class LargeTextField extends StatelessWidget {
   final String? hint;
   final String? label;
   final bool requiredField;
+  final VoidCallback? onAIClick;
+  final bool aiLoading;
 
   const LargeTextField({
     super.key,
@@ -13,6 +15,8 @@ class LargeTextField extends StatelessWidget {
     this.hint,
     this.label,
     this.requiredField = false,
+    this.onAIClick,
+    this.aiLoading = false,
   });
 
   @override
@@ -36,6 +40,40 @@ class LargeTextField extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide.none,
           ),
+          suffixIcon: onAIClick != null
+              ? Padding(
+                  padding: const EdgeInsets.only(right: 8.0),
+                  child: IconButton(
+                    icon: aiLoading
+                        ? SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                AppColors.primary,
+                              ),
+                            ),
+                          )
+                        : Image.asset(
+                            'assets/img/ai.png',
+                            width: 24,
+                            height: 24,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Icon(
+                                Icons.auto_awesome,
+                                color: AppColors.primary,
+                                size: 24,
+                              );
+                            },
+                          ),
+                    onPressed: aiLoading ? null : onAIClick,
+                    tooltip: 'Optimize with AI',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+                )
+              : null,
         ),
         style: AppTextStyles.bodyText1,
       ),
@@ -46,32 +84,83 @@ class LargeTextField extends StatelessWidget {
 class ExpandableDescription extends StatelessWidget {
   final TextEditingController? controller;
   final String? hint;
+  final VoidCallback? onAIClick;
+  final bool aiLoading;
 
-  const ExpandableDescription({super.key, this.controller, this.hint});
+  const ExpandableDescription({
+    super.key,
+    this.controller,
+    this.hint,
+    this.onAIClick,
+    this.aiLoading = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 64, maxHeight: 220),
-        child: TextField(
-          controller: controller,
-          maxLines: null,
-          decoration: InputDecoration(
-            hintText: hint,
-            hintStyle: AppTextStyles.bodyText1.copyWith(
-              color: AppColors.onSurface.withOpacity(0.5),
-            ),
-            filled: true,
-            fillColor: AppColors.surface,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
-            ),
+      child: TextField(
+        controller: controller,
+        minLines: 1,
+        maxLines: 3,
+        textInputAction: TextInputAction.newline,
+        keyboardType: TextInputType.multiline,
+        textAlignVertical: TextAlignVertical.top,
+        decoration: InputDecoration(
+          hintText: hint,
+          labelText: hint,
+          labelStyle: AppTextStyles.bodyText1.copyWith(
+            color: AppColors.onSurface.withOpacity(0.7),
           ),
-          style: AppTextStyles.bodyText1,
+          hintStyle: AppTextStyles.bodyText1.copyWith(
+            color: AppColors.onSurface.withOpacity(0.5),
+          ),
+          filled: true,
+          fillColor: AppColors.surface,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16.0,
+            vertical: 16.0,
+          ),
+          suffixIcon: onAIClick != null
+              ? Padding(
+                  padding: const EdgeInsets.only(right: 8.0),
+                  child: IconButton(
+                    icon: aiLoading
+                        ? SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                AppColors.primary,
+                              ),
+                            ),
+                          )
+                        : Image.asset(
+                            'assets/img/ai.png',
+                            width: 24,
+                            height: 24,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Icon(
+                                Icons.auto_awesome,
+                                color: AppColors.primary,
+                                size: 24,
+                              );
+                            },
+                          ),
+                    onPressed: aiLoading ? null : onAIClick,
+                    tooltip: 'Optimize/Generate with AI',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+                )
+              : null,
         ),
+        style: AppTextStyles.bodyText1,
       ),
     );
   }

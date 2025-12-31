@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../widgets/rounded_card.dart';
 import '../widgets/form_fields.dart';
 import '../services/google_calendar_service.dart';
+import '../services/gemini_service.dart';
 import '../theme/app_colors.dart';
 import 'sign_in_screen.dart';
 
@@ -131,6 +132,9 @@ class _CreateEventScreenV2State extends State<CreateEventScreenV2> {
   bool _signedIn = false;
   String? _userEmail;
   String? _userPhotoUrl;
+  bool _titleAILoading = false;
+  bool _descriptionAILoading = false;
+  final GeminiService _geminiService = GeminiService();
 
   @override
   void initState() {
@@ -181,6 +185,8 @@ class _CreateEventScreenV2State extends State<CreateEventScreenV2> {
           hint: 'Event title',
           label: 'Title',
           requiredField: true,
+          onAIClick: _optimizeTitle,
+          aiLoading: _titleAILoading,
         ),
         const SizedBox(height: 12),
         if (isWide)
@@ -254,6 +260,8 @@ class _CreateEventScreenV2State extends State<CreateEventScreenV2> {
         ExpandableDescription(
           controller: _descController,
           hint: 'Description ( Optional )',
+          onAIClick: _optimizeOrGenerateDescription,
+          aiLoading: _descriptionAILoading,
         ),
         const SizedBox(height: 12),
         Row(
@@ -410,6 +418,87 @@ class _CreateEventScreenV2State extends State<CreateEventScreenV2> {
       return DateFormat('EEE, MMM d • h:mm a').format(dt.toLocal());
     } catch (_) {
       return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    }
+  }
+
+  /// Optimize title using AI
+  Future<void> _optimizeTitle() async {
+    final currentTitle = _titleController.text.trim();
+    if (currentTitle.isEmpty) {
+      _showErrorDialog('Please enter a title first');
+      return;
+    }
+
+    setState(() {
+      _titleAILoading = true;
+    });
+
+    try {
+      final optimizedTitle = await _geminiService.optimizeTitle(currentTitle);
+      if (mounted) {
+        _titleController.text = optimizedTitle;
+        _titleController.selection = TextSelection.fromPosition(
+          TextPosition(offset: optimizedTitle.length),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        _showErrorDialog('Failed to optimize title: ${e.toString()}');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _titleAILoading = false;
+        });
+      }
+    }
+  }
+
+  /// Optimize or generate description using AI
+  Future<void> _optimizeOrGenerateDescription() async {
+    final currentTitle = _titleController.text.trim();
+    if (currentTitle.isEmpty) {
+      _showErrorDialog('Please enter a title first');
+      return;
+    }
+
+    setState(() {
+      _descriptionAILoading = true;
+    });
+
+    try {
+      final currentDescription = _descController.text.trim();
+      String result;
+
+      if (currentDescription.isEmpty) {
+        // Generate description from title
+        result = await _geminiService.generateDescription(currentTitle);
+      } else {
+        // Optimize existing description
+        result = await _geminiService.optimizeDescription(
+          currentTitle,
+          currentDescription,
+        );
+      }
+
+      if (mounted) {
+        _descController.text = result;
+        _descController.selection = TextSelection.fromPosition(
+          TextPosition(offset: result.length),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        _showErrorDialog(
+          'Failed to ${_descController.text.trim().isEmpty ? "generate" : "optimize"} description: ${e.toString()}',
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _descriptionAILoading = false;
+        });
+      }
     }
   }
 

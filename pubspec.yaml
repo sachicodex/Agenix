@@ -54,7 +54,7 @@ dev_dependencies:
   # package is activated in the `analysis_options.yaml` file at the root of
   # the package.
   flutter_lints: ^6.0.0
-
+  msix: ^3.16.12
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -70,6 +70,7 @@ flutter:
   # Assets used by the UI (icons placeholders)
   assets:
     - assets/icons/
+    - assets/img/
 
   # Custom fonts (Inter) — add font files under assets/fonts/Inter-* if you want the Inter family.
   # If you prefer default system fonts, remove or populate the below fonts section and add the files to assets/fonts/.
