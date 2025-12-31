@@ -1,0 +1,922 @@
+import 'dart:io' show Platform, HttpServer, InternetAddress;
+import 'dart:async';
+import 'dart:convert';
+import 'dart:math';
+import 'package:crypto/crypto.dart';
+import 'package:googleapis/calendar/v3.dart' as calendar;
+import 'package:googleapis_auth/auth_io.dart' as auth_io;
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher_string.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import '../google_oauth_config.dart';
+import 'auth_storage_service.dart';
+
+/// Lightweight service to sign in and insert events into Google Calendar.
+///
+/// Notes:
+/// - Android: uses `google_sign_in` to obtain an access token and then calls the
+///   Calendar API with that token (no refresh token in this simple flow).
+/// - Windows/Desktop: uses `clientViaUserConsent` (loopback) to perform an
+///   OAuth2 consent flow and receive an authenticated client.
+///
+/// For production you should persist refresh credentials securely (e.g., in
+/// flutter_secure_storage) and handle token refresh logic.
+class GoogleCalendarService {
+  String? _desktopUserEmail;
+  String? _desktopUserPhotoUrl;
+
+  /// Returns a map with email and photoUrl if available, else nulls.
+  Future<Map<String, String?>> getAccountDetails() async {
+    if (Platform.isAndroid || Platform.isIOS) {
+      _googleSignIn ??= GoogleSignIn(
+        scopes: [calendar.CalendarApi.calendarScope],
+      );
+      final acc =
+          await _googleSignIn!.signInSilently() ??
+          await _googleSignIn!.signIn();
+      return {'email': acc?.email, 'photoUrl': acc?.photoUrl};
+    }
+    // For desktop, return stored info if available
+    if (_signedIn) {
+      return {'email': _desktopUserEmail, 'photoUrl': _desktopUserPhotoUrl};
+    }
+    return {'email': null, 'photoUrl': null};
+  }
+
+  /// Returns a list of the user's calendars as maps with 'id' and 'name'.
+  /// Filters out the default "Calendar" entry which is Google's auto-created primary calendar
+  /// that users haven't explicitly created or renamed.
+  Future<List<Map<String, String>>> getUserCalendars() async {
+    final client = await _getAuthenticatedClient();
+    final calApi = calendar.CalendarApi(client);
+    final list = await calApi.calendarList.list();
+    final items = list.items ?? [];
+    return items
+        .map((c) => {'id': c.id ?? '', 'name': c.summary ?? c.id ?? ''})
+        .where((c) {
+          // Filter out empty IDs
+          if (c['id'] == null || c['id']!.isEmpty) return false;
+          // Filter out calendars with the generic name "Calendar"
+          // This is Google's auto-created primary calendar that users haven't renamed
+          final name = c['name'] ?? '';
+          return name.isNotEmpty && name.toLowerCase() != 'calendar';
+        })
+        .toList();
+  }
+
+  GoogleCalendarService._privateConstructor();
+  static final GoogleCalendarService instance =
+      GoogleCalendarService._privateConstructor();
+
+  GoogleSignIn? _googleSignIn;
+  http.Client? _authClient;
+  bool _signedIn = false;
+  bool _initialized = false;
+  final AuthStorageService _storage = AuthStorageService();
+  auth_io.AccessCredentials? _storedCredentials;
+  String? _currentAccessTokenString; // Store access token string for persistence
+
+  /// Get the storage service instance (for calendar selection)
+  AuthStorageService get storage => _storage;
+
+  /// Initialize the service and restore authentication state from storage.
+  /// Should be called at app startup.
+  Future<void> initialize() async {
+    if (_initialized) return;
+
+    if (Platform.isAndroid || Platform.isIOS) {
+      // For Android/iOS, google_sign_in handles persistence automatically
+      _googleSignIn ??= GoogleSignIn(
+        scopes: [calendar.CalendarApi.calendarScope],
+      );
+      // Try silent sign-in to restore session
+      try {
+        await _googleSignIn!.signInSilently();
+      } catch (_) {
+        // Silent sign-in failed, user needs to sign in again
+      }
+      _initialized = true;
+      return;
+    }
+
+    // For desktop, restore from secure storage
+    try {
+      final hasStored = await _storage.hasStoredCredentials();
+      if (hasStored) {
+        await _restoreDesktopAuthFromStorage();
+      }
+    } catch (e) {
+      debugPrint('Error initializing auth: $e');
+      // If restoration fails, clear storage and require re-login
+      await _storage.clearCredentials();
+    }
+
+    _initialized = true;
+  }
+
+  /// Restore desktop authentication from stored credentials
+  Future<void> _restoreDesktopAuthFromStorage() async {
+    try {
+      final refreshToken = await _storage.getRefreshToken();
+      final accessToken = await _storage.getAccessToken();
+      final tokenExpiry = await _storage.getTokenExpiry();
+      final scopes = await _storage.getScopes();
+      final userEmail = await _storage.getUserEmail();
+      final userPhotoUrl = await _storage.getUserPhotoUrl();
+
+      if (refreshToken == null || refreshToken.isEmpty) {
+        return;
+      }
+
+      // Check if access token is still valid
+      bool needsRefresh = true;
+      if (accessToken != null &&
+          tokenExpiry != null &&
+          tokenExpiry.isAfter(DateTime.now().add(const Duration(minutes: 5)))) {
+        needsRefresh = false;
+      }
+
+      if (needsRefresh) {
+        // Refresh the access token using refresh token
+        await _refreshAccessToken(refreshToken, scopes);
+      } else {
+        // Use stored access token
+        if (tokenExpiry == null) {
+          // Token expiry missing, refresh the token
+          await _refreshAccessToken(refreshToken, scopes);
+          return;
+        }
+        final token = auth_io.AccessToken(
+          'Bearer',
+          accessToken!,
+          tokenExpiry,
+        );
+        _storedCredentials = auth_io.AccessCredentials(
+          token,
+          refreshToken,
+          scopes.isNotEmpty ? scopes : [calendar.CalendarApi.calendarScope],
+        );
+        _authClient = auth_io.authenticatedClient(http.Client(), _storedCredentials!);
+        _currentAccessTokenString = accessToken; // Store for later use
+      }
+
+      _desktopUserEmail = userEmail;
+      _desktopUserPhotoUrl = userPhotoUrl;
+      _signedIn = true;
+      debugPrint('Desktop auth restored from storage');
+    } catch (e) {
+      debugPrint('Failed to restore desktop auth: $e');
+      await _storage.clearCredentials();
+      _signedIn = false;
+      _authClient = null;
+      _storedCredentials = null;
+    }
+  }
+
+  /// Refresh access token using refresh token
+  Future<void> _refreshAccessToken(String refreshToken, List<String> scopes) async {
+    try {
+      final clientId = kDesktopClientId.trim();
+      final clientSecret = kDesktopClientSecret.trim();
+      final basicAuth =
+          'Basic ${base64Encode(utf8.encode('$clientId:$clientSecret'))}';
+
+      final tokenResp = await http.post(
+        Uri.parse('https://oauth2.googleapis.com/token'),
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Authorization': basicAuth,
+        },
+        body: {
+          'grant_type': 'refresh_token',
+          'refresh_token': refreshToken,
+          'client_id': clientId,
+          'client_secret': clientSecret,
+        },
+      );
+
+      if (tokenResp.statusCode != 200) {
+        throw Exception('Token refresh failed: ${tokenResp.body}');
+      }
+
+      final tokenJson = jsonDecode(tokenResp.body) as Map<String, dynamic>;
+      final newAccessToken = tokenJson['access_token'] as String?;
+      final expiresIn = tokenJson['expires_in'] as int? ?? 3600;
+      final newRefreshToken = tokenJson['refresh_token'] as String? ?? refreshToken;
+
+      if (newAccessToken == null) {
+        throw Exception('No access token in refresh response');
+      }
+
+      final token = auth_io.AccessToken(
+        'Bearer',
+        newAccessToken,
+        DateTime.now().add(Duration(seconds: expiresIn)).toUtc(),
+      );
+
+      _storedCredentials = auth_io.AccessCredentials(
+        token,
+        newRefreshToken,
+        scopes.isNotEmpty ? scopes : [calendar.CalendarApi.calendarScope],
+      );
+
+      _authClient = auth_io.authenticatedClient(http.Client(), _storedCredentials!);
+
+      // Store access token string for persistence
+      _currentAccessTokenString = newAccessToken;
+
+      // Save updated tokens
+      await _storage.saveCredentials(
+        refreshToken: newRefreshToken,
+        accessToken: newAccessToken,
+        tokenExpiry: token.expiry,
+        scopes: _storedCredentials!.scopes,
+        userEmail: _desktopUserEmail,
+        userPhotoUrl: _desktopUserPhotoUrl,
+      );
+
+      debugPrint('Access token refreshed successfully');
+    } catch (e) {
+      debugPrint('Error refreshing token: $e');
+      await _storage.clearCredentials();
+      throw Exception('Failed to refresh access token: $e');
+    }
+  }
+
+  /// Attempts silent sign-in for Android/iOS. Returns true if successful.
+  /// This should be called before showing any sign-in UI to avoid bad UX.
+  Future<bool> trySilentSignIn() async {
+    if (Platform.isAndroid || Platform.isIOS) {
+      _googleSignIn ??= GoogleSignIn(
+        scopes: [calendar.CalendarApi.calendarScope],
+      );
+      try {
+        final account = await _googleSignIn!.signInSilently();
+        if (account != null) {
+          _signedIn = true;
+          return true;
+        }
+      } catch (e) {
+        debugPrint('Silent sign-in failed: $e');
+      }
+      return false;
+    }
+    // For desktop, just check if already signed in
+    return await isSignedIn();
+  }
+
+  /// Returns whether we have a usable signed-in session.
+  Future<bool> isSignedIn() async {
+    // Ensure initialization
+    if (!_initialized) {
+      await initialize();
+    }
+
+    if (Platform.isAndroid || Platform.isIOS) {
+      _googleSignIn ??= GoogleSignIn(
+        scopes: [calendar.CalendarApi.calendarScope],
+      );
+      return await _googleSignIn!.isSignedIn();
+    }
+
+    // For desktop, check both in-memory state and storage
+    if (_signedIn && _authClient != null) {
+      return true;
+    }
+
+    // If not signed in but have stored credentials, try to restore
+    final hasStored = await _storage.hasStoredCredentials();
+    if (hasStored && !_signedIn) {
+      try {
+        await _restoreDesktopAuthFromStorage();
+        return _signedIn && _authClient != null;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    return false;
+  }
+
+  /// Ensure the user is signed in. On desktop, this may show the browser
+  /// consent screen; `context` is required to show error dialogs if the loopback
+  /// handler fails.
+  Future<void> ensureSignedIn(BuildContext context) async {
+    if (await isSignedIn()) return;
+
+    if (Platform.isAndroid || Platform.isIOS) {
+      _googleSignIn ??= GoogleSignIn(
+        scopes: [calendar.CalendarApi.calendarScope],
+      );
+      final account = await _googleSignIn!.signIn();
+      if (account == null) throw Exception('Sign in aborted by user');
+      _signedIn = true;
+      return;
+    }
+
+    // Desktop flow: use clientViaUserConsent with loopback. Provide error
+    // instructions if the local callback fails (common cause: browser blocking or
+    // an external factor that leads to a 500 on localhost).
+    if (kDesktopClientId.startsWith('YOUR_') ||
+        kDesktopClientId.isEmpty ||
+        kDesktopClientSecret.startsWith('YOUR_') ||
+        kDesktopClientSecret.isEmpty) {
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('OAuth client not configured'),
+          content: SingleChildScrollView(
+            child: ListBody(
+              children: const [
+                Text(
+                  'The Desktop OAuth Client ID or Client Secret is not set.',
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'Create a "Desktop" OAuth Client (APIs & Services → Credentials) and set both `kDesktopClientId` and `kDesktopClientSecret` in `lib/google_oauth_config.dart`.',
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'Note: Keep the client secret private and avoid committing it to public repositories.',
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      throw Exception('Desktop OAuth Client ID/Secret not configured');
+    }
+
+    final scopes = [
+      calendar.CalendarApi.calendarScope,
+      'email',
+      'profile',
+      'https://www.googleapis.com/auth/userinfo.email',
+      'https://www.googleapis.com/auth/userinfo.profile',
+      'openid',
+    ];
+
+    try {
+      final client = await _obtainDesktopAuthClient(context, scopes);
+      _authClient = client;
+      _signedIn = true;
+
+      // Fetch user info from Google People API
+      try {
+        final peopleResp = await client.get(
+          Uri.parse(
+            'https://people.googleapis.com/v1/people/me?personFields=names,emailAddresses,photos',
+          ),
+        );
+        if (peopleResp.statusCode == 200) {
+          final data = jsonDecode(peopleResp.body);
+          _desktopUserEmail =
+              (data['emailAddresses'] != null &&
+                  data['emailAddresses'].isNotEmpty)
+              ? data['emailAddresses'][0]['value']
+              : null;
+          _desktopUserPhotoUrl =
+              (data['photos'] != null && data['photos'].isNotEmpty)
+              ? data['photos'][0]['url']
+              : null;
+        }
+      } catch (_) {
+        _desktopUserEmail = null;
+        _desktopUserPhotoUrl = null;
+      }
+
+      // Save credentials to secure storage for persistence
+      if (_storedCredentials != null && _currentAccessTokenString != null) {
+        await _storage.saveCredentials(
+          refreshToken: _storedCredentials!.refreshToken,
+          accessToken: _currentAccessTokenString!,
+          tokenExpiry: _storedCredentials!.accessToken.expiry,
+          scopes: _storedCredentials!.scopes,
+          userEmail: _desktopUserEmail,
+          userPhotoUrl: _desktopUserPhotoUrl,
+        );
+        debugPrint('Credentials saved to secure storage');
+      }
+    } catch (err) {
+      final errStr = err.toString();
+      if (errStr.contains('invalid_client')) {
+        await showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('OAuth client error'),
+            content: SingleChildScrollView(
+              child: ListBody(
+                children: const [
+                  Text('The OAuth client was not found (invalid_client).'),
+                  SizedBox(height: 8),
+                  Text(
+                    'Ensure you created a "Desktop" OAuth client in the Google Cloud Console (APIs & Services → Credentials) '
+                    'and pasted its client ID into `lib/google_oauth_config.dart` as `kDesktopClientId`.',
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+        rethrow;
+      }
+
+      // Show a helpful dialog with the actual error and actionable steps.
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Sign-in failed'),
+          content: SingleChildScrollView(
+            child: ListBody(
+              children: [
+                const Text('Sign-in did not complete.'),
+                const SizedBox(height: 8),
+                Text('Reason: ${err.toString()}'),
+                const SizedBox(height: 8),
+                const Text('Try one of the following:'),
+                const SizedBox(height: 6),
+                const Text(
+                  '• Allow loopback redirects and try again using a different browser.',
+                ),
+                const Text(
+                  '• Ensure the Desktop OAuth client ID exists in the Cloud Console.',
+                ),
+                const Text(
+                  '• If the problem persists, use the manual copy/paste fallback when prompted.',
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('OK'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                showDialog<void>(
+                  context: context,
+                  builder: (dCtx) => AlertDialog(
+                    title: const Text('Error details'),
+                    content: SingleChildScrollView(child: Text(err.toString())),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(dCtx).pop(),
+                        child: const Text('Close'),
+                      ),
+                    ],
+                  ),
+                );
+              },
+              child: const Text('Show details'),
+            ),
+          ],
+        ),
+      );
+
+      rethrow;
+    }
+  }
+
+  /// Gets an authenticated http client (throws if sign-in not done). The caller
+  /// should not close the returned client in Android/iOS (google_sign_in token
+  /// wrapper used), but for desktop clients we return the _authClient which is
+  /// closed by callers when appropriate.
+  Future<http.Client> _getAuthenticatedClient() async {
+    if (Platform.isAndroid || Platform.isIOS) {
+      _googleSignIn ??= GoogleSignIn(
+        scopes: [calendar.CalendarApi.calendarScope],
+      );
+
+      final account =
+          await _googleSignIn!.signInSilently() ??
+          await _googleSignIn!.signIn();
+      if (account == null) throw Exception('Sign in aborted by user');
+
+      final auth = await account.authentication;
+      final accessToken = auth.accessToken;
+      if (accessToken == null) throw Exception('Missing access token');
+
+      return _SimpleAuthClient(accessToken);
+    }
+
+    if (_authClient != null) return _authClient!;
+
+    throw Exception('Not signed in (desktop).');
+  }
+
+  /// Inserts a calendar event into the primary calendar.
+  Future<calendar.Event> insertEvent({
+    required String summary,
+    String? description,
+    required DateTime start,
+    required DateTime end,
+    String calendarId = 'primary',
+    List<Map<String, dynamic>>? reminders,
+  }) async {
+    final client = await _getAuthenticatedClient();
+
+    final cal = calendar.CalendarApi(client);
+
+    // Ensure we send timestamps with a valid timezone to Google Calendar.
+    // Using UTC prevents invalid time zone definitions from causing API 400 errors.
+    debugPrint(
+      'Creating event: start=${start.toIso8601String()}, end=${end.toIso8601String()}, start.timeZone=${start.timeZoneName}, end.timeZone=${end.timeZoneName}',
+    );
+
+    final event = calendar.Event()
+      ..summary = summary
+      ..description = description
+      ..start = calendar.EventDateTime(dateTime: start.toUtc(), timeZone: 'UTC')
+      ..end = calendar.EventDateTime(dateTime: end.toUtc(), timeZone: 'UTC');
+
+    if (reminders != null && reminders.isNotEmpty) {
+      event.reminders = calendar.EventReminders(
+        useDefault: false,
+        overrides: reminders
+            .map(
+              (r) => calendar.EventReminder(
+                method: r['method'],
+                minutes: r['minutes'],
+              ),
+            )
+            .toList(),
+      );
+    }
+
+    final created = await cal.events.insert(event, calendarId);
+
+    // If the desktop auth flow was used, the _authClient should stay open during
+    // the app's session. We don't close it here.
+    return created;
+  }
+
+  /// Signs out and clears all stored authentication data.
+  Future<void> signOut() async {
+    if (_googleSignIn != null) {
+      await _googleSignIn!.signOut();
+    }
+
+    _authClient?.close();
+    _authClient = null;
+    _signedIn = false;
+    _storedCredentials = null;
+    _currentAccessTokenString = null;
+    _desktopUserEmail = null;
+    _desktopUserPhotoUrl = null;
+
+    // Clear stored credentials and default calendar from secure storage
+    await _storage.clearCredentials();
+    await _storage.clearDefaultCalendar();
+    debugPrint('Signed out and cleared stored credentials and default calendar');
+  }
+
+  /// Return a human-readable account label when available (displayName or email).
+  Future<String?> getAccountDisplayName() async {
+    if (Platform.isAndroid || Platform.isIOS) {
+      _googleSignIn ??= GoogleSignIn(
+        scopes: [calendar.CalendarApi.calendarScope],
+      );
+      final acc = await _googleSignIn!.signInSilently();
+      return acc?.displayName ?? acc?.email;
+    }
+
+    if (_signedIn) return 'Signed in (Desktop)';
+    return null;
+  }
+
+  /// Attempts a PKCE + loopback flow. Binds to IPv4 (prefer 127.0.0.1) and falls
+  /// back to IPv6 binding. If the browser cannot connect back, offers a manual
+  /// code paste fallback.
+  Future<http.Client> _obtainDesktopAuthClient(
+    BuildContext context,
+    List<String> scopes,
+  ) async {
+    final verifier = _createCodeVerifier();
+    final challenge = _createCodeChallenge(verifier);
+
+    HttpServer server;
+    try {
+      // Prefer IPv4 loopback to avoid localhost => ::1 IPv6 mismatches.
+      server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    } catch (_) {
+      // Fall back to IPv6 (allow both v6 and v4 mapped if supported).
+      server = await HttpServer.bind(
+        InternetAddress.loopbackIPv6,
+        0,
+        v6Only: false,
+      );
+    }
+
+    final port = server.port;
+    debugPrint('Loopback server listening on port $port');
+    final redirectUri = 'http://127.0.0.1:$port/';
+
+    // Use trimmed client id to avoid accidental whitespace copying issues.
+    final clientId = kDesktopClientId.trim();
+    final clientSecret = kDesktopClientSecret.trim();
+    debugPrint('Using Desktop client id: $clientId');
+    debugPrint(
+      'Desktop client secret length: ${clientSecret.length} (not printing secret)',
+    );
+
+    final authUrl = Uri.https('accounts.google.com', '/o/oauth2/v2/auth', {
+      'response_type': 'code',
+      'client_id': clientId,
+      'redirect_uri': redirectUri,
+      'scope': scopes.join(' '),
+      'access_type': 'offline',
+      'prompt': 'consent',
+      'code_challenge': challenge,
+      'code_challenge_method': 'S256',
+    });
+
+    // Open system browser to authorize.
+    debugPrint('Opening browser to ${authUrl.toString()}');
+    await launchUrlString(
+      authUrl.toString(),
+      mode: LaunchMode.externalApplication,
+    );
+
+    // Robust listener: use a shared completer so either the server handler or
+    // the manual dialog can supply the authorization code. This lets us handle
+    // timeouts, late arrivals (race), and programmatically close the manual
+    // dialog if the server later receives the callback.
+    final resultCompleter = Completer<String>();
+    var manualDialogOpen = false;
+
+    server.listen(
+      (request) async {
+        try {
+          final params = request.uri.queryParameters;
+          debugPrint('Loopback request received: ${request.uri}');
+          if (params.containsKey('error')) {
+            final err = params['error']!;
+            request.response.statusCode = 200;
+            request.response.headers.set('Content-Type', 'text/html');
+            request.response.write(
+              '<html><body><h3>Authentication failed: $err</h3></body></html>',
+            );
+            await request.response.close();
+
+            if (!resultCompleter.isCompleted) {
+              resultCompleter.completeError(Exception('OAuth error: $err'));
+            }
+            return;
+          }
+
+          final nextCode = params['code'];
+          if (nextCode != null) {
+            // respond to browser immediately
+            request.response.statusCode = 200;
+            request.response.headers.set('Content-Type', 'text/html');
+            request.response.write(
+              '<html><body><h3>Authentication successful</h3><p>You can close this window.</p></body></html>',
+            );
+            await request.response.close();
+
+            if (!resultCompleter.isCompleted) {
+              resultCompleter.complete(nextCode);
+              // close manual dialog if open
+              if (manualDialogOpen) {
+                try {
+                  Navigator.of(context, rootNavigator: true).pop();
+                } catch (_) {}
+              }
+            }
+            return;
+          }
+
+          // No recognizable params - return a simple page
+          request.response.statusCode = 400;
+          request.response.headers.set('Content-Type', 'text/html');
+          request.response.write(
+            '<html><body><h3>Invalid request</h3></body></html>',
+          );
+          await request.response.close();
+        } catch (e) {
+          // If the server handler itself throws, surface it.
+          if (!resultCompleter.isCompleted)
+            resultCompleter.completeError(Exception('Server error: $e'));
+          try {
+            await request.response.close();
+          } catch (_) {}
+        }
+      },
+      onError: (e) {
+        if (!resultCompleter.isCompleted) resultCompleter.completeError(e);
+      },
+    );
+
+    // Wait a short period for automatic callback. If nothing arrives, show
+    // the manual-copy dialog and wait for either to complete.
+    String code;
+    try {
+      try {
+        // Wait briefly for automatic callback from browser.
+        final auto = await resultCompleter.future.timeout(
+          const Duration(seconds: 20),
+        );
+        code = auto;
+      } on TimeoutException {
+        // No automatic callback soon - prompt the user for manual copy/paste, but
+        // keep listening for a late automatic callback.
+        manualDialogOpen = true;
+        debugPrint('Showing manual copy/paste dialog for auth URL');
+        _showManualCodeInputDialog(context, authUrl.toString()).then((manual) {
+          debugPrint(
+            'Manual dialog closed, manual code: ${manual != null ? 'provided' : 'cancelled'}',
+          );
+          manualDialogOpen = false;
+          if (!resultCompleter.isCompleted) {
+            if (manual == null) {
+              resultCompleter.completeError(Exception('Sign in aborted'));
+            } else {
+              resultCompleter.complete(manual);
+            }
+          }
+        });
+
+        // Wait longer for either the server callback or manual input.
+        code = await resultCompleter.future.timeout(const Duration(minutes: 3));
+      }
+    } catch (err) {
+      // bubble up with informative message
+      throw Exception(
+        'Automatic localhost callback failed or sign-in aborted: ${err.toString()}',
+      );
+    } finally {
+      // ensure server closed
+      await server.close(force: true);
+    }
+
+    // Use the already-trimmed clientId/clientSecret and add HTTP Basic auth header.
+    final basicAuth =
+        'Basic ${base64Encode(utf8.encode('${clientId}:${clientSecret}'))}';
+
+    final tokenResp = await http.post(
+      Uri.parse('https://oauth2.googleapis.com/token'),
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': basicAuth,
+      },
+      body: {
+        'grant_type': 'authorization_code',
+        'code': code,
+        'redirect_uri': redirectUri,
+        'client_id': clientId,
+        'client_secret': clientSecret,
+        'code_verifier': verifier,
+      },
+    );
+
+    // Debug: log token response for troubleshooting (remove/guard in prod).
+    debugPrint('OAuth token exchange status: ${tokenResp.statusCode}');
+    debugPrint('OAuth token exchange body: ${tokenResp.body}');
+
+    if (tokenResp.statusCode == 401 || tokenResp.statusCode == 400) {
+      final body = tokenResp.body.toLowerCase();
+      if (body.contains('invalid_client') || body.contains('client_secret')) {
+        throw Exception(
+          'Token exchange returned invalid_client / client_secret error. Check Desktop client ID/secret, exact copy, and that the client is type "Desktop" in Cloud Console. Response: ${tokenResp.body}',
+        );
+      }
+    }
+
+    if (tokenResp.statusCode != 200) {
+      throw Exception('Token exchange failed: ${tokenResp.body}');
+    }
+
+    final tokenJson = jsonDecode(tokenResp.body) as Map<String, dynamic>;
+
+    // Show presence of tokens (but not the tokens themselves) to help debugging.
+    final hasAccess =
+        tokenJson.containsKey('access_token') &&
+        (tokenJson['access_token'] as String).isNotEmpty;
+    final hasRefresh =
+        tokenJson.containsKey('refresh_token') &&
+        (tokenJson['refresh_token'] as String).isNotEmpty;
+    debugPrint(
+      'OAuth tokens present - access_token: $hasAccess, refresh_token: $hasRefresh',
+    );
+    final accessToken = tokenJson['access_token'] as String?;
+    final refreshToken = tokenJson['refresh_token'] as String?;
+    final expiresIn = tokenJson['expires_in'] as int? ?? 3600;
+
+    final tokenExpiry = DateTime.now().add(Duration(seconds: expiresIn)).toUtc();
+    final token = auth_io.AccessToken(
+      'Bearer',
+      accessToken!,
+      tokenExpiry,
+    );
+
+    final credentials = auth_io.AccessCredentials(
+      token,
+      refreshToken,
+      scopes,
+    );
+
+    // Store credentials and access token string for later persistence
+    _storedCredentials = credentials;
+    _currentAccessTokenString = accessToken;
+
+    final client = auth_io.authenticatedClient(http.Client(), credentials);
+    return client;
+  }
+
+  String _createCodeVerifier() {
+    final rand = Random.secure();
+    final bytes = List<int>.generate(32, (_) => rand.nextInt(256));
+    return base64UrlEncode(bytes).replaceAll('=', '');
+  }
+
+  String _createCodeChallenge(String verifier) {
+    final bytes = sha256.convert(utf8.encode(verifier)).bytes;
+    return base64UrlEncode(bytes).replaceAll('=', '');
+  }
+
+  Future<String?> _showManualCodeInputDialog(
+    BuildContext context,
+    String authUrl,
+  ) {
+    final controller = TextEditingController();
+
+    return showDialog<String?>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Complete sign-in manually'),
+        content: SingleChildScrollView(
+          child: ListBody(
+            children: [
+              const Text('The browser could not reach the app at localhost.'),
+              const SizedBox(height: 8),
+              const Text(
+                'Click the link below, complete sign-in, then copy the "code" parameter from the URL and paste it below.',
+              ),
+              const SizedBox(height: 6),
+              SelectableText(authUrl),
+              const SizedBox(height: 8),
+              TextField(
+                controller: controller,
+                decoration: const InputDecoration(labelText: 'Paste code here'),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              final data = await Clipboard.getData('text/plain');
+              if (data?.text != null) {
+                controller.text = data!.text!;
+              }
+            },
+            child: const Text('Paste from clipboard'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(null),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(
+              controller.text.trim().isEmpty ? null : controller.text.trim(),
+            ),
+            child: const Text('Submit'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Very small auth-wrapping HTTP client that attaches an Authorization header.
+/// Used for simple GoogleSignIn-based calls where only a short-lived access
+/// token is available.
+class _SimpleAuthClient extends http.BaseClient {
+  final String _accessToken;
+  final http.Client _inner = http.Client();
+
+  _SimpleAuthClient(this._accessToken);
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) {
+    request.headers['Authorization'] = 'Bearer $_accessToken';
+    return _inner.send(request);
+  }
+}
