@@ -33,7 +33,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'NUVEX Flow',
+      title: 'Nuvex Flow',
       theme: AppTheme.build(),
       home: const AuthWrapper(),
       routes: {

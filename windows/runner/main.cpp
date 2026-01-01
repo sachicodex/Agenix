@@ -29,7 +29,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   
   // Create window at default position (will be centered when shown)
   Win32Window::Point origin(0, 0);
-  if (!window.Create(L"nuvex_flow", origin, size)) {
+  if (!window.Create(L"Nuvex Flow", origin, size)) {
     return EXIT_FAILURE;
   }
   
