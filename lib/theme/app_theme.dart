@@ -73,6 +73,7 @@ class AppTheme {
         elevation: 0,
         centerTitle: false,
         titleTextStyle: AppTextStyles.headline2,
+        toolbarTextStyle: AppTextStyles.bodyText1,
       ),
     );
   }

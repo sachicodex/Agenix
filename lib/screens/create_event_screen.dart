@@ -5,8 +5,10 @@ import '../widgets/rounded_card.dart';
 import '../widgets/form_fields.dart';
 import '../services/google_calendar_service.dart';
 import '../services/groq_service.dart';
+import '../services/api_key_storage_service.dart';
 import '../theme/app_colors.dart';
 import 'sign_in_screen.dart';
+import 'settings_screen.dart';
 
 class DateTimeField extends StatelessWidget {
   final String label;
@@ -85,6 +87,8 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   // Removed location field
   String? _selectedCalendarId;
   List<Map<String, String>> _availableCalendars = [];
+  bool _userHasSelectedCalendar =
+      false; // Track if user manually selected a calendar
 
   Future<void> _fetchCalendars() async {
     try {
@@ -136,6 +140,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   bool _titleAILoading = false;
   bool _descriptionAILoading = false;
   final GroqService _groqService = GroqService();
+  final ApiKeyStorageService _apiKeyStorage = ApiKeyStorageService();
   late final FocusNode _keyboardFocusNode;
 
   @override
@@ -159,6 +164,22 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Reload default calendar when screen becomes visible again
+    // This ensures changes from Settings are reflected immediately
+    // Only reload if this route is currently active (user navigated back)
+    final route = ModalRoute.of(context);
+    if (route != null && route.isCurrent) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (mounted && _signedIn) {
+          await _loadDefaultCalendar();
+        }
+      });
+    }
+  }
+
+  @override
   void dispose() {
     _titleController.dispose();
     _descController.dispose();
@@ -175,8 +196,11 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         final calendarExists = _availableCalendars.any(
           (cal) => cal['id'] == defaultCalendarId,
         );
+        // Only set default calendar if user hasn't manually selected one
+        // and the default calendar exists in the available calendars
         if (calendarExists &&
             mounted &&
+            !_userHasSelectedCalendar &&
             _selectedCalendarId != defaultCalendarId) {
           setState(() {
             _selectedCalendarId = defaultCalendarId;
@@ -322,7 +346,11 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
           },
           onChanged: (val) {
             if (val != null && val != _selectedCalendarId) {
-              setState(() => _selectedCalendarId = val);
+              setState(() {
+                _selectedCalendarId = val;
+                _userHasSelectedCalendar =
+                    true; // Mark that user has selected a calendar
+              });
             }
           },
         ),
@@ -387,9 +415,9 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
 
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
-      title: const Padding(
-        padding: EdgeInsets.only(left: 10),
-        child: Text('Create Event'),
+      title: Padding(
+        padding: const EdgeInsets.only(left: 10),
+        child: Text('Create Event', style: AppTextStyles.headline2),
       ),
       actions: [
         IconButton(
@@ -405,64 +433,8 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
           tooltip: _signedIn
               ? (_userEmail ?? 'Google Account')
               : 'Not connected',
-          onPressed: () async {
-            await _refreshUserInfo();
-            if (!mounted) return;
-            showDialog(
-              context: context,
-              builder: (ctx) => AlertDialog(
-                title: const Text('Google Account'),
-                content: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (_signedIn && _userEmail != null)
-                      Text(_userEmail!, style: AppTextStyles.bodyText1),
-                    if (!_signedIn)
-                      Text('Not connected', style: AppTextStyles.bodyText1),
-                  ],
-                ),
-                actions: [
-                  if (_signedIn)
-                    TextButton(
-                      onPressed: () async {
-                        await GoogleCalendarService.instance.signOut();
-                        if (mounted) {
-                          setState(() {
-                            _signedIn = false;
-                            _userEmail = null;
-                            _userPhotoUrl = null;
-                          });
-                        }
-                        Navigator.of(ctx).pop();
-                        // Notify parent (AuthWrapper) that user signed out
-                        widget.onSignOut?.call();
-                      },
-                      child: const Text('Sign out'),
-                    )
-                  else
-                    TextButton(
-                      onPressed: () async {
-                        Navigator.of(ctx).pop();
-                        await Navigator.of(context).push<bool>(
-                          MaterialPageRoute(
-                            builder: (c) => const SignInScreen(),
-                          ),
-                        );
-                        final recheck = await GoogleCalendarService.instance
-                            .isSignedIn();
-                        if (mounted) setState(() => _signedIn = recheck);
-                        await _refreshUserInfo();
-                      },
-                      child: const Text('Sign in'),
-                    ),
-                  TextButton(
-                    onPressed: () => Navigator.of(ctx).pop(),
-                    child: const Text('Close'),
-                  ),
-                ],
-              ),
-            );
+          onPressed: () {
+            Navigator.pushNamed(context, SettingsScreen.routeName);
           },
         ),
         const SizedBox(width: 10),
@@ -470,8 +442,41 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     );
   }
 
+  /// Show AI setup popup when API key is not configured
+  void _showAISetupPopup() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('AI Features Not Configured'),
+        content: const Text(
+          'AI features are not configured yet. Please set up your AI API key in Settings to use this feature.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              Navigator.pushNamed(context, SettingsScreen.routeName);
+            },
+            child: const Text('Setup AI Features'),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// Optimize title using AI
   Future<void> _optimizeTitle() async {
+    // Check if API key is configured
+    final hasApiKey = await _apiKeyStorage.hasApiKey();
+    if (!hasApiKey) {
+      _showAISetupPopup();
+      return;
+    }
+
     final currentTitle = _titleController.text.trim();
     if (currentTitle.isEmpty) {
       _showErrorDialog('Please enter a title first');
@@ -505,6 +510,13 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
 
   /// Optimize or generate description using AI
   Future<void> _optimizeOrGenerateDescription() async {
+    // Check if API key is configured
+    final hasApiKey = await _apiKeyStorage.hasApiKey();
+    if (!hasApiKey) {
+      _showAISetupPopup();
+      return;
+    }
+
     final currentTitle = _titleController.text.trim();
     if (currentTitle.isEmpty) {
       _showErrorDialog('Please enter a title first');
@@ -652,7 +664,11 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
             _endDateTime = DateTime.now().add(const Duration(hours: 1));
             reminderOn = true;
             reminderValue = '10 minutes';
+            // Reset calendar selection flag so default calendar can be loaded again
+            _userHasSelectedCalendar = false;
           });
+          // Reload default calendar for next event
+          await _loadDefaultCalendar();
         }
       } catch (err) {
         // On error, show user-friendly error dialog only, do NOT go to feedback screen

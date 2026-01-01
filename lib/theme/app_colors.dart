@@ -14,20 +14,24 @@ class AppColors {
 
 class AppTextStyles {
   static const TextStyle headline1 = TextStyle(
+    fontFamily: 'Montserrat',
     fontSize: 32,
     fontWeight: FontWeight.bold,
     color: AppColors.onBackground,
   );
   static const TextStyle headline2 = TextStyle(
+    fontFamily: 'Montserrat',
     fontSize: 24,
     fontWeight: FontWeight.w600,
     color: AppColors.onBackground,
   );
   static const TextStyle bodyText1 = TextStyle(
+    fontFamily: 'Montserrat',
     fontSize: 16,
     color: AppColors.onBackground,
   );
   static const TextStyle button = TextStyle(
+    fontFamily: 'Montserrat',
     fontSize: 16,
     fontWeight: FontWeight.w600,
     color: AppColors.onPrimary,

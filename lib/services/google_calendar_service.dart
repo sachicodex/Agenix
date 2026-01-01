@@ -76,7 +76,8 @@ class GoogleCalendarService {
   bool _initialized = false;
   final AuthStorageService _storage = AuthStorageService();
   auth_io.AccessCredentials? _storedCredentials;
-  String? _currentAccessTokenString; // Store access token string for persistence
+  String?
+  _currentAccessTokenString; // Store access token string for persistence
 
   /// Get the storage service instance (for calendar selection)
   AuthStorageService get storage => _storage;
@@ -148,17 +149,16 @@ class GoogleCalendarService {
           await _refreshAccessToken(refreshToken, scopes);
           return;
         }
-        final token = auth_io.AccessToken(
-          'Bearer',
-          accessToken!,
-          tokenExpiry,
-        );
+        final token = auth_io.AccessToken('Bearer', accessToken!, tokenExpiry);
         _storedCredentials = auth_io.AccessCredentials(
           token,
           refreshToken,
           scopes.isNotEmpty ? scopes : [calendar.CalendarApi.calendarScope],
         );
-        _authClient = auth_io.authenticatedClient(http.Client(), _storedCredentials!);
+        _authClient = auth_io.authenticatedClient(
+          http.Client(),
+          _storedCredentials!,
+        );
         _currentAccessTokenString = accessToken; // Store for later use
       }
 
@@ -176,7 +176,10 @@ class GoogleCalendarService {
   }
 
   /// Refresh access token using refresh token
-  Future<void> _refreshAccessToken(String refreshToken, List<String> scopes) async {
+  Future<void> _refreshAccessToken(
+    String refreshToken,
+    List<String> scopes,
+  ) async {
     try {
       final clientId = kDesktopClientId.trim();
       final clientSecret = kDesktopClientSecret.trim();
@@ -204,7 +207,8 @@ class GoogleCalendarService {
       final tokenJson = jsonDecode(tokenResp.body) as Map<String, dynamic>;
       final newAccessToken = tokenJson['access_token'] as String?;
       final expiresIn = tokenJson['expires_in'] as int? ?? 3600;
-      final newRefreshToken = tokenJson['refresh_token'] as String? ?? refreshToken;
+      final newRefreshToken =
+          tokenJson['refresh_token'] as String? ?? refreshToken;
 
       if (newAccessToken == null) {
         throw Exception('No access token in refresh response');
@@ -222,7 +226,10 @@ class GoogleCalendarService {
         scopes.isNotEmpty ? scopes : [calendar.CalendarApi.calendarScope],
       );
 
-      _authClient = auth_io.authenticatedClient(http.Client(), _storedCredentials!);
+      _authClient = auth_io.authenticatedClient(
+        http.Client(),
+        _storedCredentials!,
+      );
 
       // Store access token string for persistence
       _currentAccessTokenString = newAccessToken;
@@ -583,7 +590,9 @@ class GoogleCalendarService {
     // Clear stored credentials and default calendar from secure storage
     await _storage.clearCredentials();
     await _storage.clearDefaultCalendar();
-    debugPrint('Signed out and cleared stored credentials and default calendar');
+    debugPrint(
+      'Signed out and cleared stored credentials and default calendar',
+    );
   }
 
   /// Return a human-readable account label when available (displayName or email).
@@ -668,10 +677,16 @@ class GoogleCalendarService {
           if (params.containsKey('error')) {
             final err = params['error']!;
             request.response.statusCode = 200;
-            request.response.headers.set('Content-Type', 'text/html');
-            request.response.write(
-              '<html><body><h3>Authentication failed: $err</h3></body></html>',
+            request.response.headers.set(
+              'Content-Type',
+              'text/html; charset=utf-8',
             );
+            final html = _buildBrandedHtmlPage(
+              title: 'Authentication Failed',
+              message: err,
+              isError: true,
+            );
+            request.response.write(html);
             await request.response.close();
 
             if (!resultCompleter.isCompleted) {
@@ -684,10 +699,16 @@ class GoogleCalendarService {
           if (nextCode != null) {
             // respond to browser immediately
             request.response.statusCode = 200;
-            request.response.headers.set('Content-Type', 'text/html');
-            request.response.write(
-              '<html><body><h3>Authentication successful</h3><p>You can close this window.</p></body></html>',
+            request.response.headers.set(
+              'Content-Type',
+              'text/html; charset=utf-8',
             );
+            final html = _buildBrandedHtmlPage(
+              title: 'Authentication Successful',
+              message: 'You can close this window.',
+              isError: false,
+            );
+            request.response.write(html);
             await request.response.close();
 
             if (!resultCompleter.isCompleted) {
@@ -704,10 +725,16 @@ class GoogleCalendarService {
 
           // No recognizable params - return a simple page
           request.response.statusCode = 400;
-          request.response.headers.set('Content-Type', 'text/html');
-          request.response.write(
-            '<html><body><h3>Invalid request</h3></body></html>',
+          request.response.headers.set(
+            'Content-Type',
+            'text/html; charset=utf-8',
           );
+          final html = _buildBrandedHtmlPage(
+            title: 'Invalid Request',
+            message: 'The authentication request was invalid.',
+            isError: true,
+          );
+          request.response.write(html);
           await request.response.close();
         } catch (e) {
           // If the server handler itself throws, surface it.
@@ -818,18 +845,12 @@ class GoogleCalendarService {
     final refreshToken = tokenJson['refresh_token'] as String?;
     final expiresIn = tokenJson['expires_in'] as int? ?? 3600;
 
-    final tokenExpiry = DateTime.now().add(Duration(seconds: expiresIn)).toUtc();
-    final token = auth_io.AccessToken(
-      'Bearer',
-      accessToken!,
-      tokenExpiry,
-    );
+    final tokenExpiry = DateTime.now()
+        .add(Duration(seconds: expiresIn))
+        .toUtc();
+    final token = auth_io.AccessToken('Bearer', accessToken!, tokenExpiry);
 
-    final credentials = auth_io.AccessCredentials(
-      token,
-      refreshToken,
-      scopes,
-    );
+    final credentials = auth_io.AccessCredentials(token, refreshToken, scopes);
 
     // Store credentials and access token string for later persistence
     _storedCredentials = credentials;
@@ -902,6 +923,131 @@ class GoogleCalendarService {
         ],
       ),
     );
+  }
+
+  /// Builds a branded HTML page for OAuth redirect
+  String _buildBrandedHtmlPage({
+    required String title,
+    required String message,
+    required bool isError,
+  }) {
+    final color = isError ? '#D32F2F' : '#D99A00'; // Error red or primary gold
+    final iconBg = isError
+        ? 'rgba(211, 47, 47, 0.2)'
+        : 'rgba(217, 154, 0, 0.2)';
+    final iconSymbol = isError ? '✕' : '✓';
+
+    // Escape HTML special characters in title and message
+    final escapedTitle = _escapeHtml(title);
+    final escapedMessage = _escapeHtml(message);
+
+    return '''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>$escapedTitle - Nuvex Flow</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap');
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #030303 0%, #161616 100%);
+      color: #F5F5F5;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container {
+      background: #161616;
+      border-radius: 16px;
+      padding: 48px 32px;
+      text-align: center;
+      max-width: 500px;
+      width: 100%;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+      border: 1px solid rgba(217, 154, 0, 0.2);
+    }
+    .logo {
+      font-size: 32px;
+      font-weight: 700;
+      color: #D99A00;
+      margin-bottom: 8px;
+      letter-spacing: -0.5px;
+    }
+    .subtitle {
+      font-size: 14px;
+      color: #D1D5DB;
+      margin-bottom: 32px;
+      font-weight: 400;
+      opacity: 0.8;
+    }
+    .icon {
+      width: 64px;
+      height: 64px;
+      margin: 0 auto 24px;
+      border-radius: 50%;
+      background: $iconBg;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 32px;
+    }
+    h1 {
+      font-size: 24px;
+      font-weight: 600;
+      color: $color;
+      margin-bottom: 16px;
+    }
+    p {
+      font-size: 16px;
+      color: #D1D5DB;
+      line-height: 1.6;
+      font-weight: 400;
+    }
+    .divider {
+      height: 1px;
+      background: rgba(217, 154, 0, 0.2);
+      margin: 32px 0;
+    }
+    .footer {
+      font-size: 12px;
+      color: #9CA3AF;
+      margin-top: 24px;
+      opacity: 0.6;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">NUVEX FLOW</div>
+    <div class="subtitle">Streamline your calendar management</div>
+    <div class="icon">$iconSymbol</div>
+    <h1>$escapedTitle</h1>
+    <p>$escapedMessage</p>
+    <div class="divider"></div>
+    <div class="footer">You can safely close this window.</div>
+  </div>
+</body>
+</html>
+''';
+  }
+
+  /// Escapes HTML special characters to prevent XSS and parsing errors
+  String _escapeHtml(String text) {
+    return text
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
   }
 }
 

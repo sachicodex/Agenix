@@ -1,13 +1,11 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'api_key_storage_service.dart';
 
 /// Service for interacting with Groq API for text optimization
 /// Groq API Documentation: https://console.groq.com/docs
 class GroqService {
-  // TODO: Replace with your Groq API key
-  // Get your API key from: https://console.groq.com/keys
-  static const String _apiKey =
-      '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';
+  final ApiKeyStorageService _apiKeyStorage = ApiKeyStorageService();
 
   /// Optimize event title to be short, clear, and event-title friendly
   Future<String> optimizeTitle(String title) async {
@@ -119,10 +117,11 @@ Return only the description:''';
   /// Make the actual API request to Groq
   /// Uses Authorization header with Bearer token as per Groq API documentation
   Future<String> _makeAPIRequest(Uri url, String prompt, String model) async {
-    // Validate API key
-    if (_apiKey == 'YOUR_GROQ_API_KEY_HERE' || _apiKey.isEmpty) {
+    // Get API key from storage
+    final apiKey = await _apiKeyStorage.getApiKey();
+    if (apiKey == null || apiKey.trim().isEmpty) {
       throw Exception(
-        'Groq API key not configured. Please add your API key in lib/services/groq_service.dart',
+        'AI API key not configured. Please set up your API key in Settings.',
       );
     }
 
@@ -142,7 +141,7 @@ Return only the description:''';
           url,
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': 'Bearer $_apiKey', // Groq uses Bearer token
+            'Authorization': 'Bearer $apiKey', // Groq uses Bearer token
           },
           body: jsonEncode(requestBody),
         )
