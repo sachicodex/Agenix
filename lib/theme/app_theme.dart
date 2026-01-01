@@ -31,7 +31,7 @@ class AppTheme {
         brightness: Brightness.dark,
       ),
       scaffoldBackgroundColor: AppColors.background,
-      fontFamily: 'Inter',
+      fontFamily: 'Montserrat',
       textTheme: TextTheme(
         displayLarge: AppTextStyles.headline1,
         displayMedium: AppTextStyles.headline2,

@@ -5,7 +5,7 @@ import 'package:intl/intl.dart';
 import '../widgets/rounded_card.dart';
 import '../widgets/form_fields.dart';
 import '../services/google_calendar_service.dart';
-import '../services/gemini_service.dart';
+import '../services/groq_service.dart';
 import '../theme/app_colors.dart';
 import 'sign_in_screen.dart';
 
@@ -134,7 +134,7 @@ class _CreateEventScreenV2State extends State<CreateEventScreenV2> {
   String? _userPhotoUrl;
   bool _titleAILoading = false;
   bool _descriptionAILoading = false;
-  final GeminiService _geminiService = GeminiService();
+  final GroqService _groqService = GroqService();
 
   @override
   void initState() {
@@ -215,14 +215,14 @@ class _CreateEventScreenV2State extends State<CreateEventScreenV2> {
             dateTime: _startDateTime,
             onTap: () => _pickDateTime(true),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 16),
           DateTimeField(
             label: 'End',
             dateTime: _endDateTime,
             onTap: () => _pickDateTime(false),
           ),
         ],
-        const SizedBox(height: 12),
+        const SizedBox(height: 16),
         DropdownButtonFormField<String>(
           value:
               _selectedCalendarId ??
@@ -243,6 +243,7 @@ class _CreateEventScreenV2State extends State<CreateEventScreenV2> {
           ),
           style: AppTextStyles.bodyText1,
           dropdownColor: AppColors.surface,
+          isExpanded: true,
           items: _availableCalendars
               .map(
                 (cal) => DropdownMenuItem(
@@ -250,10 +251,20 @@ class _CreateEventScreenV2State extends State<CreateEventScreenV2> {
                   child: Text(
                     cal['name'] ?? '',
                     style: AppTextStyles.bodyText1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               )
               .toList(),
+          selectedItemBuilder: (BuildContext context) {
+            return _availableCalendars.map((cal) {
+              return Text(
+                cal['name'] ?? '',
+                style: AppTextStyles.bodyText1,
+                overflow: TextOverflow.ellipsis,
+              );
+            }).toList();
+          },
           onChanged: (val) => setState(() => _selectedCalendarId = val),
         ),
         const SizedBox(height: 12),
@@ -379,6 +390,7 @@ class _CreateEventScreenV2State extends State<CreateEventScreenV2> {
               );
             },
           ),
+          SizedBox(width: 10),
         ],
       ),
       body: KeyboardListener(
@@ -434,7 +446,7 @@ class _CreateEventScreenV2State extends State<CreateEventScreenV2> {
     });
 
     try {
-      final optimizedTitle = await _geminiService.optimizeTitle(currentTitle);
+      final optimizedTitle = await _groqService.optimizeTitle(currentTitle);
       if (mounted) {
         _titleController.text = optimizedTitle;
         _titleController.selection = TextSelection.fromPosition(
@@ -472,10 +484,10 @@ class _CreateEventScreenV2State extends State<CreateEventScreenV2> {
 
       if (currentDescription.isEmpty) {
         // Generate description from title
-        result = await _geminiService.generateDescription(currentTitle);
+        result = await _groqService.generateDescription(currentTitle);
       } else {
         // Optimize existing description
-        result = await _geminiService.optimizeDescription(
+        result = await _groqService.optimizeDescription(
           currentTitle,
           currentDescription,
         );

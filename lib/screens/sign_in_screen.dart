@@ -55,10 +55,6 @@ class _SignInScreenState extends State<SignInScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false, // Remove back button
-        title: Text('Sign in to Google', style: AppTextStyles.headline2),
-      ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: SizedBox(
@@ -66,6 +62,8 @@ class _SignInScreenState extends State<SignInScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              Image.asset('assets/logo/text-logo.png', width: 250),
+              SizedBox(height: 48),
               Text(
                 'You must sign in with Google to save events to your calendar.',
                 style: AppTextStyles.bodyText1,

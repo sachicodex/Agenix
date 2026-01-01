@@ -71,20 +71,20 @@ flutter:
   assets:
     - assets/icons/
     - assets/img/
+    - assets/logo/
 
-  # Custom fonts (Inter) — add font files under assets/fonts/Inter-* if you want the Inter family.
-  # If you prefer default system fonts, remove or populate the below fonts section and add the files to assets/fonts/.
-  # fonts:
-  #   - family: Inter
-  #     fonts:
-  #       - asset: assets/fonts/Inter-Regular.ttf
-  #         weight: 400
-  #       - asset: assets/fonts/Inter-Medium.ttf
-  #         weight: 500
-  #       - asset: assets/fonts/Inter-SemiBold.ttf
-  #         weight: 600
-  #       - asset: assets/fonts/Inter-Bold.ttf
-  #         weight: 700
+  # Custom fonts (Montserrat)
+  fonts:
+    - family: Montserrat
+      fonts:
+        - asset: assets/fonts/Montserrat-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Montserrat-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Montserrat-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Montserrat-Bold.ttf
+          weight: 700
 
   # To add additional assets or fonts, place them under assets/ and update
   # this file accordingly.
