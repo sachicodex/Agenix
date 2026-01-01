@@ -12,8 +12,7 @@ class SyncFeedbackScreen extends StatefulWidget {
   State<SyncFeedbackScreen> createState() => _SyncFeedbackScreenState();
 }
 
-class _SyncFeedbackScreenState extends State<SyncFeedbackScreen>
-    with SingleTickerProviderStateMixin {
+class _SyncFeedbackScreenState extends State<SyncFeedbackScreen> {
   String state = 'syncing';
 
   @override

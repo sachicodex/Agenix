@@ -3,7 +3,7 @@ import 'dart:io' show Platform;
 import '../services/google_calendar_service.dart';
 import 'sign_in_screen.dart';
 import 'calendar_selection_screen.dart';
-import 'create_event_screen_v2.dart';
+import 'create_event_screen.dart';
 
 /// Wrapper widget that checks authentication status and routes accordingly.
 /// Shows sign-in screen if not authenticated, otherwise shows the main app.
@@ -100,7 +100,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       // Show loading screen while checking auth
-      return Scaffold(
+      return const Scaffold(
         body: Center(
           child: CircularProgressIndicator(),
         ),
@@ -123,7 +123,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
     }
 
     // Signed in and has default calendar - show main app
-    return CreateEventScreenV2(
+    return CreateEventScreen(
       onSignOut: _onSignOut,
     );
   }

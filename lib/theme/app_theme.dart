@@ -24,7 +24,6 @@ class AppTheme {
         surface: AppColors.surface,
         error: AppColors.error,
         onPrimary: AppColors.onPrimary,
-        onSecondary: AppColors.onSecondary,
         onBackground: AppColors.onBackground,
         onSurface: AppColors.onSurface,
         onError: AppColors.onError,
@@ -70,8 +69,10 @@ class AppTheme {
       dividerColor: AppColors.surface,
       appBarTheme: AppBarTheme(
         backgroundColor: AppColors.surface,
-        foregroundColor: AppColors.onPrimary,
+        foregroundColor: AppColors.onSurface,
         elevation: 0,
+        centerTitle: false,
+        titleTextStyle: AppTextStyles.headline2,
       ),
     );
   }
