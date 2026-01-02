@@ -42,6 +42,117 @@ class DateTimeField extends StatelessWidget {
   }
 }
 
+// Static constants for optimization
+class _ReminderOptions {
+  static const List<String> values = [
+    '10 minutes',
+    '30 minutes',
+    '1 hour',
+    '1 day',
+  ];
+}
+
+// Extracted reminder widget for better performance
+class _ReminderWidget extends StatelessWidget {
+  final bool reminderOn;
+  final String reminderValue;
+  final ValueChanged<bool> onToggle;
+  final ValueChanged<String> onTimeSelected;
+
+  const _ReminderWidget({
+    required this.reminderOn,
+    required this.reminderValue,
+    required this.onToggle,
+    required this.onTimeSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 48,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Switch(
+                value: reminderOn,
+                onChanged: onToggle,
+                activeColor: AppColors.primary,
+              ),
+              const SizedBox(width: 8),
+              Text('Reminder', style: AppTextStyles.bodyText1),
+            ],
+          ),
+          if (reminderOn)
+            Theme(
+              data: Theme.of(context).copyWith(
+                highlightColor: AppColors.primary.withOpacity(0.15),
+                splashColor: AppColors.primary.withOpacity(0.1),
+                listTileTheme: ListTileThemeData(
+                  selectedColor: AppColors.primary,
+                  selectedTileColor: AppColors.primary.withOpacity(0.15),
+                ),
+              ),
+              child: PopupMenuButton<String>(
+                tooltip: "",
+                child: Container(
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Text(
+                        reminderValue,
+                        style: AppTextStyles.bodyText1.copyWith(
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        Icons.arrow_drop_down,
+                        color: AppColors.onSurface,
+                        size: 20,
+                      ),
+                    ],
+                  ),
+                ),
+                color: AppColors.surface,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                itemBuilder: (BuildContext context) {
+                  return _ReminderOptions.values
+                      .map(
+                        (e) => PopupMenuItem(
+                          value: e,
+                          child: Text(
+                            e,
+                            style: AppTextStyles.bodyText1.copyWith(
+                              fontWeight: FontWeight.w400,
+                            ),
+                          ),
+                        ),
+                      )
+                      .toList();
+                },
+                onSelected: onTimeSelected,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class CreateEventScreen extends StatefulWidget {
   static const routeName = '/create';
   final VoidCallback? onSignOut;
@@ -80,6 +191,19 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildErrorDialog(String title, String content) {
+    return AlertDialog(
+      title: Text(title),
+      content: Text(content),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('OK'),
+        ),
+      ],
     );
   }
 
@@ -125,7 +249,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
 
   final _descController = TextEditingController();
   bool reminderOn = true;
-  String reminderValue = '10 minutes';
+  String reminderValue = _ReminderOptions.values[0]; // '10 minutes'
 
   DateTime _startDateTime = DateTime.now();
   DateTime _endDateTime = DateTime.now().add(const Duration(hours: 1));
@@ -325,7 +449,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
           isExpanded: true,
           items: _availableCalendars
               .map(
-                (cal) => DropdownMenuItem(
+                (cal) => DropdownMenuItem<String>(
                   value: cal['id'],
                   child: Text(
                     cal['name'] ?? '',
@@ -336,13 +460,15 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
               )
               .toList(),
           selectedItemBuilder: (BuildContext context) {
-            return _availableCalendars.map((cal) {
-              return Text(
-                cal['name'] ?? '',
-                style: AppTextStyles.bodyText1,
-                overflow: TextOverflow.ellipsis,
-              );
-            }).toList();
+            return _availableCalendars
+                .map<Widget>(
+                  (cal) => Text(
+                    cal['name'] ?? '',
+                    style: AppTextStyles.bodyText1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                )
+                .toList();
           },
           onChanged: (val) {
             if (val != null && val != _selectedCalendarId) {
@@ -362,44 +488,19 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
           aiLoading: _descriptionAILoading,
         ),
         const SizedBox(height: 12),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Row(
-              children: [
-                Switch(
-                  value: reminderOn,
-                  onChanged: (v) {
-                    if (v != reminderOn) {
-                      setState(() => reminderOn = v);
-                    }
-                  },
-                  activeColor: AppColors.primary,
-                ),
-                const SizedBox(width: 8),
-                Text('Reminder', style: AppTextStyles.bodyText1),
-              ],
-            ),
-            if (reminderOn)
-              DropdownButton<String>(
-                value: reminderValue,
-                items: const ['10 minutes', '30 minutes', '1 hour', '1 day']
-                    .map(
-                      (e) => DropdownMenuItem(
-                        value: e,
-                        child: Text(e, style: AppTextStyles.bodyText1),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (v) {
-                  if (v != null && v != reminderValue) {
-                    setState(() => reminderValue = v);
-                  }
-                },
-                style: AppTextStyles.bodyText1,
-                dropdownColor: AppColors.surface,
-              ),
-          ],
+        _ReminderWidget(
+          reminderOn: reminderOn,
+          reminderValue: reminderValue,
+          onToggle: (v) {
+            if (v != reminderOn) {
+              setState(() => reminderOn = v);
+            }
+          },
+          onTimeSelected: (v) {
+            if (v != reminderValue) {
+              setState(() => reminderValue = v);
+            }
+          },
         ),
         const SizedBox(height: 24),
         ElevatedButton.icon(
@@ -430,9 +531,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                   radius: 16,
                 )
               : const Icon(Icons.account_circle, size: 32),
-          tooltip: _signedIn
-              ? (_userEmail ?? 'Google Account')
-              : 'Not connected',
+
           onPressed: () {
             Navigator.pushNamed(context, SettingsScreen.routeName);
           },
@@ -572,31 +671,17 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       if (_titleController.text.trim().isEmpty) {
         await showDialog(
           context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Error'),
-            content: const Text('Event title is required.'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('OK'),
-              ),
-            ],
-          ),
+          builder: (context) =>
+              _buildErrorDialog('Error', 'Event title is required.'),
         );
         return;
       }
       if (_selectedCalendarId == null || _selectedCalendarId!.isEmpty) {
         await showDialog(
           context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Failed to save to Google Calendar'),
-            content: const Text('Please choose a calendar.'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('OK'),
-              ),
-            ],
+          builder: (context) => _buildErrorDialog(
+            'Failed to save to Google Calendar',
+            'Please choose a calendar.',
           ),
         );
         return;
@@ -605,16 +690,8 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       if (!_endDateTime.isAfter(_startDateTime)) {
         await showDialog(
           context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Error'),
-            content: const Text('End time must be after start time.'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('OK'),
-              ),
-            ],
-          ),
+          builder: (context) =>
+              _buildErrorDialog('Error', 'End time must be after start time.'),
         );
         return;
       }
@@ -663,7 +740,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
             _startDateTime = DateTime.now();
             _endDateTime = DateTime.now().add(const Duration(hours: 1));
             reminderOn = true;
-            reminderValue = '10 minutes';
+            reminderValue = _ReminderOptions.values[0]; // '10 minutes'
             // Reset calendar selection flag so default calendar can be loaded again
             _userHasSelectedCalendar = false;
           });

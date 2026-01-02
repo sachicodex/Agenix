@@ -420,9 +420,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                       ? Colors.green
                                       : AppColors.primary,
                                   onPressed: _saveApiKey,
-                                  tooltip: _apiKeyController.text.trim().isEmpty
-                                      ? 'Remove API key'
-                                      : 'Save API key',
                                 ),
                         ),
                         style: AppTextStyles.bodyText1,
