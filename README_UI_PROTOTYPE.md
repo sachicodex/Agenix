@@ -1,4 +1,4 @@
-NUVEX Flow — UI Prototype (Flutter)
+Agenix — UI Prototype (Flutter)
 
 What this includes:
 - App theme tokens: `lib/theme/app_theme.dart` (colors, radii, motion)

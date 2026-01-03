@@ -31,9 +31,9 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    return MaterialApp( 
       debugShowCheckedModeBanner: false,
-      title: 'Nuvex Flow',
+      title: 'Agenix',
       theme: AppTheme.build(),
       home: const AuthWrapper(),
       routes: {

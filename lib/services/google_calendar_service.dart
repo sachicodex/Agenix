@@ -947,7 +947,7 @@ class GoogleCalendarService {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>$escapedTitle - Nuvex Flow</title>
+  <title>$escapedTitle - Agenix</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap');
     * {
@@ -1027,7 +1027,7 @@ class GoogleCalendarService {
 </head>
 <body>
   <div class="container">
-    <div class="logo">NUVEX FLOW</div>
+    <div class="logo">AGENIX</div>
     <div class="subtitle">Streamline your calendar management</div>
     <div class="icon">$iconSymbol</div>
     <h1>$escapedTitle</h1>

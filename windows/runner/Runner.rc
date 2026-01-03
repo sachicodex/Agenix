@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "Sachicodex" "\0"
-            VALUE "FileDescription", "Nuvex Flow - Calendar Management Application" "\0"
+            VALUE "FileDescription", "Agenix - Calendar Management Application" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "nuvex_flow" "\0"
+            VALUE "InternalName", "agenix" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2025 Sachicodex. All rights reserved." "\0"
-            VALUE "OriginalFilename", "nuvex_flow.exe" "\0"
-            VALUE "ProductName", "Nuvex Flow" "\0"
+            VALUE "OriginalFilename", "agenix.exe" "\0"
+            VALUE "ProductName", "Agenix" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

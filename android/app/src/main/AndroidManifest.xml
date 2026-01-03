@@ -1,7 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.nuvex.nuvex_flow">
+    package="com.agenix.agenix">
     <application
-        android:label="Nuvex Flow"
+        android:label="Agenix"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

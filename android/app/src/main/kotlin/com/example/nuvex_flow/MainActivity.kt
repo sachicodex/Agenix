@@ -1,4 +1,4 @@
-package com.nuvex.nuvex_flow
+package com.agenix.agenix
 
 import io.flutter.embedding.android.FlutterActivity
 

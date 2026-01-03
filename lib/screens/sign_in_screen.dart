@@ -62,7 +62,7 @@ class _SignInScreenState extends State<SignInScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Image.asset('assets/logo/text-logo.png', width: 250),
+              Image.asset('assets/logo/agenix.png', width: 250),
               SizedBox(height: 48),
               Text(
                 'You must sign in with Google to save events to your calendar.',

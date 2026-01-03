@@ -1,5 +1,5 @@
-name: nuvex_flow
-description: "Nuvex Flow - Streamline your calendar management and event creation with AI-powered assistance. Sync seamlessly with Google Calendar and manage your schedule efficiently."
+name: agenix
+description: "Agenix - Streamline your calendar management and event creation with AI-powered assistance. Sync seamlessly with Google Calendar and manage your schedule efficiently."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -91,12 +91,12 @@ flutter:
 
 # MSIX configuration for Windows packaging
 msix_config:
-  display_name: Nuvex Flow
+  display_name: Agenix
   publisher_display_name: Sachicodex
   publisher: CN=Sachicodex
-  identity_name: com.nuvex.nuvexflow
+  identity_name: com.agenix.agenix
   msix_version: 1.0.17.4
-  logo_path: assets/logo/logo.png
-  start_menu_icon_path: assets/logo/logo.png
-  tile_icon_path: assets/logo/logo.png
+  logo_path: assets/logo/agenix-windows.png
+  start_menu_icon_path: assets/logo/agenix-windows.png
+  tile_icon_path: assets/logo/agenix-windows.png
   sign_tool_options: /tr http://timestamp.digicert.com /td sha256 /fd sha256
