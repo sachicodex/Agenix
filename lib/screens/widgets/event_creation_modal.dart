@@ -18,6 +18,7 @@ class EventCreationModal extends ConsumerStatefulWidget {
   final DateTime? endTime;
   final CalendarEvent? existingEvent;
   final VoidCallback onEventCreated;
+  final bool renderAsBottomSheetContent;
 
   const EventCreationModal({
     super.key,
@@ -25,6 +26,7 @@ class EventCreationModal extends ConsumerStatefulWidget {
     this.endTime,
     this.existingEvent,
     required this.onEventCreated,
+    this.renderAsBottomSheetContent = false,
   });
 
   @override
@@ -442,144 +444,206 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
     return '10 minutes';
   }
 
+  Widget _buildFormContent(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          widget.existingEvent == null ? 'Create Event' : 'Edit Event',
+          style: AppTextStyles.headline2,
+        ),
+        const SizedBox(height: 24),
+        LargeTextField(
+          controller: _titleController,
+          autofocus: false,
+          hint: 'Event title',
+          label: 'Title',
+          requiredField: true,
+          onAIClick: _optimizeTitle,
+          aiLoading: _titleAILoading,
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: DateTimeField(
+                label: 'Start',
+                dateTime: _startTime,
+                onTap: () => _pickDateTime(true),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: DateTimeField(
+                label: 'End',
+                dateTime: _endTime,
+                onTap: () => _pickDateTime(false),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        DropdownButtonFormField<String>(
+          value:
+              _selectedCalendarId ??
+              (_availableCalendars.isNotEmpty
+                  ? _availableCalendars.first['id'] as String?
+                  : null),
+          decoration: InputDecoration(
+            labelText: 'Select Calendar',
+            labelStyle: AppTextStyles.bodyText1.copyWith(
+              color: AppColors.onSurface.withValues(alpha: 0.7),
+            ),
+            filled: true,
+            fillColor: AppColors.surface,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+          ),
+          style: AppTextStyles.bodyText1,
+          dropdownColor: AppColors.surface,
+          isExpanded: true,
+          items: _availableCalendars
+              .map(
+                (cal) => DropdownMenuItem<String>(
+                  value: cal['id'] as String?,
+                  child: Text(
+                    (cal['name'] as String?) ?? '',
+                    style: AppTextStyles.bodyText1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              )
+              .toList(),
+          selectedItemBuilder: (BuildContext context) {
+            return _availableCalendars
+                .map<Widget>(
+                  (cal) => Text(
+                    (cal['name'] as String?) ?? '',
+                    style: AppTextStyles.bodyText1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                )
+                .toList();
+          },
+          onChanged: (val) {
+            if (val != null && val != _selectedCalendarId) {
+              setState(() {
+                _selectedCalendarId = val;
+                _userHasSelectedCalendar = true;
+              });
+            }
+          },
+        ),
+        const SizedBox(height: 12),
+        ExpandableDescription(
+          controller: _descriptionController,
+          hint: 'Description ( Optional )',
+          onAIClick: _optimizeOrGenerateDescription,
+          aiLoading: _descriptionAILoading,
+        ),
+        const SizedBox(height: 24),
+        ReminderField(
+          reminderOn: reminderOn,
+          reminderValue: reminderValue,
+          onToggle: (v) {
+            if (v != reminderOn) {
+              setState(() => reminderOn = v);
+            }
+          },
+          onTimeSelected: (v) {
+            if (v != reminderValue) {
+              setState(() => reminderValue = v);
+            }
+          },
+        ),
+        const SizedBox(height: 24),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            const SizedBox(width: 8),
+            ElevatedButton(onPressed: _saveEvent, child: const Text('Save')),
+          ],
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final isMobile = media.size.width < 700;
+
+    Widget mobilePanel({required bool includeHandle}) {
+      final keyboardInset = media.viewInsets.bottom;
+      final maxHeight = media.size.height * 0.94;
+      return AnimatedPadding(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        padding: EdgeInsets.only(bottom: keyboardInset),
+        child: Material(
+          color: AppColors.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          clipBehavior: Clip.antiAlias,
+          child: SafeArea(
+            top: true,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                minWidth: media.size.width,
+                maxWidth: media.size.width,
+                maxHeight: maxHeight,
+              ),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (includeHandle) ...[
+                      Center(
+                        child: Container(
+                          width: 38,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: AppColors.onSurface.withValues(alpha: 0.24),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    _buildFormContent(context),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (widget.renderAsBottomSheetContent) {
+      return mobilePanel(includeHandle: true);
+    }
+
+    if (isMobile) {
+      return Align(
+        alignment: Alignment.bottomCenter,
+        child: mobilePanel(includeHandle: true),
+      );
+    }
+
     return Dialog(
       backgroundColor: AppColors.surface,
       child: Container(
         width: 500,
         padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              widget.existingEvent == null ? 'Create Event' : 'Edit Event',
-              style: AppTextStyles.headline2,
-            ),
-            const SizedBox(height: 24),
-            LargeTextField(
-              controller: _titleController,
-              autofocus: true,
-              hint: 'Event title',
-              label: 'Title',
-              requiredField: true,
-              onAIClick: _optimizeTitle,
-              aiLoading: _titleAILoading,
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: DateTimeField(
-                    label: 'Start',
-                    dateTime: _startTime,
-                    onTap: () => _pickDateTime(true),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: DateTimeField(
-                    label: 'End',
-                    dateTime: _endTime,
-                    onTap: () => _pickDateTime(false),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              value:
-                  _selectedCalendarId ??
-                  (_availableCalendars.isNotEmpty
-                      ? _availableCalendars.first['id'] as String?
-                      : null),
-              decoration: InputDecoration(
-                labelText: 'Select Calendar',
-                labelStyle: AppTextStyles.bodyText1.copyWith(
-                  color: AppColors.onSurface.withOpacity(0.7),
-                ),
-                filled: true,
-                fillColor: AppColors.surface,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-              style: AppTextStyles.bodyText1,
-              dropdownColor: AppColors.surface,
-              isExpanded: true,
-              items: _availableCalendars
-                  .map(
-                    (cal) => DropdownMenuItem<String>(
-                      value: cal['id'] as String?,
-                      child: Text(
-                        (cal['name'] as String?) ?? '',
-                        style: AppTextStyles.bodyText1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  )
-                  .toList(),
-              selectedItemBuilder: (BuildContext context) {
-                return _availableCalendars
-                    .map<Widget>(
-                      (cal) => Text(
-                        (cal['name'] as String?) ?? '',
-                        style: AppTextStyles.bodyText1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    )
-                    .toList();
-              },
-              onChanged: (val) {
-                if (val != null && val != _selectedCalendarId) {
-                  setState(() {
-                    _selectedCalendarId = val;
-                    _userHasSelectedCalendar = true;
-                  });
-                }
-              },
-            ),
-            const SizedBox(height: 12),
-            ExpandableDescription(
-              controller: _descriptionController,
-              hint: 'Description ( Optional )',
-              onAIClick: _optimizeOrGenerateDescription,
-              aiLoading: _descriptionAILoading,
-            ),
-            const SizedBox(height: 24),
-            ReminderField(
-              reminderOn: reminderOn,
-              reminderValue: reminderValue,
-              onToggle: (v) {
-                if (v != reminderOn) {
-                  setState(() => reminderOn = v);
-                }
-              },
-              onTimeSelected: (v) {
-                if (v != reminderValue) {
-                  setState(() => reminderValue = v);
-                }
-              },
-            ),
-            const SizedBox(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancel'),
-                ),
-                const SizedBox(width: 8),
-                ElevatedButton(
-                  onPressed: _saveEvent,
-                  child: const Text('Save'),
-                ),
-              ],
-            ),
-          ],
-        ),
+        child: _buildFormContent(context),
       ),
     );
   }

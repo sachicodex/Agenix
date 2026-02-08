@@ -264,7 +264,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
       children: [
         LargeTextField(
           controller: _titleController,
-          autofocus: true,
+          autofocus: false,
           hint: 'Event title',
           label: 'Title',
           requiredField: true,

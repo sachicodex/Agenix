@@ -88,7 +88,7 @@ class _QuickCreatePopoverState extends State<QuickCreatePopover> {
                     // Title input (auto-focused)
                     TextField(
                       controller: _titleController,
-                      autofocus: true,
+                      autofocus: false,
                       decoration: const InputDecoration(
                         hintText: 'Add title',
                         border: InputBorder.none,
@@ -144,4 +144,3 @@ class _QuickCreatePopoverState extends State<QuickCreatePopover> {
     );
   }
 }
-

@@ -61,13 +61,30 @@ class EventDetailsPopover extends ConsumerWidget {
 
   Future<void> _editEvent(BuildContext context) async {
     Navigator.pop(context);
-    showDialog(
-      context: context,
-      builder: (context) => EventCreationModal(
-        existingEvent: event,
-        onEventCreated: onEventUpdated,
-      ),
-    );
+    final isMobile = MediaQuery.of(context).size.width < 700;
+    if (isMobile) {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        enableDrag: true,
+        showDragHandle: false,
+        backgroundColor: Colors.transparent,
+        builder: (context) => EventCreationModal(
+          existingEvent: event,
+          onEventCreated: onEventUpdated,
+          renderAsBottomSheetContent: true,
+        ),
+      );
+    } else {
+      await showDialog(
+        context: context,
+        builder: (context) => EventCreationModal(
+          existingEvent: event,
+          onEventCreated: onEventUpdated,
+        ),
+      );
+    }
   }
 
   @override
