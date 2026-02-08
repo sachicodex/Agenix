@@ -1,15 +1,38 @@
 import 'package:flutter/material.dart';
 
 class AppColors {
-  static const Color primary = Color(0xFFD99A00);
-  static const Color secondary = Color(0xFFFFA000);
-  static const Color background = Color(0xFF030303); // dark background
-  static const Color surface = Color(0xFF161616); // dark card/surface
-  static const Color error = Color(0xFFD32F2F);
-  static const Color onPrimary = Color(0xFF0F172A);
-  static const Color onBackground = Color(0xFFF5F5F5); // light text on dark
-  static const Color onSurface = Color(0xFFD1D5DB); // light text on surface
+  // Google Calendar color scheme
+  static const Color primary = Color(0xFF1A73E8); // Google Blue
+  static const Color secondary = Color(0xFF34A853); // Google Green
+  static const Color background = Color(0xFFFFFFFF); // White background (light mode)
+  static const Color surface = Color(0xFFFAFAFA); // Light gray surface
+  static const Color error = Color(0xFFEA4335); // Google Red
+  static const Color onPrimary = Color(0xFFFFFFFF);
+  static const Color onBackground = Color(0xFF202124); // Dark text on light
+  static const Color onSurface = Color(0xFF5F6368); // Gray text
   static const Color onError = Color(0xFFFFFFFF);
+  
+  // Google Calendar specific colors
+  static const Color borderColor = Color(0xFFDADCE0); // Light gray border
+  static const Color dividerColor = Color(0xFFE8EAED); // Divider color
+  static const Color hoverColor = Color(0xFFF1F3F4); // Hover state
+  static const Color selectedColor = Color(0xFFE8F0FE); // Selected state (light blue)
+  static const Color timeTextColor = Color(0xFF5F6368); // Time label color
+  
+  // Google Calendar event colors (matching Google's palette)
+  static const List<Color> eventColors = [
+    Color(0xFF7986CB), // Lavender
+    Color(0xFF33B679), // Green
+    Color(0xFF8E24AA), // Purple
+    Color(0xFFE67C73), // Red
+    Color(0xFFF6BF26), // Yellow
+    Color(0xFFF4511E), // Orange
+    Color(0xFF039BE5), // Blue
+    Color(0xFF0097A7), // Teal
+    Color(0xFFAD1457), // Pink
+    Color(0xFF616161), // Grey
+    Color(0xFF795548), // Brown
+  ];
 }
 
 class AppTextStyles {

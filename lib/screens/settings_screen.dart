@@ -24,7 +24,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _signedIn = false;
   String?
   _previousApiKey; // Store previous key to restore on validation failure
-  List<Map<String, String>> _availableCalendars = [];
+  List<Map<String, dynamic>> _availableCalendars = [];
   String? _selectedCalendarId;
   String? _defaultCalendarName;
   bool _loadingCalendars = false;
@@ -272,24 +272,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     try {
       final selectedCalendar = _availableCalendars.firstWhere(
-        (cal) => cal['id'] == _selectedCalendarId,
-        orElse: () => {'id': '', 'name': ''},
+        (cal) => (cal['id'] as String?) == _selectedCalendarId,
+        orElse: () => {'id': '', 'name': '', 'color': 0xFF039BE5},
       );
 
-      if (selectedCalendar['id']!.isEmpty) {
+      if ((selectedCalendar['id'] as String?)?.isEmpty ?? true) {
         _showErrorPopup('Invalid calendar selection');
         return;
       }
 
       final storage = GoogleCalendarService.instance.storage;
       await storage.saveDefaultCalendar(
-        selectedCalendar['id']!,
-        selectedCalendar['name'] ?? 'Unknown',
+        selectedCalendar['id'] as String,
+        (selectedCalendar['name'] as String?) ?? 'Unknown',
       );
 
       if (mounted) {
         setState(() {
-          _defaultCalendarName = selectedCalendar['name'];
+          _defaultCalendarName = selectedCalendar['name'] as String?;
         });
       }
     } catch (e) {
@@ -495,9 +495,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             items: _availableCalendars
                                 .map(
                                   (cal) => DropdownMenuItem(
-                                    value: cal['id'],
+                                    value: cal['id'] as String?,
                                     child: Text(
-                                      cal['name'] ?? '',
+                                      (cal['name'] as String?) ?? '',
                                       style: AppTextStyles.bodyText1,
                                       overflow: TextOverflow.ellipsis,
                                     ),

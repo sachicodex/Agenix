@@ -38,9 +38,13 @@ Return only the optimized title:''';
     }
   }
 
-  /// Optimize description based on title and existing description
-  Future<String> optimizeDescription(String title, String description) async {
-    if (title.trim().isEmpty) {
+  /// Optimize description based on original user title, AI-generated title, and existing description
+  Future<String> optimizeDescription(
+    String originalUserTitle,
+    String aiGeneratedTitle,
+    String description,
+  ) async {
+    if (originalUserTitle.trim().isEmpty && aiGeneratedTitle.trim().isEmpty) {
       return description;
     }
 
@@ -50,7 +54,7 @@ You are a professional text optimizer. Your task is to optimize the following Go
 
 Rules:
 - Make it clear, professional, and well-formatted
-- Use the title as context
+- Use both the original user title and the AI-generated title as context
 - Keep it concise but informative
 - Format it properly for Google Calendar
 - Return ONLY the optimized description text
@@ -58,7 +62,8 @@ Rules:
 - Do NOT write "Here's a suitable description:" or "Optimized description:" or similar text
 - Return ONLY the description itself
 
-Event Title: "$title"
+Original User Title: "$originalUserTitle"
+AI-Generated Title: "$aiGeneratedTitle"
 Current Description: "$description"
 
 Return only the optimized description:''';
@@ -71,18 +76,22 @@ Return only the optimized description:''';
     }
   }
 
-  /// Generate description automatically from title
-  Future<String> generateDescription(String title) async {
-    if (title.trim().isEmpty) {
+  /// Generate description automatically from original user title and AI-generated title
+  Future<String> generateDescription(
+    String originalUserTitle,
+    String aiGeneratedTitle,
+  ) async {
+    if (originalUserTitle.trim().isEmpty && aiGeneratedTitle.trim().isEmpty) {
       return '';
     }
 
     final prompt =
         '''
-You are a professional content generator. Your task is to generate a description for a Google Calendar event based on the following title.
+You are a professional content generator. Your task is to generate a description for a Google Calendar event based on the following titles.
 
 Rules:
 - Make it professional, concise, and informative
+- Use both the original user title and the AI-generated title as context
 - Keep it brief (2-3 sentences max)
 - Format it properly for Google Calendar
 - Return ONLY the description text
@@ -90,7 +99,8 @@ Rules:
 - Do NOT write "Here's a suitable description:" or "Description:" or similar text
 - Return ONLY the description itself
 
-Event Title: "$title"
+Original User Title: "$originalUserTitle"
+AI-Generated Title: "$aiGeneratedTitle"
 
 Return only the description:''';
 

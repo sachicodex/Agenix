@@ -4,6 +4,7 @@ import 'screens/auth_wrapper.dart';
 import 'screens/create_event_screen.dart';
 import 'screens/sync_feedback_screen.dart';
 import 'screens/settings_screen.dart';
+import 'screens/calendar_day_view_screen.dart';
 import 'theme/app_theme.dart';
 import 'services/google_calendar_service.dart';
 
@@ -31,7 +32,7 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp( 
+    return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Agenix',
       theme: AppTheme.build(),
@@ -40,6 +41,7 @@ class MyApp extends StatelessWidget {
         CreateEventScreen.routeName: (_) => const CreateEventScreen(),
         SyncFeedbackScreen.routeName: (_) => const SyncFeedbackScreen(),
         SettingsScreen.routeName: (_) => const SettingsScreen(),
+        '/calendar': (_) => const CalendarDayViewScreen(),
       },
     );
   }

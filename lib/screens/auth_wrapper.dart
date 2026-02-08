@@ -122,7 +122,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
       );
     }
 
-    // Signed in and has default calendar - show main app
+    // Signed in and has default calendar - show main app (CreateEventScreen)
     return CreateEventScreen(
       onSignOut: _onSignOut,
     );

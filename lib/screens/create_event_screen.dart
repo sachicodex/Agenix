@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:intl/intl.dart';
 import '../widgets/rounded_card.dart';
 import '../widgets/form_fields.dart';
+import '../widgets/date_time_field.dart';
+import '../widgets/reminder_field.dart';
 import '../services/google_calendar_service.dart';
 import '../services/groq_service.dart';
 import '../services/api_key_storage_service.dart';
@@ -10,148 +11,6 @@ import '../theme/app_colors.dart';
 import 'sign_in_screen.dart';
 import 'settings_screen.dart';
 
-class DateTimeField extends StatelessWidget {
-  final String label;
-  final DateTime dateTime;
-  final VoidCallback onTap;
-
-  const DateTimeField({
-    super.key,
-    required this.label,
-    required this.dateTime,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: InputDecorator(
-        decoration: InputDecoration(
-          labelText: label,
-          labelStyle: AppTextStyles.bodyText1.copyWith(
-            color: AppColors.onSurface.withOpacity(0.7),
-          ),
-        ),
-        child: Text(
-          DateFormat('EEE - h:mm a').format(dateTime.toLocal()),
-          style: AppTextStyles.bodyText1,
-        ),
-      ),
-    );
-  }
-}
-
-// Static constants for optimization
-class _ReminderOptions {
-  static const List<String> values = [
-    '10 minutes',
-    '30 minutes',
-    '1 hour',
-    '1 day',
-  ];
-}
-
-// Extracted reminder widget for better performance
-class _ReminderWidget extends StatelessWidget {
-  final bool reminderOn;
-  final String reminderValue;
-  final ValueChanged<bool> onToggle;
-  final ValueChanged<String> onTimeSelected;
-
-  const _ReminderWidget({
-    required this.reminderOn,
-    required this.reminderValue,
-    required this.onToggle,
-    required this.onTimeSelected,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 48,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Switch(
-                value: reminderOn,
-                onChanged: onToggle,
-                activeColor: AppColors.primary,
-              ),
-              const SizedBox(width: 8),
-              Text('Reminder', style: AppTextStyles.bodyText1),
-            ],
-          ),
-          if (reminderOn)
-            Theme(
-              data: Theme.of(context).copyWith(
-                highlightColor: AppColors.primary.withOpacity(0.15),
-                splashColor: AppColors.primary.withOpacity(0.1),
-                listTileTheme: ListTileThemeData(
-                  selectedColor: AppColors.primary,
-                  selectedTileColor: AppColors.primary.withOpacity(0.15),
-                ),
-              ),
-              child: PopupMenuButton<String>(
-                tooltip: "",
-                child: Container(
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Text(
-                        reminderValue,
-                        style: AppTextStyles.bodyText1.copyWith(
-                          fontWeight: FontWeight.w400,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Icon(
-                        Icons.arrow_drop_down,
-                        color: AppColors.onSurface,
-                        size: 20,
-                      ),
-                    ],
-                  ),
-                ),
-                color: AppColors.surface,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                itemBuilder: (BuildContext context) {
-                  return _ReminderOptions.values
-                      .map(
-                        (e) => PopupMenuItem(
-                          value: e,
-                          child: Text(
-                            e,
-                            style: AppTextStyles.bodyText1.copyWith(
-                              fontWeight: FontWeight.w400,
-                            ),
-                          ),
-                        ),
-                      )
-                      .toList();
-                },
-                onSelected: onTimeSelected,
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
 
 class CreateEventScreen extends StatefulWidget {
   static const routeName = '/create';
@@ -210,7 +69,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   final _titleController = TextEditingController();
   // Removed location field
   String? _selectedCalendarId;
-  List<Map<String, String>> _availableCalendars = [];
+  List<Map<String, dynamic>> _availableCalendars = [];
   bool _userHasSelectedCalendar =
       false; // Track if user manually selected a calendar
 
@@ -220,7 +79,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       // Filter out calendars with name "Calendar" (this is the default primary calendar
       // that Google creates automatically, but it's confusing to show it as just "Calendar")
       final filteredCalendars = calendars.where((cal) {
-        final name = cal['name'] ?? '';
+        final name = (cal['name'] as String?) ?? '';
         return name.isNotEmpty && name.toLowerCase() != 'calendar';
       }).toList();
 
@@ -228,7 +87,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         setState(() {
           _availableCalendars = filteredCalendars;
           if (_availableCalendars.isNotEmpty && _selectedCalendarId == null) {
-            _selectedCalendarId = _availableCalendars.first['id'];
+            _selectedCalendarId = _availableCalendars.first['id'] as String?;
           }
         });
       }
@@ -237,7 +96,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       if (mounted) {
         setState(() {
           _availableCalendars = [
-            {'id': 'primary', 'name': 'Primary Calendar'},
+            {'id': 'primary', 'name': 'Primary Calendar', 'color': 0xFF039BE5},
           ];
           if (_selectedCalendarId == null) {
             _selectedCalendarId = 'primary';
@@ -249,7 +108,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
 
   final _descController = TextEditingController();
   bool reminderOn = true;
-  String reminderValue = _ReminderOptions.values[0]; // '10 minutes'
+  String reminderValue = ReminderOptions.values[0]; // '10 minutes'
 
   DateTime _startDateTime = DateTime.now();
   DateTime _endDateTime = DateTime.now().add(const Duration(hours: 1));
@@ -263,6 +122,8 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   String? _userPhotoUrl;
   bool _titleAILoading = false;
   bool _descriptionAILoading = false;
+  String?
+  _originalUserTitle; // Store original user input title before AI generation
   final GroqService _groqService = GroqService();
   final ApiKeyStorageService _apiKeyStorage = ApiKeyStorageService();
   late final FocusNode _keyboardFocusNode;
@@ -318,7 +179,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       if (defaultCalendarId != null && defaultCalendarId.isNotEmpty) {
         // Check if the default calendar is in the available calendars list
         final calendarExists = _availableCalendars.any(
-          (cal) => cal['id'] == defaultCalendarId,
+          (cal) => (cal['id'] as String?) == defaultCalendarId,
         );
         // Only set default calendar if user hasn't manually selected one
         // and the default calendar exists in the available calendars
@@ -430,7 +291,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
           value:
               _selectedCalendarId ??
               (_availableCalendars.isNotEmpty
-                  ? _availableCalendars.first['id']
+                  ? _availableCalendars.first['id'] as String?
                   : null),
           decoration: InputDecoration(
             labelText: 'Select Calendar',
@@ -450,9 +311,9 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
           items: _availableCalendars
               .map(
                 (cal) => DropdownMenuItem<String>(
-                  value: cal['id'],
+                  value: cal['id'] as String?,
                   child: Text(
-                    cal['name'] ?? '',
+                    (cal['name'] as String?) ?? '',
                     style: AppTextStyles.bodyText1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -463,7 +324,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
             return _availableCalendars
                 .map<Widget>(
                   (cal) => Text(
-                    cal['name'] ?? '',
+                    (cal['name'] as String?) ?? '',
                     style: AppTextStyles.bodyText1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -488,7 +349,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
           aiLoading: _descriptionAILoading,
         ),
         const SizedBox(height: 12),
-        _ReminderWidget(
+        ReminderField(
           reminderOn: reminderOn,
           reminderValue: reminderValue,
           onToggle: (v) {
@@ -521,6 +382,13 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         child: Text('Create Event', style: AppTextStyles.headline2),
       ),
       actions: [
+        IconButton(
+          icon: const Icon(Icons.calendar_month),
+          tooltip: 'View Calendar',
+          onPressed: () {
+            Navigator.pushNamed(context, '/calendar');
+          },
+        ),
         IconButton(
           icon: _userPhotoUrl != null
               ? CircleAvatar(
@@ -582,6 +450,11 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       return;
     }
 
+    // Store original user input title before AI generation
+    if (_originalUserTitle == null || _originalUserTitle!.isEmpty) {
+      _originalUserTitle = currentTitle;
+    }
+
     setState(() {
       _titleAILoading = true;
     });
@@ -622,6 +495,11 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       return;
     }
 
+    // Store original user input title if not already stored
+    if (_originalUserTitle == null || _originalUserTitle!.isEmpty) {
+      _originalUserTitle = currentTitle;
+    }
+
     setState(() {
       _descriptionAILoading = true;
     });
@@ -630,13 +508,21 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       final currentDescription = _descController.text.trim();
       String result;
 
+      // Get the original user title (if available) and current AI-generated title
+      final originalTitle = _originalUserTitle ?? currentTitle;
+      final aiGeneratedTitle = currentTitle;
+
       if (currentDescription.isEmpty) {
-        // Generate description from title
-        result = await _groqService.generateDescription(currentTitle);
+        // Generate description using both original user title and AI-generated title
+        result = await _groqService.generateDescription(
+          originalTitle,
+          aiGeneratedTitle,
+        );
       } else {
-        // Optimize existing description
+        // Optimize existing description using both titles
         result = await _groqService.optimizeDescription(
-          currentTitle,
+          originalTitle,
+          aiGeneratedTitle,
           currentDescription,
         );
       }
@@ -737,10 +623,11 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
           setState(() {
             _titleController.clear();
             _descController.clear();
+            _originalUserTitle = null; // Reset original user title
             _startDateTime = DateTime.now();
             _endDateTime = DateTime.now().add(const Duration(hours: 1));
             reminderOn = true;
-            reminderValue = _ReminderOptions.values[0]; // '10 minutes'
+            reminderValue = ReminderOptions.values[0]; // '10 minutes'
             // Reset calendar selection flag so default calendar can be loaded again
             _userHasSelectedCalendar = false;
           });

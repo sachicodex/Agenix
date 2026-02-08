@@ -27,7 +27,7 @@ class AppTheme {
         onBackground: AppColors.onBackground,
         onSurface: AppColors.onSurface,
         onError: AppColors.onError,
-        brightness: Brightness.dark,
+        brightness: Brightness.light, // Google Calendar uses light mode
       ),
       scaffoldBackgroundColor: AppColors.background,
       fontFamily: 'Montserrat',

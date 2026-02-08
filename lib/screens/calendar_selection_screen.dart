@@ -19,7 +19,7 @@ class CalendarSelectionScreen extends StatefulWidget {
 }
 
 class _CalendarSelectionScreenState extends State<CalendarSelectionScreen> {
-  List<Map<String, String>> _calendars = [];
+  List<Map<String, dynamic>> _calendars = [];
   String? _selectedCalendarId;
   bool _loading = true;
   String? _error;
@@ -44,7 +44,7 @@ class _CalendarSelectionScreenState extends State<CalendarSelectionScreen> {
       if (mounted) {
         // Filter out calendars with name "Calendar" (not a real calendar)
         final filteredCalendars = calendars.where((cal) {
-          final name = cal['name'] ?? '';
+          final name = (cal['name'] as String?) ?? '';
           return name.isNotEmpty && name.toLowerCase() != 'calendar';
         }).toList();
 
@@ -52,7 +52,7 @@ class _CalendarSelectionScreenState extends State<CalendarSelectionScreen> {
           setState(() {
             _calendars = filteredCalendars;
             if (_calendars.isNotEmpty && _selectedCalendarId == null) {
-              _selectedCalendarId = _calendars.first['id'];
+              _selectedCalendarId = _calendars.first['id'] as String?;
             }
             _loading = false;
           });
@@ -223,14 +223,14 @@ class _CalendarSelectionScreenState extends State<CalendarSelectionScreen> {
                       itemBuilder: (context, index) {
                         final calendar = _calendars[index];
                         final isSelected =
-                            calendar['id'] == _selectedCalendarId;
+                            (calendar['id'] as String?) == _selectedCalendarId;
                         return Card(
                           color: isSelected
                               ? AppColors.primary.withOpacity(0.2)
                               : AppColors.surface,
                           child: ListTile(
                             title: Text(
-                              calendar['name'] ?? 'Unknown',
+                              (calendar['name'] as String?) ?? 'Unknown',
                               style: AppTextStyles.bodyText1.copyWith(
                                 fontWeight: isSelected
                                     ? FontWeight.bold
@@ -238,7 +238,7 @@ class _CalendarSelectionScreenState extends State<CalendarSelectionScreen> {
                               ),
                             ),
                             leading: Radio<String>(
-                              value: calendar['id'] ?? '',
+                              value: (calendar['id'] as String?) ?? '',
                               groupValue: _selectedCalendarId,
                               onChanged: (value) {
                                 if (value != null &&
@@ -250,9 +250,10 @@ class _CalendarSelectionScreenState extends State<CalendarSelectionScreen> {
                               },
                             ),
                             onTap: () {
-                              if (calendar['id'] != _selectedCalendarId) {
+                              final calId = calendar['id'] as String?;
+                              if (calId != null && calId != _selectedCalendarId) {
                                 setState(() {
-                                  _selectedCalendarId = calendar['id'];
+                                  _selectedCalendarId = calId;
                                 });
                               }
                             },
