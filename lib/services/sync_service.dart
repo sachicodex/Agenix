@@ -33,7 +33,7 @@ class SyncService {
 
   Timer? _timer;
   DateTimeRange? _currentRange;
-  String? _calendarId;
+  String? _defaultCalendarId;
   SharedPreferences? _prefs;
 
   final StreamController<SyncStatus> _statusController =
@@ -48,7 +48,7 @@ class SyncService {
     required String calendarId,
   }) async {
     _currentRange = range;
-    _calendarId = calendarId;
+    _defaultCalendarId = calendarId;
     _prefs ??= await SharedPreferences.getInstance();
 
     await fullSync(range: range, calendarId: calendarId);
@@ -65,9 +65,9 @@ class SyncService {
   }
 
   Future<void> updateRange(DateTimeRange range) async {
-    if (_calendarId == null) return;
+    if (_defaultCalendarId == null) return;
     _currentRange = range;
-    await fullSync(range: range, calendarId: _calendarId!);
+    await fullSync(range: range, calendarId: _defaultCalendarId!);
   }
 
   Future<void> fullSync({
@@ -79,19 +79,22 @@ class SyncService {
     _setStatus(const SyncStatus(state: SyncState.syncing));
 
     try {
-      final result = await _remoteSource.listEvents(
-        timeMin: range.start,
-        timeMax: range.end,
-        calendarId: calendarId,
-        syncToken: null,
-      );
+      final calendarIds = await _getTargetCalendarIds(fallback: calendarId);
+      for (final calendarId in calendarIds) {
+        final result = await _remoteSource.listEvents(
+          timeMin: range.start,
+          timeMax: range.end,
+          calendarId: calendarId,
+          syncToken: null,
+        );
 
-      for (final remoteEvent in result.events) {
-        await _applyRemoteEvent(remoteEvent);
-      }
+        for (final remoteEvent in result.events) {
+          await _applyRemoteEvent(remoteEvent);
+        }
 
-      if (result.nextSyncToken != null) {
-        await _saveSyncToken(calendarId, result.nextSyncToken!);
+        if (result.nextSyncToken != null) {
+          await _saveSyncToken(calendarId, result.nextSyncToken!);
+        }
       }
 
       _setStatus(
@@ -105,43 +108,62 @@ class SyncService {
   }
 
   Future<void> incrementalSync() async {
-    if (_calendarId == null || _currentRange == null) return;
+    if (_defaultCalendarId == null || _currentRange == null) return;
     if (!await _ensureSignedIn()) return;
 
     _setStatus(const SyncStatus(state: SyncState.syncing));
 
-    final calendarId = _calendarId!;
     final range = _currentRange!;
-    final token = await _getSyncToken(calendarId);
 
     try {
-      final result = await _remoteSource.listEvents(
-        timeMin: range.start,
-        timeMax: range.end,
-        calendarId: calendarId,
-        syncToken: token,
+      final calendarIds = await _getTargetCalendarIds(
+        fallback: _defaultCalendarId!,
       );
+      for (final calendarId in calendarIds) {
+        final token = await _getSyncToken(calendarId);
+        try {
+          final result = await _remoteSource.listEvents(
+            timeMin: range.start,
+            timeMax: range.end,
+            calendarId: calendarId,
+            syncToken: token,
+          );
 
-      for (final remoteEvent in result.events) {
-        await _applyRemoteEvent(remoteEvent);
-      }
+          for (final remoteEvent in result.events) {
+            await _applyRemoteEvent(remoteEvent);
+          }
 
-      if (result.nextSyncToken != null) {
-        await _saveSyncToken(calendarId, result.nextSyncToken!);
+          if (result.nextSyncToken != null) {
+            await _saveSyncToken(calendarId, result.nextSyncToken!);
+          }
+        } catch (e) {
+          final errorText = e.toString();
+          if (errorText.contains('410') || errorText.contains('GONE')) {
+            await _clearSyncToken(calendarId);
+            final fallbackResult = await _remoteSource.listEvents(
+              timeMin: range.start,
+              timeMax: range.end,
+              calendarId: calendarId,
+              syncToken: null,
+            );
+            for (final remoteEvent in fallbackResult.events) {
+              await _applyRemoteEvent(remoteEvent);
+            }
+            if (fallbackResult.nextSyncToken != null) {
+              await _saveSyncToken(calendarId, fallbackResult.nextSyncToken!);
+            }
+            continue;
+          }
+          rethrow;
+        }
       }
 
       _setStatus(
         SyncStatus(state: SyncState.idle, lastSyncTime: DateTime.now()),
       );
     } catch (e) {
-      final errorText = e.toString();
-      if (errorText.contains('410') || errorText.contains('GONE')) {
-        await _clearSyncToken(calendarId);
-        await fullSync(range: range, calendarId: calendarId);
-        return;
-      }
       _setStatus(
-        SyncStatus(state: SyncState.error, error: errorText),
+        SyncStatus(state: SyncState.error, error: e.toString()),
       );
     }
   }
@@ -153,10 +175,11 @@ class SyncService {
     if (pending.isEmpty) return;
 
     for (final event in pending) {
+      final normalizedEvent = _normalizeRemoteIdentity(event);
       try {
-        if (event.pendingAction == PendingAction.create) {
-          final created = await _remoteSource.insertEvent(event: event);
-          final updated = event.copyWith(
+        if (normalizedEvent.pendingAction == PendingAction.create) {
+          final created = await _remoteSource.insertEvent(event: normalizedEvent);
+          final updated = normalizedEvent.copyWith(
             gEventId: created.gEventId,
             dirty: false,
             deleted: false,
@@ -164,10 +187,10 @@ class SyncService {
             updatedAtRemote: created.updatedAtRemote,
           );
           await _localStore.upsertEvent(updated);
-        } else if (event.pendingAction == PendingAction.update) {
-          if (event.gEventId == null) {
-            final created = await _remoteSource.insertEvent(event: event);
-            final updated = event.copyWith(
+        } else if (normalizedEvent.pendingAction == PendingAction.update) {
+          if (normalizedEvent.gEventId == null) {
+            final created = await _remoteSource.insertEvent(event: normalizedEvent);
+            final updated = normalizedEvent.copyWith(
               gEventId: created.gEventId,
               dirty: false,
               deleted: false,
@@ -176,24 +199,46 @@ class SyncService {
             );
             await _localStore.upsertEvent(updated);
           } else {
-            final updatedRemote = await _remoteSource.updateEvent(event: event);
-            final updated = event.copyWith(
+            final updatedRemote = await _remoteSource.updateEvent(
+              event: normalizedEvent,
+            );
+            final updated = normalizedEvent.copyWith(
               dirty: false,
               pendingAction: PendingAction.none,
               updatedAtRemote: updatedRemote.updatedAtRemote,
             );
             await _localStore.upsertEvent(updated);
           }
-        } else if (event.pendingAction == PendingAction.delete) {
-          if (event.gEventId != null) {
-            await _remoteSource.deleteEvent(event: event);
+        } else if (normalizedEvent.pendingAction == PendingAction.delete) {
+          if (normalizedEvent.gEventId != null) {
+            await _remoteSource.deleteEvent(event: normalizedEvent);
           }
-          await _localStore.deleteEventById(event.id);
+          await _localStore.deleteEventById(normalizedEvent.id);
         }
       } catch (_) {
         // Keep dirty state; will retry later.
       }
     }
+  }
+
+  CalendarEvent _normalizeRemoteIdentity(CalendarEvent event) {
+    final parts = event.id.split(':');
+    final looksLikeRemoteId = parts.length >= 3 && parts.first == 'g';
+    final inferredCalendarId = looksLikeRemoteId ? parts[1] : null;
+    final inferredGEventId = looksLikeRemoteId ? parts.sublist(2).join(':') : null;
+
+    final calendarId = (inferredCalendarId != null && inferredCalendarId.isNotEmpty)
+        ? inferredCalendarId
+        : event.calendarId;
+
+    final gEventId = (event.gEventId != null && event.gEventId!.isNotEmpty)
+        ? event.gEventId
+        : inferredGEventId;
+
+    return event.copyWith(
+      calendarId: calendarId,
+      gEventId: gEventId,
+    );
   }
 
   Future<void> _applyRemoteEvent(CalendarEvent remoteEvent) async {
@@ -238,6 +283,23 @@ class SyncService {
 
   Future<bool> _ensureSignedIn() async {
     return await GoogleCalendarService.instance.isSignedIn();
+  }
+
+  Future<List<String>> _getTargetCalendarIds({
+    required String fallback,
+  }) async {
+    try {
+      final calendars = await GoogleCalendarService.instance.getUserCalendars();
+      final ids = calendars
+          .map((e) => (e['id'] as String?) ?? '')
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
+      if (ids.isNotEmpty) {
+        return ids;
+      }
+    } catch (_) {}
+    return [fallback];
   }
 
   void _setStatus(SyncStatus status) {

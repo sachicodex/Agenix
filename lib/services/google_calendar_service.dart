@@ -888,6 +888,29 @@ class GoogleCalendarService {
       return null;
     }
 
+    if (event.status == 'cancelled') {
+      return {
+        'id': event.id ?? '',
+        'title': event.summary?.trim().isNotEmpty == true
+            ? event.summary!.trim()
+            : '(Deleted)',
+        'startDateTime': DateTime.now(),
+        'endDateTime': DateTime.now(),
+        'allDay': false,
+        'color': calendarColor ?? 0xFF039BE5,
+        'description': event.description ?? '',
+        'location': event.location ?? '',
+        'reminders': const <int>[],
+        'googleCalendarId': event.id,
+        'calendarId': calendarId,
+        'timezone': '',
+        'updatedAtRemote': event.updated?.toUtc(),
+        'deleted': true,
+        'recurringEventId': event.recurringEventId,
+        'recurrence': event.recurrence,
+      };
+    }
+
     final startDateTime = event.start?.dateTime ?? event.start?.date;
     final endDateTime = event.end?.dateTime ?? event.end?.date;
     final isAllDay = event.start?.date != null;
@@ -1081,7 +1104,9 @@ class GoogleCalendarService {
     if (colorValue == 0xFFAD1457) return '9';
     if (colorValue == 0xFF616161) return '10';
     if (colorValue == 0xFF795548) return '11';
-    return '7'; // Default to blue
+    // Unknown colors should not force a Google event color override.
+    // Returning null keeps/clears per-event override so calendar color remains.
+    return null;
   }
 
   /// Signs out and clears all stored authentication data.

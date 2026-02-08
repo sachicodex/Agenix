@@ -14,12 +14,14 @@ import '../../providers/event_providers.dart';
 class EventCreationModal extends ConsumerStatefulWidget {
   final DateTime? startTime;
   final DateTime? endTime;
+  final CalendarEvent? existingEvent;
   final VoidCallback onEventCreated;
 
   const EventCreationModal({
     super.key,
     this.startTime,
     this.endTime,
+    this.existingEvent,
     required this.onEventCreated,
   });
 
@@ -49,11 +51,26 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
   @override
   void initState() {
     super.initState();
-    _startTime = widget.startTime ?? DateTime.now();
-    _endTime = widget.endTime ?? _startTime.add(const Duration(hours: 1));
+    final existing = widget.existingEvent;
+    _startTime = existing?.startDateTime ?? widget.startTime ?? DateTime.now();
+    _endTime =
+        existing?.endDateTime ??
+        widget.endTime ??
+        _startTime.add(const Duration(hours: 1));
     // Snap to 15 minutes
     _startTime = _snapToQuarterHour(_startTime);
     _endTime = _snapToQuarterHour(_endTime);
+    if (existing != null) {
+      _titleController.text = existing.title;
+      _descriptionController.text = existing.description;
+      _selectedCalendarId = existing.calendarId;
+      if (existing.reminders.isNotEmpty) {
+        reminderOn = true;
+        reminderValue = _reminderLabelFromMinutes(existing.reminders.first);
+      } else {
+        reminderOn = false;
+      }
+    }
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _fetchCalendars();
@@ -334,21 +351,36 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
             orElse: () => {},
           );
       final colorValue = selected['color'] as int?;
-      final event = CalendarEvent(
-        id: DateTime.now().microsecondsSinceEpoch.toString(),
-        calendarId: calendarId,
-        title: _titleController.text.trim(),
-        startDateTime: _startTime,
-        endDateTime: _endTime,
-        allDay: false,
-        color: Color(colorValue ?? AppColors.primary.value),
-        description: _descriptionController.text.trim(),
-        location: '',
-        timezone: DateTime.now().timeZoneName,
-        reminders: minutes == null ? const [] : [minutes],
-      );
-
-      await ref.read(eventRepositoryProvider).createEvent(event);
+      final existing = widget.existingEvent;
+      if (existing != null) {
+        final updatedEvent = existing.copyWith(
+          calendarId: calendarId,
+          title: _titleController.text.trim(),
+          startDateTime: _startTime,
+          endDateTime: _endTime,
+          allDay: false,
+          color: Color(colorValue ?? AppColors.primary.value),
+          description: _descriptionController.text.trim(),
+          timezone: DateTime.now().timeZoneName,
+          reminders: minutes == null ? const [] : [minutes],
+        );
+        await ref.read(eventRepositoryProvider).updateEvent(updatedEvent);
+      } else {
+        final event = CalendarEvent(
+          id: DateTime.now().microsecondsSinceEpoch.toString(),
+          calendarId: calendarId,
+          title: _titleController.text.trim(),
+          startDateTime: _startTime,
+          endDateTime: _endTime,
+          allDay: false,
+          color: Color(colorValue ?? AppColors.primary.value),
+          description: _descriptionController.text.trim(),
+          location: '',
+          timezone: DateTime.now().timeZoneName,
+          reminders: minutes == null ? const [] : [minutes],
+        );
+        await ref.read(eventRepositoryProvider).createEvent(event);
+      }
       await ref.read(syncServiceProvider).pushLocalChanges();
 
       if (mounted) {
@@ -378,6 +410,13 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
     }
   }
 
+  String _reminderLabelFromMinutes(int minutes) {
+    if (minutes >= 24 * 60) return '1 day';
+    if (minutes >= 60) return '1 hour';
+    if (minutes >= 30) return '30 minutes';
+    return '10 minutes';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Dialog(
@@ -390,7 +429,7 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Create Event',
+              widget.existingEvent == null ? 'Create Event' : 'Edit Event',
               style: AppTextStyles.headline2,
             ),
             const SizedBox(height: 24),

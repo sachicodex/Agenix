@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../../models/calendar_event.dart';
 import '../../theme/app_colors.dart';
 import '../../providers/event_providers.dart';
+import 'event_creation_modal.dart';
 
 class EventDetailsPopover extends ConsumerWidget {
   final CalendarEvent event;
@@ -61,7 +62,7 @@ class EventDetailsPopover extends ConsumerWidget {
     showDialog(
       context: context,
       builder: (context) =>
-          EventEditModal(event: event, onEventUpdated: onEventUpdated),
+          EventCreationModal(existingEvent: event, onEventCreated: onEventUpdated),
     );
   }
 

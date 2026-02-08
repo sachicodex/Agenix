@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'dart:ui' show PointerDeviceKind;
 import 'dart:async';
 import '../models/calendar_event.dart';
 import '../services/google_calendar_service.dart';
@@ -12,11 +11,8 @@ import '../repositories/event_repository.dart';
 import '../services/sync_service.dart';
 import '../theme/app_colors.dart';
 import 'widgets/event_creation_modal.dart';
-import 'widgets/event_details_popover.dart';
 import 'widgets/event_actions_popover.dart';
 import '../widgets/context_menu.dart';
-
-enum CalendarView { day, week, month, schedule }
 
 class CalendarDayViewScreen extends ConsumerStatefulWidget {
   final VoidCallback? onSignOut;
@@ -31,7 +27,6 @@ class CalendarDayViewScreen extends ConsumerStatefulWidget {
 class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     with WidgetsBindingObserver {
   DateTime _currentDate = DateTime.now();
-  CalendarView _currentView = CalendarView.day;
   late final EventRepository _repository;
   late final SyncService _syncService;
   StreamSubscription<List<CalendarEvent>>? _eventsSubscription;
@@ -57,8 +52,12 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   // Resize state
   String? _resizingEventId;
   bool? _resizingFromTop;
-  double? _resizeStartY;
   CalendarEvent? _resizingEventOriginal;
+  String? _resizeHoverEventId;
+  bool? _resizeHoverFromTop;
+  double? _resizeStartGlobalY;
+  DateTime? _resizeAnchorStart;
+  DateTime? _resizeAnchorEnd;
 
   // Scroll controllers for synchronized scrolling
   final ScrollController _timeColumnScrollController = ScrollController();
@@ -66,9 +65,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   bool _isScrolling = false;
 
   // Interaction state (Google Calendar-like)
-  String? _hoveredEventId;
-  String? _selectedEventId;
-  bool _isHoveringResizeHandle = false;
   final Map<String, FocusNode> _eventFocusNodes = {};
   String? _eventActionsPopoverEventId;
   String? _pendingPointerEventId;
@@ -77,13 +73,11 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   CalendarEvent? _dragPreviewEvent;
   bool _isPointerDownOnEvent = false;
   double? _dayGridWidth;
-  double? _dayGridHeight;
 
   // Drag-to-create state
   bool _isDraggingToCreate = false;
   bool _isPointerDownOnGrid = false;
   Offset? _gridPointerDownPosition;
-  Offset? _dragCreateStartPosition;
   DateTime? _pendingCreateStartTime;
   DateTime? _pendingCreateEndTime;
 
@@ -114,7 +108,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
         }
       },
     );
-    _loadSettings();
     // Setup scroll synchronization
     _syncScrollControllers();
   }
@@ -253,11 +246,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       ..sort((a, b) => a.startDateTime.compareTo(b.startDateTime));
     _timedEvents = allEvents.where((e) => !e.allDay).toList()
       ..sort((a, b) => a.startDateTime.compareTo(b.startDateTime));
-  }
-
-  Future<void> _loadSettings() async {
-    // Load keyboard shortcuts preference
-    // For now, default to enabled
   }
 
   @override
@@ -421,65 +409,25 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
           ),
           const SizedBox(width: 8),
           statusWidget,
-          // Search icon
-          IconButton(
-            icon: const Icon(Icons.search, color: AppColors.onBackground),
-            onPressed: () {
-              // TODO: Implement search
-            },
-          ),
-          // Settings icon
-          IconButton(
-            icon: const Icon(Icons.settings, color: AppColors.onBackground),
-            onPressed: () {
-              _showSettingsDialog();
-            },
-          ),
-          const SizedBox(width: 8),
-          // View dropdown
-          DropdownButton<CalendarView>(
-            value: _currentView,
-            items: const [
-              DropdownMenuItem(value: CalendarView.day, child: Text('Day')),
-              DropdownMenuItem(value: CalendarView.week, child: Text('Week')),
-              DropdownMenuItem(value: CalendarView.month, child: Text('Month')),
-              DropdownMenuItem(
-                value: CalendarView.schedule,
-                child: Text('Schedule'),
-              ),
-            ],
-            onChanged: (value) {
-              if (value != null) {
-                setState(() {
-                  _currentView = value;
-                });
-              }
-            },
-          ),
         ],
       ),
     );
   }
 
   Widget _buildCalendarContent() {
-    if (_currentView == CalendarView.schedule) {
-      return _buildScheduleView();
-    }
     return _buildDayView();
   }
 
   Widget _buildDayView() {
     return LayoutBuilder(
       builder: (context, constraints) {
-        // Responsive: switch to schedule view on small screens
-        if (constraints.maxWidth < 600) {
-          return _buildScheduleView();
-        }
-
         // Calculate fixed height for scrollable grid (24 hours * 60 pixels per hour)
         const hourHeight = 60.0;
         const totalHeight = 24 * hourHeight;
         final allDayRowHeight = _allDayEvents.isNotEmpty ? 40.0 : 0.0;
+        final noScrollbarBehavior = ScrollConfiguration.of(
+          context,
+        ).copyWith(scrollbars: false);
 
         return Column(
           children: [
@@ -511,44 +459,63 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                       ),
                     ),
                     Expanded(
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: _allDayEvents.map((event) {
-                            return Container(
-                              margin: const EdgeInsets.only(right: 4),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: event.color.withOpacity(0.15),
-                                border: Border(
-                                  left: BorderSide(
-                                    color: event.color,
-                                    width: 3,
-                                  ),
+                      child: ScrollConfiguration(
+                        behavior: noScrollbarBehavior,
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: _allDayEvents.map((event) {
+                              return Container(
+                                margin: const EdgeInsets.only(right: 4),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
                                 ),
-                                borderRadius: BorderRadius.circular(2),
-                              ),
-                              child: GestureDetector(
-                                onTapUp: (details) {
-                                  _showEventActionsPopover(
-                                    event,
-                                    details.globalPosition,
-                                  );
-                                },
-                                child: Text(
-                                  event.title,
-                                  style: TextStyle(
-                                    color: event.color,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w500,
-                                  ),
+                                child: Builder(
+                                  builder: (context) {
+                                    final textColor =
+                                        event.color.computeLuminance() > 0.6
+                                        ? Colors.black87
+                                        : Colors.white;
+                                    return Container(
+                                      decoration: BoxDecoration(
+                                        color: event.color,
+                                        border: Border(
+                                          left: BorderSide(
+                                            color: event.color,
+                                            width: 3,
+                                          ),
+                                        ),
+                                        borderRadius: BorderRadius.circular(2),
+                                      ),
+                                      child: GestureDetector(
+                                        onTapUp: (details) {
+                                          _showEventActionsPopover(
+                                            event,
+                                            details.globalPosition,
+                                          );
+                                        },
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 4,
+                                          ),
+                                          child: Text(
+                                            event.title,
+                                            style: TextStyle(
+                                              color: textColor,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  },
                                 ),
-                              ),
-                            );
-                          }).toList(),
+                              );
+                            }).toList(),
+                          ),
                         ),
                       ),
                     ),
@@ -562,36 +529,42 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                   // Time column
                   SizedBox(
                     width: 60,
-                    child: SingleChildScrollView(
-                      controller: _timeColumnScrollController,
-                      physics:
-                          (_isDraggingToCreate ||
-                              _isPointerDownOnGrid ||
-                              _isDraggingEvent)
-                          ? const NeverScrollableScrollPhysics()
-                          : const ClampingScrollPhysics(),
-                      child: SizedBox(
-                        height: totalHeight,
-                        child: _buildTimeColumn(),
+                    child: ScrollConfiguration(
+                      behavior: noScrollbarBehavior,
+                      child: SingleChildScrollView(
+                        controller: _timeColumnScrollController,
+                        physics:
+                            (_isDraggingToCreate ||
+                                _isPointerDownOnGrid ||
+                                _isDraggingEvent)
+                            ? const NeverScrollableScrollPhysics()
+                            : const ClampingScrollPhysics(),
+                        child: SizedBox(
+                          height: totalHeight,
+                          child: _buildTimeColumn(),
+                        ),
                       ),
                     ),
                   ),
                   // Day grid
                   Expanded(
-                    child: SingleChildScrollView(
-                      controller: _dayGridScrollController,
-                      physics:
-                          (_isDraggingToCreate ||
-                              _isPointerDownOnGrid ||
-                              _isDraggingEvent)
-                          ? const NeverScrollableScrollPhysics()
-                          : const ClampingScrollPhysics(),
-                      child: SizedBox(
-                        height: totalHeight,
-                        child: _buildDayGrid(
-                          BoxConstraints(
-                            maxWidth: constraints.maxWidth - 60,
-                            maxHeight: totalHeight,
+                    child: ScrollConfiguration(
+                      behavior: noScrollbarBehavior,
+                      child: SingleChildScrollView(
+                        controller: _dayGridScrollController,
+                        physics:
+                            (_isDraggingToCreate ||
+                                _isPointerDownOnGrid ||
+                                _isDraggingEvent)
+                            ? const NeverScrollableScrollPhysics()
+                            : const ClampingScrollPhysics(),
+                        child: SizedBox(
+                          height: totalHeight,
+                          child: _buildDayGrid(
+                            BoxConstraints(
+                              maxWidth: constraints.maxWidth - 60,
+                              maxHeight: totalHeight,
+                            ),
                           ),
                         ),
                       ),
@@ -642,7 +615,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   Widget _buildDayGrid(BoxConstraints constraints) {
     const hourHeight = 60.0;
     _dayGridWidth = constraints.maxWidth;
-    _dayGridHeight = constraints.maxHeight;
     return Stack(
       children: [
         // Hour lines - Google Calendar style (subtle lines)
@@ -710,10 +682,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   }
 
   List<Widget> _buildEventWidgets(BoxConstraints constraints) {
-    // Include both timed events and all-day events in timeline
-    // All-day events should span the full day at the top
-    // Group overlapping events (only for timed events, all-day events are separate)
-    final timedEventGroups = _groupOverlappingEvents(_timedEvents);
     final widgets = <Widget>[];
 
     // Build all-day event widgets (spanning full width at top)
@@ -721,42 +689,27 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       widgets.add(_buildAllDayEventWidget(event, constraints));
     }
 
-    // Build timed event widgets
-    double? previewWidth;
-    double? previewLeft;
-    for (final group in timedEventGroups) {
-      final groupWidth = constraints.maxWidth / group.length;
-      for (final entry in group.asMap().entries) {
-        final index = entry.key;
-        final event = entry.value;
-        final isDraggingOriginal =
-            _isDraggingEvent && _draggedEventId == event.id;
-        if (isDraggingOriginal && _dragPreviewEvent != null) {
-          previewWidth = groupWidth;
-          previewLeft = index * groupWidth;
-        }
-        widgets.add(
-          _buildEventWidget(
-            event,
-            constraints,
-            groupWidth,
-            index * groupWidth,
-            isDraggingOriginal: isDraggingOriginal,
-          ),
-        );
-      }
+    for (final event in _timedEvents) {
+      final isDraggingOriginal =
+          _isDraggingEvent && _draggedEventId == event.id;
+      widgets.add(
+        _buildEventWidget(
+          event,
+          constraints,
+          constraints.maxWidth,
+          0,
+          isDraggingOriginal: isDraggingOriginal,
+        ),
+      );
     }
 
-    if (_dragPreviewEvent != null &&
-        _draggedEventId == _dragPreviewEvent!.id &&
-        previewWidth != null &&
-        previewLeft != null) {
+    if (_dragPreviewEvent != null && _draggedEventId == _dragPreviewEvent!.id) {
       widgets.add(
         _buildEventWidget(
           _dragPreviewEvent!,
           constraints,
-          previewWidth,
-          previewLeft,
+          constraints.maxWidth,
+          0,
           isPreview: true,
         ),
       );
@@ -781,8 +734,9 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
           _showEventActionsPopover(event, details.globalPosition);
         },
         child: Container(
+          // Use the exact event color without opacity blending.
+          color: event.color,
           decoration: BoxDecoration(
-            color: event.color.withOpacity(0.15),
             border: Border(left: BorderSide(color: event.color, width: 3)),
             borderRadius: BorderRadius.circular(2),
           ),
@@ -793,7 +747,9 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                 child: Text(
                   event.title,
                   style: TextStyle(
-                    color: event.color,
+                    color: event.color.computeLuminance() > 0.6
+                        ? Colors.black87
+                        : Colors.white,
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
                   ),
@@ -806,13 +762,15 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                 margin: const EdgeInsets.only(left: 4),
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                 decoration: BoxDecoration(
-                  color: event.color.withOpacity(0.2),
+                  color: event.color,
                   borderRadius: BorderRadius.circular(2),
                 ),
                 child: Text(
                   'All day',
                   style: TextStyle(
-                    color: event.color,
+                    color: event.color.computeLuminance() > 0.6
+                        ? Colors.black87
+                        : Colors.white,
                     fontSize: 9,
                     fontWeight: FontWeight.w400,
                   ),
@@ -823,68 +781,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
         ),
       ),
     );
-  }
-
-  /// Improved overlapping events grouping algorithm
-  /// Handles transitive overlaps and ensures proper side-by-side layout
-  List<List<CalendarEvent>> _groupOverlappingEvents(
-    List<CalendarEvent> events,
-  ) {
-    if (events.isEmpty) return [];
-
-    // Sort by start time
-    final sorted = List<CalendarEvent>.from(events)
-      ..sort((a, b) {
-        final startCompare = a.startDateTime.compareTo(b.startDateTime);
-        if (startCompare != 0) return startCompare;
-        return a.endDateTime.compareTo(b.endDateTime);
-      });
-
-    // Build overlap graph
-    final overlapGroups = <List<CalendarEvent>>[];
-    final eventToGroup = <CalendarEvent, int>{};
-
-    for (final event in sorted) {
-      // Find all groups this event overlaps with
-      final overlappingGroupIndices = <int>{};
-      for (final group in overlapGroups.asMap().entries) {
-        if (group.value.any((e) => event.overlapsWith(e))) {
-          overlappingGroupIndices.add(group.key);
-        }
-      }
-
-      if (overlappingGroupIndices.isEmpty) {
-        // New group
-        overlapGroups.add([event]);
-        eventToGroup[event] = overlapGroups.length - 1;
-      } else {
-        // Merge all overlapping groups and add event
-        final groupsToMerge = overlappingGroupIndices.toList()..sort();
-        final firstGroupIndex = groupsToMerge.first;
-        final firstGroup = overlapGroups[firstGroupIndex];
-        firstGroup.add(event);
-        eventToGroup[event] = firstGroupIndex;
-
-        // Merge other groups into first group
-        for (var i = groupsToMerge.length - 1; i > 0; i--) {
-          final groupIndex = groupsToMerge[i];
-          final groupToMerge = overlapGroups[groupIndex];
-          firstGroup.addAll(groupToMerge);
-          for (final e in groupToMerge) {
-            eventToGroup[e] = firstGroupIndex;
-          }
-          overlapGroups.removeAt(groupIndex);
-          // Update indices for remaining groups
-          for (final entry in eventToGroup.entries) {
-            if (entry.value > groupIndex) {
-              eventToGroup[entry.key] = entry.value - 1;
-            }
-          }
-        }
-      }
-    }
-
-    return overlapGroups;
   }
 
   Widget _buildEventWidget(
@@ -909,6 +805,8 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       height: height,
       child: _buildEventCard(
         event,
+        cardWidth: width - 4,
+        cardHeight: height,
         isPreview: isPreview,
         isDraggingOriginal: isDraggingOriginal,
       ),
@@ -917,36 +815,86 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
 
   Widget _buildEventCard(
     CalendarEvent event, {
+    required double cardWidth,
+    required double cardHeight,
     bool isPreview = false,
     bool isDraggingOriginal = false,
   }) {
-    final isHovered = _hoveredEventId == event.id;
-    final isSelected = _selectedEventId == event.id;
+    const edgeHitHeight = 14.0;
+
+    bool? resizeZoneForLocal(Offset localPosition) {
+      final isTop = localPosition.dy <= edgeHitHeight;
+      final isBottom = localPosition.dy >= (cardHeight - edgeHitHeight);
+      if (isTop) return true;
+      if (isBottom) return false;
+      return null;
+    }
+
+    final isResizeHoverHere = _resizeHoverEventId == event.id;
 
     final cardContent = MouseRegion(
-      onEnter: (_) {
-        if (isPreview) return;
-        setState(() {
-          _hoveredEventId = event.id;
-        });
+      onEnter: (_) {},
+      onHover: (pointerEvent) {
+        if (isPreview || _resizingEventId != null) return;
+        final zone = resizeZoneForLocal(pointerEvent.localPosition);
+        if (zone != null) {
+          if (_resizeHoverEventId != event.id || _resizeHoverFromTop != zone) {
+            setState(() {
+              _resizeHoverEventId = event.id;
+              _resizeHoverFromTop = zone;
+            });
+          }
+        } else if (_resizeHoverEventId == event.id) {
+          setState(() {
+            _resizeHoverEventId = null;
+            _resizeHoverFromTop = null;
+          });
+        }
       },
       onExit: (_) {
-        if (isPreview) return;
-        setState(() {
-          if (_hoveredEventId == event.id) {
-            _hoveredEventId = null;
-          }
-        });
+        if (_resizeHoverEventId == event.id) {
+          setState(() {
+            _resizeHoverEventId = null;
+            _resizeHoverFromTop = null;
+          });
+        }
       },
-      cursor: isDraggingOriginal
+      cursor: isResizeHoverHere
+          ? SystemMouseCursors.resizeUpDown
+          : isDraggingOriginal
           ? SystemMouseCursors.grabbing
           : SystemMouseCursors.grab,
       child: Listener(
         behavior: HitTestBehavior.opaque,
         onPointerDown: (pointerEvent) {
           if (isPreview || _eventActionsPopoverEventId != null) return;
-          if (_isHoveringResizeHandle || _resizingEventId != null) return;
           if (event.allDay) return;
+
+          final zone = resizeZoneForLocal(pointerEvent.localPosition);
+          final isTopResize = zone == true;
+          final isBottomResize = zone == false;
+
+          if (isTopResize || isBottomResize) {
+            _isPointerDownOnEvent = true;
+            _pendingPointerEventId = null;
+            _pointerDownGlobalPosition = null;
+            _dragThresholdExceeded = false;
+            _dragStartGlobalPosition = null;
+            _dragStartTime = null;
+            _draggedEventOriginal = null;
+
+            setState(() {
+              _resizingEventId = event.id;
+              _resizingFromTop = isTopResize;
+              _resizingEventOriginal = event;
+              _resizeHoverEventId = event.id;
+              _resizeHoverFromTop = isTopResize;
+              _resizeStartGlobalY = pointerEvent.position.dy;
+              _resizeAnchorStart = event.startDateTime;
+              _resizeAnchorEnd = event.endDateTime;
+            });
+            return;
+          }
 
           _isPointerDownOnEvent = true;
           // Detect touch vs mouse
@@ -970,6 +918,21 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
         },
         onPointerMove: (pointerEvent) {
           if (isPreview || _eventActionsPopoverEventId != null) return;
+
+          if (_resizingEventId == event.id &&
+              _resizingFromTop != null &&
+              _resizeStartGlobalY != null &&
+              _resizeAnchorStart != null &&
+              _resizeAnchorEnd != null) {
+            final totalDeltaY = pointerEvent.position.dy - _resizeStartGlobalY!;
+            _handleEventResizeByDelta(
+              event,
+              deltaY: totalDeltaY,
+              fromTop: _resizingFromTop!,
+            );
+            return;
+          }
+
           if (_pendingPointerEventId != event.id) return;
           if (_pointerDownGlobalPosition == null) return;
 
@@ -994,6 +957,13 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
         },
         onPointerUp: (pointerEvent) {
           if (isPreview || _eventActionsPopoverEventId != null) return;
+
+          if (_resizingEventId == event.id) {
+            _isPointerDownOnEvent = false;
+            _finalizeEventResize();
+            return;
+          }
+
           if (_pendingPointerEventId != event.id) return;
 
           _isPointerDownOnEvent = false;
@@ -1015,6 +985,26 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
           _draggedEventOriginal = null;
         },
         onPointerCancel: (_) {
+          if (_resizingEventId == event.id) {
+            final original = _resizingEventOriginal;
+            if (original != null) {
+              _eventsMap[original.id] = original;
+              _updateEventLists();
+            }
+            setState(() {
+              _resizingEventId = null;
+              _resizingFromTop = null;
+              _resizingEventOriginal = null;
+              _resizeHoverEventId = null;
+              _resizeHoverFromTop = null;
+              _resizeStartGlobalY = null;
+              _resizeAnchorStart = null;
+              _resizeAnchorEnd = null;
+              _isPointerDownOnEvent = false;
+            });
+            return;
+          }
+
           if (_pendingPointerEventId == event.id) {
             _isPointerDownOnEvent = false;
             _pendingPointerEventId = null;
@@ -1044,174 +1034,47 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
               opacity: isDraggingOriginal ? 0.35 : 1,
               child: Container(
                 decoration: BoxDecoration(
-                  color: event.color.withOpacity(
-                    isPreview ? 0.35 : (isHovered ? 0.25 : 0.15),
-                  ),
+                  // Use exact event color for the block fill.
+                  color: event.color,
                   border: Border(
                     left: BorderSide(
                       color: event.color,
-                      width: isHovered || isSelected ? 4 : 3,
+                      width: 3,
                     ),
-                    top: isHovered || isSelected
-                        ? BorderSide(
-                            color: event.color.withOpacity(0.3),
-                            width: 1,
-                          )
-                        : BorderSide.none,
-                    bottom: isHovered || isSelected
-                        ? BorderSide(
-                            color: event.color.withOpacity(0.3),
-                            width: 1,
-                          )
-                        : BorderSide.none,
-                    right: isHovered || isSelected
-                        ? BorderSide(
-                            color: event.color.withOpacity(0.3),
-                            width: 1,
-                          )
-                        : BorderSide.none,
                   ),
-                  borderRadius: BorderRadius.circular(2),
-                  boxShadow: isHovered || isSelected
-                      ? [
-                          BoxShadow(
-                            color: event.color.withOpacity(0.2),
-                            blurRadius: 4,
-                            offset: const Offset(0, 2),
-                          ),
-                        ]
-                      : null,
+                  borderRadius: BorderRadius.circular(6),
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 4,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.start,
                   children: [
-                    // Resize handle (top) - with hover detection
-                    if (!isPreview && event.durationMinutes >= 30)
-                      MouseRegion(
-                        onEnter: (_) {
-                          setState(() {
-                            _isHoveringResizeHandle = true;
-                          });
-                        },
-                        onExit: (_) {
-                          setState(() {
-                            _isHoveringResizeHandle = false;
-                          });
-                        },
-                        cursor: SystemMouseCursors.resizeUpDown,
-                        child: GestureDetector(
-                          onPanStart: (details) {
-                            setState(() {
-                              _resizingEventId = event.id;
-                              _resizingFromTop = true;
-                              _resizeStartY = details.localPosition.dy;
-                              _resizingEventOriginal = event;
-                            });
-                          },
-                          onPanUpdate: (details) {
-                            if (_resizingEventId == event.id &&
-                                _resizingFromTop == true) {
-                              _handleEventResize(details, event, true);
-                            }
-                          },
-                          onPanEnd: (_) {
-                            if (_resizingEventId != null) {
-                              _finalizeEventResize();
-                            }
-                          },
-                          child: Container(
-                            height: 6,
-                            color: Colors.transparent,
-                            child: Center(
-                              child: Container(
-                                width: _isHoveringResizeHandle ? 30 : 20,
-                                height: 3,
-                                decoration: BoxDecoration(
-                                  color: event.color.withOpacity(
-                                    _isHoveringResizeHandle ? 0.8 : 0.5,
-                                  ),
-                                  borderRadius: BorderRadius.circular(1.5),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
+                    Text(
+                      event.title,
+                      style: TextStyle(
+                        color: event.color.computeLuminance() > 0.6
+                            ? Colors.black87
+                            : Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        height: 1.2,
                       ),
-                    // Event content
-                    Flexible(
-                      child: Text(
-                        event.title,
-                        style: TextStyle(
-                          color: event.color,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        maxLines: null,
-                        overflow: TextOverflow.visible,
-                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    // Time display (if space allows)
-                    if (!isPreview && event.durationMinutes >= 30)
+                    if (cardHeight >= 34)
                       Text(
                         '${DateFormat('h:mm').format(event.startDateTime)} - ${DateFormat('h:mm').format(event.endDateTime)}',
                         style: TextStyle(
-                          color: event.color.withOpacity(0.8),
-                          fontSize: 10,
-                          fontWeight: FontWeight.w400,
-                        ),
-                      ),
-                    // Resize handle (bottom) - with hover detection
-                    if (!isPreview)
-                      MouseRegion(
-                        onEnter: (_) {
-                          setState(() {
-                            _isHoveringResizeHandle = true;
-                          });
-                        },
-                        onExit: (_) {
-                          setState(() {
-                            _isHoveringResizeHandle = false;
-                          });
-                        },
-                        cursor: SystemMouseCursors.resizeUpDown,
-                        child: GestureDetector(
-                          onPanStart: (details) {
-                            setState(() {
-                              _resizingEventId = event.id;
-                              _resizingFromTop = false;
-                              _resizeStartY = details.localPosition.dy;
-                              _resizingEventOriginal = event;
-                            });
-                          },
-                          onPanUpdate: (details) {
-                            if (_resizingEventId == event.id &&
-                                _resizingFromTop == false) {
-                              _handleEventResize(details, event, false);
-                            }
-                          },
-                          onPanEnd: (_) {
-                            if (_resizingEventId != null) {
-                              _finalizeEventResize();
-                            }
-                          },
-                          child: Container(
-                            height: 6,
-                            color: Colors.transparent,
-                            child: Center(
-                              child: Container(
-                                width: _isHoveringResizeHandle ? 30 : 20,
-                                height: 3,
-                                decoration: BoxDecoration(
-                                  color: event.color.withOpacity(
-                                    _isHoveringResizeHandle ? 0.8 : 0.5,
-                                  ),
-                                  borderRadius: BorderRadius.circular(1.5),
-                                ),
-                              ),
-                            ),
-                          ),
+                          color: event.color.computeLuminance() > 0.6
+                              ? Colors.black87
+                              : Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          height: 1.2,
                         ),
                       ),
                   ],
@@ -1263,37 +1126,31 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     if (gridWidth == null) return false;
 
     // All-day events rendered at top of grid
-    for (final event in _allDayEvents) {
+    if (_allDayEvents.isNotEmpty) {
       final rect = Rect.fromLTWH(2, 0, gridWidth - 4, 30);
       if (rect.contains(localPosition)) {
         return true;
       }
     }
 
-    final groups = _groupOverlappingEvents(_timedEvents);
-    for (final group in groups) {
-      final groupWidth = gridWidth / group.length;
-      for (final entry in group.asMap().entries) {
-        final index = entry.key;
-        final event = entry.value;
+    for (final event in _timedEvents) {
 
-        const hourHeight = 60.0;
-        final startMinutes =
-            event.startDateTime.hour * 60 + event.startDateTime.minute;
-        final endMinutes =
-            event.endDateTime.hour * 60 + event.endDateTime.minute;
-        final top = (startMinutes / 60) * hourHeight;
-        final height = ((endMinutes - startMinutes) / 60) * hourHeight;
+      const hourHeight = 60.0;
+      final startMinutes =
+          event.startDateTime.hour * 60 + event.startDateTime.minute;
+      final endMinutes =
+          event.endDateTime.hour * 60 + event.endDateTime.minute;
+      final top = (startMinutes / 60) * hourHeight;
+      final height = ((endMinutes - startMinutes) / 60) * hourHeight;
 
-        final rect = Rect.fromLTWH(
-          index * groupWidth + 2,
-          top,
-          groupWidth - 4,
-          height,
-        );
-        if (rect.contains(localPosition)) {
-          return true;
-        }
+      final rect = Rect.fromLTWH(
+        2,
+        top,
+        gridWidth - 4,
+        height,
+      );
+      if (rect.contains(localPosition)) {
+        return true;
       }
     }
 
@@ -1328,12 +1185,10 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     }
 
     setState(() {
-      _selectedEventId = null;
       _isPointerDownOnGrid = true;
       _gridPointerDownPosition = localPosition;
       _gridDragStartTime = _timeFromPosition(localPosition);
       _gridDragEndTime = _gridDragStartTime;
-      _dragCreateStartPosition = localPosition;
     });
   }
 
@@ -1401,10 +1256,8 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     }
 
     setState(() {
-      _selectedEventId = null;
       _isPointerDownOnGrid = false;
       _gridPointerDownPosition = null;
-      _dragCreateStartPosition = null;
     });
   }
 
@@ -1415,7 +1268,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       _gridPointerDownPosition = null;
       _gridDragStartTime = null;
       _gridDragEndTime = null;
-      _dragCreateStartPosition = null;
       _pendingCreateStartTime = null;
       _pendingCreateEndTime = null;
     });
@@ -1441,7 +1293,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       _isDraggingToCreate = false;
       _gridDragStartTime = null;
       _gridDragEndTime = null;
-      _dragCreateStartPosition = null;
     });
   }
 
@@ -1514,35 +1365,36 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       await _syncService.pushLocalChanges();
     } catch (e) {
       debugPrint('Error updating event: $e');
-      if (originalEvent != null) {
-        _eventsMap[originalEvent.id] = originalEvent;
-        _updateEventLists();
-      }
+      _eventsMap[originalEvent.id] = originalEvent;
+      _updateEventLists();
     }
   }
 
-  void _handleEventResize(
-    DragUpdateDetails details,
-    CalendarEvent event,
-    bool fromTop,
-  ) {
-    if (_resizeStartY == null) return;
+  void _handleEventResizeByDelta(
+    CalendarEvent event, {
+    required double deltaY,
+    required bool fromTop,
+  }) {
+    final current = _eventsMap[event.id];
+    final anchorStart = _resizeAnchorStart;
+    final anchorEnd = _resizeAnchorEnd;
+    if (current == null || anchorStart == null || anchorEnd == null) return;
 
     const hourHeight = 60.0;
-    final deltaY = details.localPosition.dy - _resizeStartY!;
     final deltaMinutes = (deltaY / hourHeight) * 60;
-    final snappedDelta = (deltaMinutes / 15).round() * 15;
+    // 5-minute snap gives smoother, more accurate resize behavior.
+    final snappedDelta = (deltaMinutes / 5).round() * 5;
 
-    DateTime newStart = event.startDateTime;
-    DateTime newEnd = event.endDateTime;
+    DateTime newStart = anchorStart;
+    DateTime newEnd = anchorEnd;
 
     if (fromTop) {
-      newStart = event.startDateTime.add(Duration(minutes: snappedDelta));
+      newStart = anchorStart.add(Duration(minutes: snappedDelta));
       if (newStart.isAfter(newEnd.subtract(const Duration(minutes: 15)))) {
         newStart = newEnd.subtract(const Duration(minutes: 15));
       }
     } else {
-      newEnd = event.endDateTime.add(Duration(minutes: snappedDelta));
+      newEnd = anchorEnd.add(Duration(minutes: snappedDelta));
       if (newEnd.isBefore(newStart.add(const Duration(minutes: 15)))) {
         newEnd = newStart.add(const Duration(minutes: 15));
       }
@@ -1550,7 +1402,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
 
     setState(() {
       if (_eventsMap.containsKey(event.id)) {
-        _eventsMap[event.id] = event.copyWith(
+        _eventsMap[event.id] = current.copyWith(
           startDateTime: newStart,
           endDateTime: newEnd,
         );
@@ -1566,11 +1418,17 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     if (event == null) return;
 
     // Optimistic update
+    final resizingEventId = _resizingEventId;
+    final resizingOriginal = _resizingEventOriginal;
     setState(() {
       _resizingEventId = null;
       _resizingFromTop = null;
-      _resizeStartY = null;
       _resizingEventOriginal = null;
+      _resizeHoverEventId = null;
+      _resizeHoverFromTop = null;
+      _resizeStartGlobalY = null;
+      _resizeAnchorStart = null;
+      _resizeAnchorEnd = null;
     });
 
     try {
@@ -1579,8 +1437,8 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     } catch (e) {
       debugPrint('Error resizing event: $e');
       // Revert on error
-      if (_resizingEventOriginal != null) {
-        _eventsMap[_resizingEventId!] = _resizingEventOriginal!;
+      if (resizingOriginal != null) {
+        _eventsMap[resizingEventId!] = resizingOriginal;
         _updateEventLists();
       }
     }
@@ -1619,7 +1477,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     final returnFocusNode = _getEventFocusNode(event.id);
     setState(() {
       _eventActionsPopoverEventId = event.id;
-      _selectedEventId = event.id;
     });
 
     await showGeneralDialog<void>(
@@ -1657,10 +1514,9 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   Future<void> _showEditEventModal(CalendarEvent event) async {
     await showDialog(
       context: context,
-      builder: (context) => EventEditModal(
-        event: event,
-        calendarId: _selectedCalendarId,
-        onEventUpdated: () {},
+      builder: (context) => EventCreationModal(
+        existingEvent: event,
+        onEventCreated: () {},
       ),
     );
   }
@@ -1822,75 +1678,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
           ],
         ),
       ),
-    );
-  }
-
-  void _showEventDetails(CalendarEvent event) {
-    showDialog(
-      context: context,
-      builder: (context) => EventDetailsPopover(
-        event: event,
-        onEventUpdated: () {},
-        onEventDeleted: () {},
-      ),
-    );
-  }
-
-  void _showSettingsDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Settings'),
-        content: StatefulBuilder(
-          builder: (context, setState) {
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SwitchListTile(
-                  title: const Text('Enable Keyboard Shortcuts'),
-                  value: _keyboardShortcutsEnabled,
-                  onChanged: (value) {
-                    setState(() {
-                      _keyboardShortcutsEnabled = value;
-                    });
-                    this.setState(() {
-                      _keyboardShortcutsEnabled = value;
-                    });
-                  },
-                ),
-                if (widget.onSignOut != null)
-                  ListTile(
-                    title: const Text('Sign Out'),
-                    onTap: () {
-                      Navigator.pop(context);
-                      widget.onSignOut?.call();
-                    },
-                  ),
-              ],
-            );
-          },
-        ),
-      ),
-    );
-  }
-
-  Widget _buildScheduleView() {
-    final sortedEvents = _eventsMap.values.toList()
-      ..sort((a, b) => a.startDateTime.compareTo(b.startDateTime));
-
-    return ListView.builder(
-      itemCount: sortedEvents.length,
-      itemBuilder: (context, index) {
-        final event = sortedEvents[index];
-        return ListTile(
-          leading: Container(width: 4, color: event.color),
-          title: Text(event.title),
-          subtitle: Text(
-            '${DateFormat('h:mm a').format(event.startDateTime)} - ${DateFormat('h:mm a').format(event.endDateTime)}',
-          ),
-          onTap: () => _showEventDetails(event),
-        );
-      },
     );
   }
 

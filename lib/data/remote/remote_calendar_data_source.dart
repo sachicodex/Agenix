@@ -15,11 +15,13 @@ class RemoteCalendarDataSource {
     required String calendarId,
     String? syncToken,
   }) async {
+    final calendarColor = await _getCalendarColor(calendarId);
     final result = await _googleService.getEventsWithSync(
       start: timeMin,
       end: timeMax,
       calendarId: calendarId,
       syncToken: syncToken,
+      calendarColor: calendarColor,
       includeCancelled: syncToken != null && syncToken.isNotEmpty,
     );
 
@@ -79,7 +81,6 @@ class RemoteCalendarDataSource {
       end: event.endDateTime,
       calendarId: event.calendarId,
       reminders: reminders,
-      color: event.color,
     );
 
     return _mapFromApiEvent(
@@ -177,6 +178,18 @@ class RemoteCalendarDataSource {
   }) {
     final safeGId = gEventId ?? 'unknown';
     return 'g:$calendarId:$safeGId';
+  }
+
+  Future<int?> _getCalendarColor(String calendarId) async {
+    try {
+      final calendars = await _googleService.getUserCalendars();
+      for (final cal in calendars) {
+        if (cal['id'] == calendarId) {
+          return cal['color'] as int?;
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 }
 
