@@ -623,6 +623,7 @@ class GoogleCalendarService {
     String calendarId = 'primary',
     String? syncToken,
     int? calendarColor,
+    bool includeCancelled = false,
   }) async {
     final client = await _getAuthenticatedClient();
     final cal = calendar.CalendarApi(client);
@@ -651,6 +652,7 @@ class GoogleCalendarService {
             calendarId,
             syncToken: syncToken,
             pageToken: currentPageToken,
+            showDeleted: includeCancelled,
           );
         } else {
           // Full sync or pagination
@@ -670,7 +672,14 @@ class GoogleCalendarService {
         
         // Parse all events from this page
         final parsedEvents = items
-            .map((event) => _parseEvent(event, calendarId, calendarColor: calendarColor))
+            .map(
+              (event) => _parseEvent(
+                event,
+                calendarId,
+                calendarColor: calendarColor,
+                includeCancelled: includeCancelled,
+              ),
+            )
             .where((e) => e != null)
             .cast<Map<String, dynamic>>()
             .toList();
@@ -718,7 +727,14 @@ class GoogleCalendarService {
           
           final items = events.items ?? [];
           final parsedEvents = items
-              .map((event) => _parseEvent(event, calendarId, calendarColor: calendarColor))
+              .map(
+                (event) => _parseEvent(
+                  event,
+                  calendarId,
+                  calendarColor: calendarColor,
+                  includeCancelled: includeCancelled,
+                ),
+              )
               .where((e) => e != null)
               .cast<Map<String, dynamic>>()
               .toList();
@@ -860,9 +876,14 @@ class GoogleCalendarService {
   /// Parses a Google Calendar event to our format
   /// CRITICAL: This must handle all event types including those created in Google Calendar app
   /// calendarColor: The color of the calendar this event belongs to (from calendarList)
-  Map<String, dynamic>? _parseEvent(calendar.Event event, String calendarId, {int? calendarColor}) {
-    // Skip cancelled/deleted events
-    if (event.status == 'cancelled') {
+  Map<String, dynamic>? _parseEvent(
+    calendar.Event event,
+    String calendarId, {
+    int? calendarColor,
+    bool includeCancelled = false,
+  }) {
+    // Skip cancelled/deleted events unless explicitly included (sync diff).
+    if (event.status == 'cancelled' && !includeCancelled) {
       debugPrint('Skipping cancelled event: ${event.id}');
       return null;
     }
@@ -929,9 +950,13 @@ class GoogleCalendarService {
       'allDay': isAllDay,
       'color': eventColorValue,
       'description': event.description ?? '',
+      'location': event.location ?? '',
       'reminders': event.reminders?.overrides?.map((r) => r.minutes ?? 0).toList() ?? [],
       'googleCalendarId': event.id,
       'calendarId': calendarId,
+      'timezone': event.start?.timeZone ?? '',
+      'updatedAtRemote': event.updated?.toUtc(),
+      'deleted': event.status == 'cancelled',
       'recurringEventId': event.recurringEventId,
       'recurrence': event.recurrence,
     };

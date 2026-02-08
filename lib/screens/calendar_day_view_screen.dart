@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'dart:ui' show PointerDeviceKind;
 import 'dart:async';
 import '../models/calendar_event.dart';
-import '../services/event_storage_service.dart';
 import '../services/google_calendar_service.dart';
-import '../services/calendar_sync_service.dart';
-import '../services/local_events_sync_service.dart';
+import '../providers/event_providers.dart';
+import '../repositories/event_repository.dart';
+import '../services/sync_service.dart';
 import '../theme/app_colors.dart';
 import 'widgets/event_creation_modal.dart';
 import 'widgets/event_details_popover.dart';
@@ -17,20 +18,24 @@ import '../widgets/context_menu.dart';
 
 enum CalendarView { day, week, month, schedule }
 
-class CalendarDayViewScreen extends StatefulWidget {
+class CalendarDayViewScreen extends ConsumerStatefulWidget {
   final VoidCallback? onSignOut;
 
   const CalendarDayViewScreen({super.key, this.onSignOut});
 
   @override
-  State<CalendarDayViewScreen> createState() => _CalendarDayViewScreenState();
+  ConsumerState<CalendarDayViewScreen> createState() =>
+      _CalendarDayViewScreenState();
 }
 
-class _CalendarDayViewScreenState extends State<CalendarDayViewScreen> {
+class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
+    with WidgetsBindingObserver {
   DateTime _currentDate = DateTime.now();
   CalendarView _currentView = CalendarView.day;
-  final EventStorageService _storage = EventStorageService.instance;
-  final CalendarSyncService _syncService = CalendarSyncService.instance;
+  late final EventRepository _repository;
+  late final SyncService _syncService;
+  StreamSubscription<List<CalendarEvent>>? _eventsSubscription;
+  late final ProviderSubscription<AsyncValue<SyncStatus>> _syncStatusSub;
 
   // Use Map to prevent duplicates - key is event ID
   final Map<String, CalendarEvent> _eventsMap = {};
@@ -39,7 +44,6 @@ class _CalendarDayViewScreenState extends State<CalendarDayViewScreen> {
 
   bool _keyboardShortcutsEnabled = true;
   bool _isLoading = true;
-  Timer? _refreshTimer;
   String? _selectedCalendarId;
   Map<String, int> _calendarColors = {}; // Map of calendarId -> color
 
@@ -93,24 +97,45 @@ class _CalendarDayViewScreenState extends State<CalendarDayViewScreen> {
   @override
   void initState() {
     super.initState();
-    _loadCalendarId().then((_) async {
-      // Load calendar colors first
-      await _loadCalendarColors();
-      // First, sync local events to Google Calendar
-      await _syncLocalEventsToGoogle();
-      // Then start real-time sync and load events
-      await _startRealTimeSync();
-      await _loadEvents();
-    });
+    WidgetsBinding.instance.addObserver(this);
+    _repository = ref.read(eventRepositoryProvider);
+    _syncService = ref.read(syncServiceProvider);
+
+    _initialize();
+    _syncStatusSub = ref.listenManual<AsyncValue<SyncStatus>>(
+      syncStatusProvider,
+      (previous, next) {
+        final status = next.valueOrNull;
+        if (status?.state == SyncState.error && mounted) {
+          final message = status?.error ?? 'Sync error';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(message)),
+          );
+        }
+      },
+    );
     _loadSettings();
     // Setup scroll synchronization
     _syncScrollControllers();
   }
 
+  Future<void> _initialize() async {
+    await _loadCalendarId();
+    await _loadCalendarColors();
+    _subscribeToEvents();
+    await _syncService.start(
+      range: _currentRange,
+      calendarId: _selectedCalendarId ?? 'primary',
+    );
+    await _syncService.pushLocalChanges();
+  }
+
   @override
   void dispose() {
-    _refreshTimer?.cancel();
-    _syncService.stopSync();
+    WidgetsBinding.instance.removeObserver(this);
+    _eventsSubscription?.cancel();
+    _syncStatusSub.close();
+    _syncService.stop();
     _timeColumnScrollController.dispose();
     _dayGridScrollController.dispose();
     for (final node in _eventFocusNodes.values) {
@@ -145,6 +170,51 @@ class _CalendarDayViewScreenState extends State<CalendarDayViewScreen> {
     });
   }
 
+  DateTimeRange get _currentRange {
+    final dayStart = DateTime(
+      _currentDate.year,
+      _currentDate.month,
+      _currentDate.day,
+    );
+    final dayEnd = dayStart.add(const Duration(days: 1));
+    return DateTimeRange(start: dayStart, end: dayEnd);
+  }
+
+  void _subscribeToEvents() {
+    _eventsSubscription?.cancel();
+    setState(() {
+      _isLoading = true;
+    });
+
+    _eventsSubscription = _repository.watchEvents(_currentRange).listen(
+      (events) {
+        _eventsMap
+          ..clear()
+          ..addEntries(events.map((e) => MapEntry(e.id, e)));
+        setState(() {
+          _updateEventLists();
+          _isLoading = false;
+        });
+      },
+    );
+  }
+
+  Future<void> _handleDateChange(DateTime newDate) async {
+    setState(() {
+      _currentDate = newDate;
+    });
+    _subscribeToEvents();
+    await _syncService.updateRange(_currentRange);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _syncService.incrementalSync();
+      _syncService.pushLocalChanges();
+    }
+  }
+
   Future<void> _loadCalendarId() async {
     try {
       final calendarId = await GoogleCalendarService.instance.storage
@@ -176,198 +246,6 @@ class _CalendarDayViewScreenState extends State<CalendarDayViewScreen> {
     }
   }
 
-  Future<void> _syncLocalEventsToGoogle() async {
-    try {
-      final signedIn = await GoogleCalendarService.instance.isSignedIn();
-      if (!signedIn) return;
-
-      final hasUnsynced = await LocalEventsSyncService.instance
-          .hasUnsyncedEvents();
-      if (hasUnsynced) {
-        debugPrint(
-          'Found unsynced local events, uploading to Google Calendar...',
-        );
-        await LocalEventsSyncService.instance.syncLocalEventsToGoogle(
-          calendarId: _selectedCalendarId ?? 'primary',
-        );
-        debugPrint('Local events sync complete');
-      }
-    } catch (e) {
-      debugPrint('Error syncing local events: $e');
-    }
-  }
-
-  Future<void> _startRealTimeSync() async {
-    // NOTE: Real-time sync is disabled for all-calendar view
-    // We use periodic full reload from all calendars instead
-    // This ensures all calendars are always shown, not just the default one
-    debugPrint(
-      'Real-time sync disabled - using periodic full reload from all calendars',
-    );
-
-    // Set up periodic refresh to reload events from all calendars
-    _refreshTimer?.cancel();
-    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (mounted) {
-        debugPrint('Periodic refresh: Reloading events from ALL calendars');
-        _loadEvents();
-      }
-    });
-  }
-
-  Future<void> _loadEvents() async {
-    // CRITICAL: Use start of day and end of day to ensure we get all events
-    // This ensures events created in Google Calendar app are included
-    final start = DateTime(
-      _currentDate.year,
-      _currentDate.month,
-      _currentDate.day,
-      0,
-      0,
-      0,
-    );
-    final end = DateTime(
-      _currentDate.year,
-      _currentDate.month,
-      _currentDate.day,
-      23,
-      59,
-      59,
-    );
-
-    debugPrint('Loading events for date: ${_currentDate.toIso8601String()}');
-    debugPrint(
-      'Date range: ${start.toIso8601String()} to ${end.toIso8601String()}',
-    );
-    debugPrint('Local timezone: ${DateTime.now().timeZoneName}');
-
-    setState(() {
-      _isLoading = true;
-    });
-
-    // Clear current events map
-    _eventsMap.clear();
-
-    // Load Google Calendar events from ALL calendars
-    List<CalendarEvent> googleEvents = [];
-    try {
-      final signedIn = await GoogleCalendarService.instance.isSignedIn();
-      if (signedIn) {
-        debugPrint('Fetching events from ALL Google Calendars');
-        debugPrint(
-          'This will fetch ALL events from all calendars including those created in Google Calendar app',
-        );
-
-        // Fetch events from all calendars (not just one)
-        final googleEventsData = await GoogleCalendarService.instance
-            .getEventsFromAllCalendars(start: start, end: end);
-
-        debugPrint('=== CALENDAR VIEW: Events loaded ===');
-        debugPrint(
-          'Total events from Google Calendar API: ${googleEventsData.length}',
-        );
-
-        // Group events by calendar to show breakdown
-        final eventsByCalendar = <String, int>{};
-        for (final data in googleEventsData) {
-          final calName = (data['calendarName'] as String?) ?? 'Unknown';
-          eventsByCalendar[calName] = (eventsByCalendar[calName] ?? 0) + 1;
-        }
-        debugPrint('Events by calendar:');
-        eventsByCalendar.forEach((calName, count) {
-          debugPrint('  - $calName: $count events');
-        });
-
-        if (googleEventsData.isEmpty) {
-          debugPrint(
-            'WARNING: No events returned from Google Calendar API. This might indicate:',
-          );
-          debugPrint('  1. No events exist for this date');
-          debugPrint(
-            '  2. All calendars are unselected (but we fetch all now)',
-          );
-          debugPrint('  3. Timezone/date range issue');
-          debugPrint('  4. API authentication issue');
-          debugPrint(
-            '  5. Calendars might be filtered out in getUserCalendars()',
-          );
-        }
-
-        googleEvents = googleEventsData.map((data) {
-          final calendarId = data['calendarId'] as String? ?? 'primary';
-          final calendarName = data['calendarName'] as String? ?? 'Unknown';
-          final eventColor = data['color'] as int;
-
-          // Store calendar color for reference
-          _calendarColors[calendarId] = eventColor;
-
-          final event = CalendarEvent(
-            id: 'google_${data['id']}',
-            title: data['title'] as String,
-            startDateTime: data['startDateTime'] as DateTime,
-            endDateTime: data['endDateTime'] as DateTime,
-            allDay: data['allDay'] as bool,
-            color: Color(eventColor), // Use calendar's color
-            description: data['description'] as String,
-            reminders: data['reminders'] as List<int>,
-          );
-          debugPrint(
-            '  - Event: ${event.title} from $calendarName (${event.startDateTime.toIso8601String()})',
-          );
-          return event;
-        }).toList();
-
-        debugPrint(
-          'Successfully loaded ${googleEvents.length} events from all Google Calendars',
-        );
-      } else {
-        debugPrint('Not signed in to Google Calendar - cannot fetch events');
-      }
-    } catch (e) {
-      debugPrint('ERROR loading Google Calendar events: $e');
-      debugPrint('Stack trace: ${StackTrace.current}');
-      // Show error to user
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error loading events: $e'),
-            backgroundColor: AppColors.error,
-          ),
-        );
-      }
-    }
-
-    // Load local events (only those not yet synced)
-    final allLocalEvents = await _storage.getEventsForDateRange(start, end);
-    debugPrint('Found ${allLocalEvents.length} local events');
-
-    // Filter local events - only show those that haven't been synced to Google Calendar
-    final localEvents = allLocalEvents.where((local) {
-      return !local.syncedToGoogle;
-    }).toList();
-
-    debugPrint('After filtering: ${localEvents.length} unsynced local events');
-
-    // Add all events to map (this prevents duplicates automatically)
-    for (final event in googleEvents) {
-      _eventsMap[event.id] = event;
-    }
-    for (final event in localEvents) {
-      // Only add if not already in map (shouldn't happen, but safety check)
-      if (!_eventsMap.containsKey(event.id)) {
-        _eventsMap[event.id] = event;
-      }
-    }
-
-    debugPrint(
-      'Total merged events: ${_eventsMap.length} (${googleEvents.length} from Google, ${localEvents.length} local unsynced)',
-    );
-
-    setState(() {
-      _updateEventLists();
-      _isLoading = false;
-    });
-  }
 
   void _updateEventLists() {
     final allEvents = _eventsMap.values.toList();
@@ -384,6 +262,7 @@ class _CalendarDayViewScreenState extends State<CalendarDayViewScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final syncStatusAsync = ref.watch(syncStatusProvider);
     return KeyboardListener(
       focusNode: FocusNode()..requestFocus(),
       onKeyEvent: _keyboardShortcutsEnabled ? _handleKeyboardShortcut : null,
@@ -391,7 +270,7 @@ class _CalendarDayViewScreenState extends State<CalendarDayViewScreen> {
         backgroundColor: AppColors.background,
         body: Column(
           children: [
-            _buildTopBar(),
+            _buildTopBar(syncStatusAsync),
             Expanded(
               child: _isLoading
                   ? const Center(child: CircularProgressIndicator())
@@ -418,9 +297,44 @@ class _CalendarDayViewScreenState extends State<CalendarDayViewScreen> {
     );
   }
 
-  Widget _buildTopBar() {
+  Widget _buildTopBar(AsyncValue<SyncStatus> syncStatusAsync) {
     final dateFormat = DateFormat('EEEE, MMMM d, y');
     final dateString = dateFormat.format(_currentDate);
+    final statusWidget = syncStatusAsync.when(
+      data: (status) {
+        if (status.state == SyncState.syncing) {
+          return const Text(
+            'Syncing…',
+            style: TextStyle(color: AppColors.onBackground, fontSize: 12),
+          );
+        }
+        if (status.state == SyncState.error) {
+          return const Text(
+            'Sync error',
+            style: TextStyle(color: AppColors.error, fontSize: 12),
+          );
+        }
+        if (status.lastSyncTime != null) {
+          final time = DateFormat('h:mm a').format(status.lastSyncTime!);
+          return Text(
+            'Last sync $time',
+            style: const TextStyle(
+              color: AppColors.onBackground,
+              fontSize: 12,
+            ),
+          );
+        }
+        return const SizedBox.shrink();
+      },
+      loading: () => const Text(
+        'Syncing…',
+        style: TextStyle(color: AppColors.onBackground, fontSize: 12),
+      ),
+      error: (_, __) => const Text(
+        'Sync error',
+        style: TextStyle(color: AppColors.error, fontSize: 12),
+      ),
+    );
 
     return Container(
       height: 64,
@@ -443,10 +357,7 @@ class _CalendarDayViewScreenState extends State<CalendarDayViewScreen> {
           // Today button
           TextButton(
             onPressed: () {
-              setState(() {
-                _currentDate = DateTime.now();
-              });
-              _loadEvents();
+              _handleDateChange(DateTime.now());
             },
             style: TextButton.styleFrom(
               foregroundColor: AppColors.primary,
@@ -462,10 +373,7 @@ class _CalendarDayViewScreenState extends State<CalendarDayViewScreen> {
           IconButton(
             icon: const Icon(Icons.chevron_left, color: AppColors.onBackground),
             onPressed: () {
-              setState(() {
-                _currentDate = _currentDate.subtract(const Duration(days: 1));
-              });
-              _loadEvents();
+              _handleDateChange(_currentDate.subtract(const Duration(days: 1)));
             },
           ),
           IconButton(
@@ -474,10 +382,7 @@ class _CalendarDayViewScreenState extends State<CalendarDayViewScreen> {
               color: AppColors.onBackground,
             ),
             onPressed: () {
-              setState(() {
-                _currentDate = _currentDate.add(const Duration(days: 1));
-              });
-              _loadEvents();
+              _handleDateChange(_currentDate.add(const Duration(days: 1)));
             },
           ),
           const SizedBox(width: 16),
@@ -510,13 +415,12 @@ class _CalendarDayViewScreenState extends State<CalendarDayViewScreen> {
             icon: const Icon(Icons.refresh, color: AppColors.onBackground),
             tooltip: 'Refresh Calendar',
             onPressed: () async {
-              setState(() {
-                _isLoading = true;
-              });
-              // Reload events from ALL calendars
-              await _loadEvents();
+              await _syncService.incrementalSync();
+              await _syncService.pushLocalChanges();
             },
           ),
+          const SizedBox(width: 8),
+          statusWidget,
           // Search icon
           IconButton(
             icon: const Icon(Icons.search, color: AppColors.onBackground),
@@ -1606,29 +1510,14 @@ class _CalendarDayViewScreenState extends State<CalendarDayViewScreen> {
     });
 
     try {
-      if (updatedEvent.id.startsWith('google_')) {
-        final googleEventId = updatedEvent.id.replaceFirst('google_', '');
-        await GoogleCalendarService.instance.updateEvent(
-          eventId: googleEventId,
-          summary: updatedEvent.title,
-          description: updatedEvent.description,
-          start: updatedEvent.startDateTime,
-          end: updatedEvent.endDateTime,
-          calendarId: _selectedCalendarId ?? 'primary',
-          color: updatedEvent.color,
-        );
-      } else {
-        await _storage.updateEvent(updatedEvent);
-      }
-
-      await _loadEvents();
+      await _repository.updateEvent(updatedEvent);
+      await _syncService.pushLocalChanges();
     } catch (e) {
       debugPrint('Error updating event: $e');
       if (originalEvent != null) {
         _eventsMap[originalEvent.id] = originalEvent;
         _updateEventLists();
       }
-      await _loadEvents();
     }
   }
 
@@ -1685,25 +1574,8 @@ class _CalendarDayViewScreenState extends State<CalendarDayViewScreen> {
     });
 
     try {
-      // Update in Google Calendar if it's a Google Calendar event
-      if (event.id.startsWith('google_')) {
-        final googleEventId = event.id.replaceFirst('google_', '');
-        await GoogleCalendarService.instance.updateEvent(
-          eventId: googleEventId,
-          summary: event.title,
-          description: event.description,
-          start: event.startDateTime,
-          end: event.endDateTime,
-          calendarId: _selectedCalendarId ?? 'primary',
-          color: event.color,
-        );
-      } else {
-        // Update local event
-        await _storage.updateEvent(event);
-      }
-
-      // Reload events from all calendars to update UI
-      await _loadEvents();
+      await _repository.updateEvent(event);
+      await _syncService.pushLocalChanges();
     } catch (e) {
       debugPrint('Error resizing event: $e');
       // Revert on error
@@ -1711,7 +1583,6 @@ class _CalendarDayViewScreenState extends State<CalendarDayViewScreen> {
         _eventsMap[_resizingEventId!] = _resizingEventOriginal!;
         _updateEventLists();
       }
-      await _loadEvents();
     }
   }
 
@@ -1724,9 +1595,7 @@ class _CalendarDayViewScreenState extends State<CalendarDayViewScreen> {
       builder: (context) => EventCreationModal(
         startTime: startTime,
         endTime: endTime,
-        onEventCreated: () {
-          _loadEvents();
-        },
+        onEventCreated: () {},
       ),
     );
 
@@ -1791,9 +1660,7 @@ class _CalendarDayViewScreenState extends State<CalendarDayViewScreen> {
       builder: (context) => EventEditModal(
         event: event,
         calendarId: _selectedCalendarId,
-        onEventUpdated: () {
-          _loadEvents();
-        },
+        onEventUpdated: () {},
       ),
     );
   }
@@ -1821,20 +1688,8 @@ class _CalendarDayViewScreenState extends State<CalendarDayViewScreen> {
     if (confirmed != true) return;
 
     try {
-      if (event.id.startsWith('google_')) {
-        final googleEventId = event.id.replaceFirst('google_', '');
-        await GoogleCalendarService.instance.deleteEvent(
-          eventId: googleEventId,
-          calendarId: _selectedCalendarId ?? 'primary',
-        );
-      } else {
-        await _storage.deleteEvent(event.id);
-      }
-      _eventsMap.remove(event.id);
-      _updateEventLists();
-      if (mounted) {
-        setState(() {});
-      }
+      await _repository.deleteEvent(event.id);
+      await _syncService.pushLocalChanges();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1844,8 +1699,6 @@ class _CalendarDayViewScreenState extends State<CalendarDayViewScreen> {
           ),
         );
       }
-    } finally {
-      await _loadEvents();
     }
   }
 
@@ -1908,6 +1761,10 @@ class _CalendarDayViewScreenState extends State<CalendarDayViewScreen> {
       return const SizedBox.shrink();
     }
 
+    final allDayRowHeight = _allDayEvents.isNotEmpty ? 40.0 : 0.0;
+    final scrollOffset =
+        _dayGridScrollController.hasClients ? _dayGridScrollController.offset : 0.0;
+
     final calendarColorValue =
         _calendarColors[_selectedCalendarId ?? 'primary'];
     final selectionColor = calendarColorValue != null
@@ -1920,7 +1777,8 @@ class _CalendarDayViewScreenState extends State<CalendarDayViewScreen> {
     const hourHeight = 60.0;
     final startMinutes = startTime.hour * 60 + startTime.minute;
     final endMinutes = endTime.hour * 60 + endTime.minute;
-    final startPosition = (startMinutes / 60) * hourHeight;
+    final startPosition =
+        (startMinutes / 60) * hourHeight - scrollOffset + allDayRowHeight;
     final height = ((endMinutes - startMinutes) / 60) * hourHeight;
 
     final isCompact = height < 32;
@@ -1972,15 +1830,8 @@ class _CalendarDayViewScreenState extends State<CalendarDayViewScreen> {
       context: context,
       builder: (context) => EventDetailsPopover(
         event: event,
-        onEventUpdated: () {
-          _loadEvents();
-        },
-        onEventDeleted: () {
-          // Remove from map
-          _eventsMap.remove(event.id);
-          _updateEventLists();
-          setState(() {});
-        },
+        onEventUpdated: () {},
+        onEventDeleted: () {},
       ),
     );
   }
@@ -2061,28 +1912,19 @@ class _CalendarDayViewScreenState extends State<CalendarDayViewScreen> {
       // Navigate next: Right arrow (Google Calendar style)
       else if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
         if (isModifierPressed) {
-          setState(() {
-            _currentDate = _currentDate.add(const Duration(days: 1));
-          });
-          _loadEvents();
+          _handleDateChange(_currentDate.add(const Duration(days: 1)));
         }
       }
       // Navigate previous: Left arrow (Google Calendar style)
       else if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
         if (isModifierPressed) {
-          setState(() {
-            _currentDate = _currentDate.subtract(const Duration(days: 1));
-          });
-          _loadEvents();
+          _handleDateChange(_currentDate.subtract(const Duration(days: 1)));
         }
       }
       // Today: 'T' (Google Calendar style)
       else if (event.logicalKey == LogicalKeyboardKey.keyT) {
         if (isModifierPressed) {
-          setState(() {
-            _currentDate = DateTime.now();
-          });
-          _loadEvents();
+          _handleDateChange(DateTime.now());
         }
       }
     }

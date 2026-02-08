@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../models/calendar_event.dart';
-import '../../services/event_storage_service.dart';
-import '../../services/google_calendar_service.dart';
 import '../../theme/app_colors.dart';
+import '../../providers/event_providers.dart';
 
-class EventDetailsPopover extends StatelessWidget {
+class EventDetailsPopover extends ConsumerWidget {
   final CalendarEvent event;
   final VoidCallback onEventUpdated;
   final VoidCallback onEventDeleted;
@@ -17,7 +17,7 @@ class EventDetailsPopover extends StatelessWidget {
     required this.onEventDeleted,
   });
 
-  Future<void> _deleteEvent(BuildContext context) async {
+  Future<void> _deleteEvent(BuildContext context, WidgetRef ref) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -39,21 +39,8 @@ class EventDetailsPopover extends StatelessWidget {
 
     if (confirmed == true) {
       try {
-        // Delete from Google Calendar if it's a Google Calendar event
-        if (event.id.startsWith('google_')) {
-          final googleEventId = event.id.replaceFirst('google_', '');
-          final calendarId =
-              await GoogleCalendarService.instance.storage
-                  .getDefaultCalendarId() ??
-              'primary';
-          await GoogleCalendarService.instance.deleteEvent(
-            eventId: googleEventId,
-            calendarId: calendarId,
-          );
-        } else {
-          // Delete local event
-          await EventStorageService.instance.deleteEvent(event.id);
-        }
+        await ref.read(eventRepositoryProvider).deleteEvent(event.id);
+        await ref.read(syncServiceProvider).pushLocalChanges();
 
         if (context.mounted) {
           Navigator.pop(context);
@@ -79,7 +66,7 @@ class EventDetailsPopover extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Dialog(
       backgroundColor: AppColors.surface,
       child: Container(
@@ -140,7 +127,7 @@ class EventDetailsPopover extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 TextButton.icon(
-                  onPressed: () => _deleteEvent(context),
+                  onPressed: () => _deleteEvent(context, ref),
                   icon: const Icon(Icons.delete),
                   label: const Text('Delete'),
                   style: TextButton.styleFrom(foregroundColor: AppColors.error),
@@ -154,7 +141,7 @@ class EventDetailsPopover extends StatelessWidget {
   }
 }
 
-class EventEditModal extends StatefulWidget {
+class EventEditModal extends ConsumerStatefulWidget {
   final CalendarEvent event;
   final VoidCallback onEventUpdated;
   final String? calendarId;
@@ -166,10 +153,10 @@ class EventEditModal extends StatefulWidget {
   });
 
   @override
-  State<EventEditModal> createState() => _EventEditModalState();
+  ConsumerState<EventEditModal> createState() => _EventEditModalState();
 }
 
-class _EventEditModalState extends State<EventEditModal> {
+class _EventEditModalState extends ConsumerState<EventEditModal> {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _titleController;
   late TextEditingController _descriptionController;
@@ -310,25 +297,8 @@ class _EventEditModalState extends State<EventEditModal> {
     );
 
     try {
-      if (updatedEvent.id.startsWith('google_')) {
-        final googleEventId = updatedEvent.id.replaceFirst('google_', '');
-        final calendarId =
-            widget.calendarId ??
-            await GoogleCalendarService.instance.storage
-                .getDefaultCalendarId() ??
-            'primary';
-        await GoogleCalendarService.instance.updateEvent(
-          eventId: googleEventId,
-          summary: updatedEvent.title,
-          description: updatedEvent.description,
-          start: updatedEvent.startDateTime,
-          end: updatedEvent.endDateTime,
-          calendarId: calendarId,
-          color: updatedEvent.color,
-        );
-      } else {
-        await EventStorageService.instance.updateEvent(updatedEvent);
-      }
+      await ref.read(eventRepositoryProvider).updateEvent(updatedEvent);
+      await ref.read(syncServiceProvider).pushLocalChanges();
       if (mounted) {
         Navigator.pop(context);
         widget.onEventUpdated();

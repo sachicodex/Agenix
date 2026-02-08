@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../widgets/rounded_card.dart';
 import '../widgets/form_fields.dart';
 import '../widgets/date_time_field.dart';
@@ -8,21 +9,23 @@ import '../services/google_calendar_service.dart';
 import '../services/groq_service.dart';
 import '../services/api_key_storage_service.dart';
 import '../theme/app_colors.dart';
-import 'sign_in_screen.dart';
 import 'settings_screen.dart';
+import '../models/calendar_event.dart';
+import '../providers/event_providers.dart';
 
 
-class CreateEventScreen extends StatefulWidget {
+class CreateEventScreen extends ConsumerStatefulWidget {
   static const routeName = '/create';
   final VoidCallback? onSignOut;
 
   const CreateEventScreen({super.key, this.onSignOut});
 
   @override
-  State<CreateEventScreen> createState() => _CreateEventScreenState();
+  ConsumerState<CreateEventScreen> createState() =>
+      _CreateEventScreenState();
 }
 
-class _CreateEventScreenState extends State<CreateEventScreen> {
+class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
   Future<void> _refreshUserInfo() async {
     final acc = await GoogleCalendarService.instance.getAccountDetails();
     if (mounted) {
@@ -144,6 +147,13 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         await _fetchCalendars();
         // Load default calendar if set
         await _loadDefaultCalendar();
+      } else if (mounted) {
+        setState(() {
+          _availableCalendars = [
+            {'id': 'primary', 'name': 'Primary Calendar', 'color': 0xFF039BE5},
+          ];
+          _selectedCalendarId ??= 'primary';
+        });
       }
     });
   }
@@ -369,7 +379,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
           icon: const Icon(Icons.event_available),
           label: _saving
               ? const Text('Saving...')
-              : const Text('Save to Google Calendar'),
+              : const Text('Save'),
         ),
       ],
     );
@@ -582,82 +592,46 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         return;
       }
 
-      // Ensure signed in
-      try {
-        await GoogleCalendarService.instance.ensureSignedIn(context);
-      } catch (_) {
-        // Fallback: open explicit SignInScreen to let user retry and see errors
-        final res = await Navigator.of(
-          context,
-        ).push<bool>(MaterialPageRoute(builder: (c) => const SignInScreen()));
-        if (res != true) {
-          // User cancelled sign-in
-          return;
-        }
-      }
+      final calendarId = _selectedCalendarId ?? 'primary';
+      final selected = _availableCalendars
+          .cast<Map<String, dynamic>>()
+          .firstWhere(
+            (c) => c['id'] == calendarId,
+            orElse: () => {},
+          );
+      final colorValue = selected['color'] as int?;
+      final minutes = reminderOn ? _parseReminderMinutes(reminderValue) : null;
 
-      // Try to save event to Google Calendar
-      final title = _titleController.text;
-      try {
-        // Prepare reminders if enabled
-        List<Map<String, dynamic>>? reminders;
-        if (reminderOn) {
-          final minutes = _parseReminderMinutes(reminderValue);
-          reminders = [
-            {'method': 'popup', 'minutes': minutes},
-          ];
-        }
+      final event = CalendarEvent(
+        id: DateTime.now().microsecondsSinceEpoch.toString(),
+        calendarId: calendarId,
+        title: _titleController.text.trim(),
+        startDateTime: _startDateTime,
+        endDateTime: _endDateTime,
+        allDay: false,
+        color: Color(colorValue ?? AppColors.primary.value),
+        description: _descController.text.trim(),
+        location: '',
+        timezone: DateTime.now().timeZoneName,
+        reminders: minutes == null ? const [] : [minutes],
+      );
 
-        await GoogleCalendarService.instance.insertEvent(
-          summary: title,
-          description: _descController.text,
-          start: _startDateTime,
-          end: _endDateTime,
-          calendarId: _selectedCalendarId ?? 'primary',
-          reminders: reminders,
-        );
-        // Only on success, go to feedback screen
-        _goToFeedbackScreen('success');
-        // Clear form fields after sync completes
-        if (mounted) {
-          setState(() {
-            _titleController.clear();
-            _descController.clear();
-            _originalUserTitle = null; // Reset original user title
-            _startDateTime = DateTime.now();
-            _endDateTime = DateTime.now().add(const Duration(hours: 1));
-            reminderOn = true;
-            reminderValue = ReminderOptions.values[0]; // '10 minutes'
-            // Reset calendar selection flag so default calendar can be loaded again
-            _userHasSelectedCalendar = false;
-          });
-          // Reload default calendar for next event
-          await _loadDefaultCalendar();
-        }
-      } catch (err) {
-        // On error, show user-friendly error dialog only, do NOT go to feedback screen
-        String errMsg = err.toString();
-        String userMsg;
-        if (errMsg.contains('writer access')) {
-          userMsg = 'You need to have writer access to this calendar.';
-        } else {
-          userMsg =
-              'Failed to save to Google Calendar. Please try again or check your permissions.';
-        }
-        await showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Failed to save to Google Calendar'),
-            content: Text(userMsg),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('OK'),
-              ),
-            ],
-          ),
-        );
-        // Do NOT clear form fields or go to feedback screen
+      await ref.read(eventRepositoryProvider).createEvent(event);
+      await ref.read(syncServiceProvider).pushLocalChanges();
+      _goToFeedbackScreen('success');
+
+      if (mounted) {
+        setState(() {
+          _titleController.clear();
+          _descController.clear();
+          _originalUserTitle = null;
+          _startDateTime = DateTime.now();
+          _endDateTime = DateTime.now().add(const Duration(hours: 1));
+          reminderOn = true;
+          reminderValue = ReminderOptions.values[0];
+          _userHasSelectedCalendar = false;
+        });
+        await _loadDefaultCalendar();
       }
     } finally {
       if (mounted) setState(() => _saving = false);

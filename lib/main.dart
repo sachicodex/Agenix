@@ -1,5 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:sqflite/sqflite.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'screens/auth_wrapper.dart';
 import 'screens/create_event_screen.dart';
 import 'screens/sync_feedback_screen.dart';
@@ -7,9 +12,17 @@ import 'screens/settings_screen.dart';
 import 'screens/calendar_day_view_screen.dart';
 import 'theme/app_theme.dart';
 import 'services/google_calendar_service.dart';
+import 'data/local/local_event_store.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  }
+
+  await LocalEventStore.instance.initialize();
 
   // Load environment variables from .env (optional) - non-blocking
   // If the .env file is missing, dotenv.load() may throw; catch and continue
@@ -24,7 +37,7 @@ Future<void> main() async {
     // Log error but don't prevent app from starting
   });
 
-  runApp(const MyApp());
+  runApp(const ProviderScope(child: MyApp()));
 }
 
 class MyApp extends StatelessWidget {

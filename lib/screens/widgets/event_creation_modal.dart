@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/calendar_event.dart';
-import '../../services/event_storage_service.dart';
 import '../../services/google_calendar_service.dart';
 import '../../services/groq_service.dart';
 import '../../services/api_key_storage_service.dart';
@@ -9,8 +9,9 @@ import '../../widgets/form_fields.dart';
 import '../../widgets/date_time_field.dart';
 import '../../widgets/reminder_field.dart';
 import '../settings_screen.dart';
+import '../../providers/event_providers.dart';
 
-class EventCreationModal extends StatefulWidget {
+class EventCreationModal extends ConsumerStatefulWidget {
   final DateTime? startTime;
   final DateTime? endTime;
   final VoidCallback onEventCreated;
@@ -23,10 +24,11 @@ class EventCreationModal extends StatefulWidget {
   });
 
   @override
-  State<EventCreationModal> createState() => _EventCreationModalState();
+  ConsumerState<EventCreationModal> createState() =>
+      _EventCreationModalState();
 }
 
-class _EventCreationModalState extends State<EventCreationModal> {
+class _EventCreationModalState extends ConsumerState<EventCreationModal> {
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
   late DateTime _startTime;
@@ -323,43 +325,31 @@ class _EventCreationModalState extends State<EventCreationModal> {
     }
 
     try {
-      // Check if signed in to Google Calendar
-      final signedIn = await GoogleCalendarService.instance.isSignedIn();
-      final calendarId =
-          await GoogleCalendarService.instance.storage.getDefaultCalendarId() ??
-          'primary';
+      final minutes = reminderOn ? _parseReminderMinutes(reminderValue) : null;
+      final calendarId = _selectedCalendarId ?? 'primary';
+      final selected = _availableCalendars
+          .cast<Map<String, dynamic>>()
+          .firstWhere(
+            (c) => c['id'] == calendarId,
+            orElse: () => {},
+          );
+      final colorValue = selected['color'] as int?;
+      final event = CalendarEvent(
+        id: DateTime.now().microsecondsSinceEpoch.toString(),
+        calendarId: calendarId,
+        title: _titleController.text.trim(),
+        startDateTime: _startTime,
+        endDateTime: _endTime,
+        allDay: false,
+        color: Color(colorValue ?? AppColors.primary.value),
+        description: _descriptionController.text.trim(),
+        location: '',
+        timezone: DateTime.now().timeZoneName,
+        reminders: minutes == null ? const [] : [minutes],
+      );
 
-      if (signedIn) {
-        List<Map<String, dynamic>>? reminders;
-        if (reminderOn) {
-          final minutes = _parseReminderMinutes(reminderValue);
-          reminders = [
-            {'method': 'popup', 'minutes': minutes},
-          ];
-        }
-
-        await GoogleCalendarService.instance.insertEvent(
-          summary: _titleController.text.trim(),
-          description: _descriptionController.text.trim(),
-          start: _startTime,
-          end: _endTime,
-          calendarId: _selectedCalendarId ?? calendarId,
-          reminders: reminders,
-        );
-      } else {
-        // Save locally if not signed in
-        final event = CalendarEvent(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
-          title: _titleController.text.trim(),
-          startDateTime: _startTime,
-          endDateTime: _endTime,
-          allDay: false,
-          color: AppColors.primary,
-          description: _descriptionController.text.trim(),
-          reminders: reminderOn ? [_parseReminderMinutes(reminderValue)] : const [],
-        );
-        await EventStorageService.instance.addEvent(event);
-      }
+      await ref.read(eventRepositoryProvider).createEvent(event);
+      await ref.read(syncServiceProvider).pushLocalChanges();
 
       if (mounted) {
         Navigator.pop(context);
