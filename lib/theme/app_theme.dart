@@ -27,7 +27,7 @@ class AppTheme {
         onBackground: AppColors.onBackground,
         onSurface: AppColors.onSurface,
         onError: AppColors.onError,
-        brightness: Brightness.light, // Google Calendar uses light mode
+        brightness: Brightness.dark,
       ),
       scaffoldBackgroundColor: AppColors.background,
       fontFamily: 'Montserrat',
@@ -42,9 +42,10 @@ class AppTheme {
     return base.copyWith(
       cardTheme: base.cardTheme.copyWith(
         color: AppColors.surface,
-        elevation: 6,
+        elevation: 2,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadius.card),
+          side: const BorderSide(color: AppColors.borderColor),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
@@ -52,7 +53,15 @@ class AppTheme {
         fillColor: AppColors.surface,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadius.control),
-          borderSide: BorderSide.none,
+          borderSide: const BorderSide(color: AppColors.borderColor),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppRadius.control),
+          borderSide: const BorderSide(color: AppColors.borderColor),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppRadius.control),
+          borderSide: const BorderSide(color: AppColors.primary, width: 1.2),
         ),
         hintStyle: TextStyle(color: AppColors.onSurface.withOpacity(0.6)),
       ),
@@ -66,10 +75,22 @@ class AppTheme {
           minimumSize: const Size(120, 44),
         ),
       ),
-      dividerColor: AppColors.surface,
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.onBackground,
+          side: const BorderSide(color: AppColors.borderColor),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.control),
+          ),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(foregroundColor: AppColors.primary),
+      ),
+      dividerColor: AppColors.dividerColor,
       appBarTheme: AppBarTheme(
         backgroundColor: AppColors.surface,
-        foregroundColor: AppColors.onSurface,
+        foregroundColor: AppColors.onBackground,
         elevation: 0,
         centerTitle: false,
         titleTextStyle: AppTextStyles.headline2,

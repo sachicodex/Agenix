@@ -26,6 +26,9 @@ class CalendarDayViewScreen extends ConsumerStatefulWidget {
 
 class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     with WidgetsBindingObserver {
+  static const Color _eventBlockTextColor = Color(0xFF141614);
+  static const double _pastEventOpacity = 0.55;
+
   DateTime _currentDate = DateTime.now();
   late final EventRepository _repository;
   late final SyncService _syncService;
@@ -102,9 +105,9 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
         final status = next.valueOrNull;
         if (status?.state == SyncState.error && mounted) {
           final message = status?.error ?? 'Sync error';
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(message)),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(message)));
         }
       },
     );
@@ -179,17 +182,17 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       _isLoading = true;
     });
 
-    _eventsSubscription = _repository.watchEvents(_currentRange).listen(
-      (events) {
-        _eventsMap
-          ..clear()
-          ..addEntries(events.map((e) => MapEntry(e.id, e)));
-        setState(() {
-          _updateEventLists();
-          _isLoading = false;
-        });
-      },
-    );
+    _eventsSubscription = _repository.watchEvents(_currentRange).listen((
+      events,
+    ) {
+      _eventsMap
+        ..clear()
+        ..addEntries(events.map((e) => MapEntry(e.id, e)));
+      setState(() {
+        _updateEventLists();
+        _isLoading = false;
+      });
+    });
   }
 
   Future<void> _handleDateChange(DateTime newDate) async {
@@ -238,7 +241,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       debugPrint('Error loading calendar colors: $e');
     }
   }
-
 
   void _updateEventLists() {
     final allEvents = _eventsMap.values.toList();
@@ -306,10 +308,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
           final time = DateFormat('h:mm a').format(status.lastSyncTime!);
           return Text(
             'Last sync $time',
-            style: const TextStyle(
-              color: AppColors.onBackground,
-              fontSize: 12,
-            ),
+            style: const TextStyle(color: AppColors.onBackground, fontSize: 12),
           );
         }
         return const SizedBox.shrink();
@@ -473,39 +472,49 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                                 ),
                                 child: Builder(
                                   builder: (context) {
-                                    final textColor =
-                                        event.color.computeLuminance() > 0.6
-                                        ? Colors.black87
-                                        : Colors.white;
+                                    final now = DateTime.now();
+                                    final isPastEvent =
+                                        event.endDateTime.isBefore(now) ||
+                                        event.endDateTime.isAtSameMomentAs(now);
                                     return Container(
-                                      decoration: BoxDecoration(
-                                        color: event.color,
-                                        border: Border(
-                                          left: BorderSide(
+                                      child: Opacity(
+                                        opacity: isPastEvent
+                                            ? _pastEventOpacity
+                                            : 1,
+                                        child: Container(
+                                          decoration: BoxDecoration(
                                             color: event.color,
-                                            width: 3,
+                                            border: Border(
+                                              left: BorderSide(
+                                                color: event.color,
+                                                width: 3,
+                                              ),
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              2,
+                                            ),
                                           ),
-                                        ),
-                                        borderRadius: BorderRadius.circular(2),
-                                      ),
-                                      child: GestureDetector(
-                                        onTapUp: (details) {
-                                          _showEventActionsPopover(
-                                            event,
-                                            details.globalPosition,
-                                          );
-                                        },
-                                        child: Padding(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 4,
-                                          ),
-                                          child: Text(
-                                            event.title,
-                                            style: TextStyle(
-                                              color: textColor,
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w500,
+                                          child: GestureDetector(
+                                            onTapUp: (details) {
+                                              _showEventActionsPopover(
+                                                event,
+                                                details.globalPosition,
+                                              );
+                                            },
+                                            child: Padding(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 8,
+                                                    vertical: 4,
+                                                  ),
+                                              child: Text(
+                                                event.title,
+                                                style: const TextStyle(
+                                                  color: _eventBlockTextColor,
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
                                             ),
                                           ),
                                         ),
@@ -722,6 +731,11 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     CalendarEvent event,
     BoxConstraints constraints,
   ) {
+    final now = DateTime.now();
+    final isPastEvent =
+        event.endDateTime.isBefore(now) ||
+        event.endDateTime.isAtSameMomentAs(now);
+
     // All-day events appear at the very top (position 0) and span the full day height
     // We'll make them about 30 pixels tall, positioned at the top
     return Positioned(
@@ -733,50 +747,52 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
         onTapUp: (details) {
           _showEventActionsPopover(event, details.globalPosition);
         },
-        child: Container(
-          // Use the exact event color without opacity blending.
-          color: event.color,
-          decoration: BoxDecoration(
-            border: Border(left: BorderSide(color: event.color, width: 3)),
-            borderRadius: BorderRadius.circular(2),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  event.title,
-                  style: TextStyle(
-                    color: event.color.computeLuminance() > 0.6
-                        ? Colors.black87
-                        : Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              // All-day indicator
-              Container(
-                margin: const EdgeInsets.only(left: 4),
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                decoration: BoxDecoration(
-                  color: event.color,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-                child: Text(
-                  'All day',
-                  style: TextStyle(
-                    color: event.color.computeLuminance() > 0.6
-                        ? Colors.black87
-                        : Colors.white,
-                    fontSize: 9,
-                    fontWeight: FontWeight.w400,
+        child: Opacity(
+          opacity: isPastEvent ? _pastEventOpacity : 1,
+          child: Container(
+            // Use the exact event color without opacity blending.
+            color: event.color,
+            decoration: BoxDecoration(
+              border: Border(left: BorderSide(color: event.color, width: 3)),
+              borderRadius: BorderRadius.circular(2),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    event.title,
+                    style: const TextStyle(
+                      color: _eventBlockTextColor,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-              ),
-            ],
+                // All-day indicator
+                Container(
+                  margin: const EdgeInsets.only(left: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 1,
+                  ),
+                  decoration: BoxDecoration(
+                    color: event.color,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                  child: const Text(
+                    'All day',
+                    style: TextStyle(
+                      color: _eventBlockTextColor,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -821,6 +837,16 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     bool isDraggingOriginal = false,
   }) {
     const edgeHitHeight = 14.0;
+    final now = DateTime.now();
+    final isPastEvent =
+        !isPreview &&
+        (event.endDateTime.isBefore(now) ||
+            event.endDateTime.isAtSameMomentAs(now));
+    final effectiveOpacity = isDraggingOriginal
+        ? 0.35
+        : isPastEvent
+        ? _pastEventOpacity
+        : 1.0;
 
     bool? resizeZoneForLocal(Offset localPosition) {
       final isTop = localPosition.dy <= edgeHitHeight;
@@ -1031,33 +1057,25 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
           child: IgnorePointer(
             ignoring: isPreview,
             child: Opacity(
-              opacity: isDraggingOriginal ? 0.35 : 1,
+              opacity: effectiveOpacity,
               child: Container(
                 decoration: BoxDecoration(
                   // Use exact event color for the block fill.
                   color: event.color,
                   border: Border(
-                    left: BorderSide(
-                      color: event.color,
-                      width: 3,
-                    ),
+                    left: BorderSide(color: event.color, width: 3),
                   ),
                   borderRadius: BorderRadius.circular(6),
                 ),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 4,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.start,
                   children: [
                     Text(
                       event.title,
-                      style: TextStyle(
-                        color: event.color.computeLuminance() > 0.6
-                            ? Colors.black87
-                            : Colors.white,
+                      style: const TextStyle(
+                        color: _eventBlockTextColor,
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                         height: 1.2,
@@ -1068,10 +1086,8 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                     if (cardHeight >= 34)
                       Text(
                         '${DateFormat('h:mm').format(event.startDateTime)} - ${DateFormat('h:mm').format(event.endDateTime)}',
-                        style: TextStyle(
-                          color: event.color.computeLuminance() > 0.6
-                              ? Colors.black87
-                              : Colors.white,
+                        style: const TextStyle(
+                          color: _eventBlockTextColor,
                           fontSize: 11,
                           fontWeight: FontWeight.w500,
                           height: 1.2,
@@ -1134,21 +1150,14 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     }
 
     for (final event in _timedEvents) {
-
       const hourHeight = 60.0;
       final startMinutes =
           event.startDateTime.hour * 60 + event.startDateTime.minute;
-      final endMinutes =
-          event.endDateTime.hour * 60 + event.endDateTime.minute;
+      final endMinutes = event.endDateTime.hour * 60 + event.endDateTime.minute;
       final top = (startMinutes / 60) * hourHeight;
       final height = ((endMinutes - startMinutes) / 60) * hourHeight;
 
-      final rect = Rect.fromLTWH(
-        2,
-        top,
-        gridWidth - 4,
-        height,
-      );
+      final rect = Rect.fromLTWH(2, top, gridWidth - 4, height);
       if (rect.contains(localPosition)) {
         return true;
       }
@@ -1514,10 +1523,8 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   Future<void> _showEditEventModal(CalendarEvent event) async {
     await showDialog(
       context: context,
-      builder: (context) => EventCreationModal(
-        existingEvent: event,
-        onEventCreated: () {},
-      ),
+      builder: (context) =>
+          EventCreationModal(existingEvent: event, onEventCreated: () {}),
     );
   }
 
@@ -1618,8 +1625,9 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     }
 
     final allDayRowHeight = _allDayEvents.isNotEmpty ? 40.0 : 0.0;
-    final scrollOffset =
-        _dayGridScrollController.hasClients ? _dayGridScrollController.offset : 0.0;
+    final scrollOffset = _dayGridScrollController.hasClients
+        ? _dayGridScrollController.offset
+        : 0.0;
 
     final calendarColorValue =
         _calendarColors[_selectedCalendarId ?? 'primary'];

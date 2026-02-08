@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/calendar_event.dart';
@@ -26,8 +28,7 @@ class EventCreationModal extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<EventCreationModal> createState() =>
-      _EventCreationModalState();
+  ConsumerState<EventCreationModal> createState() => _EventCreationModalState();
 }
 
 class _EventCreationModalState extends ConsumerState<EventCreationModal> {
@@ -74,7 +75,9 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _fetchCalendars();
-      await _loadDefaultCalendar();
+      if (widget.existingEvent == null) {
+        await _loadDefaultCalendar();
+      }
     });
   }
 
@@ -126,6 +129,11 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
   }
 
   Future<void> _loadDefaultCalendar() async {
+    // In edit mode, keep the event's current calendar selection.
+    if (widget.existingEvent != null) {
+      return;
+    }
+
     try {
       final storage = GoogleCalendarService.instance.storage;
       final defaultCalendarId = await storage.getDefaultCalendarId();
@@ -346,10 +354,7 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
       final calendarId = _selectedCalendarId ?? 'primary';
       final selected = _availableCalendars
           .cast<Map<String, dynamic>>()
-          .firstWhere(
-            (c) => c['id'] == calendarId,
-            orElse: () => {},
-          );
+          .firstWhere((c) => c['id'] == calendarId, orElse: () => {});
       final colorValue = selected['color'] as int?;
       final existing = widget.existingEvent;
       if (existing != null) {
@@ -381,17 +386,21 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
         );
         await ref.read(eventRepositoryProvider).createEvent(event);
       }
-      await ref.read(syncServiceProvider).pushLocalChanges();
-
       if (mounted) {
         Navigator.pop(context);
         widget.onEventCreated();
       }
+
+      unawaited(
+        ref.read(syncServiceProvider).pushLocalChanges().catchError((e) {
+          debugPrint('Background sync failed after save: $e');
+        }),
+      );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error saving event: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error saving event: $e')));
       }
     }
   }
@@ -435,6 +444,7 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
             const SizedBox(height: 24),
             LargeTextField(
               controller: _titleController,
+              autofocus: true,
               hint: 'Event title',
               label: 'Title',
               requiredField: true,
@@ -558,4 +568,3 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
     );
   }
 }
-

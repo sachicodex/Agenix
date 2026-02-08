@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -61,8 +63,10 @@ class EventDetailsPopover extends ConsumerWidget {
     Navigator.pop(context);
     showDialog(
       context: context,
-      builder: (context) =>
-          EventCreationModal(existingEvent: event, onEventCreated: onEventUpdated),
+      builder: (context) => EventCreationModal(
+        existingEvent: event,
+        onEventCreated: onEventUpdated,
+      ),
     );
   }
 
@@ -299,11 +303,16 @@ class _EventEditModalState extends ConsumerState<EventEditModal> {
 
     try {
       await ref.read(eventRepositoryProvider).updateEvent(updatedEvent);
-      await ref.read(syncServiceProvider).pushLocalChanges();
       if (mounted) {
         Navigator.pop(context);
         widget.onEventUpdated();
       }
+
+      unawaited(
+        ref.read(syncServiceProvider).pushLocalChanges().catchError((e) {
+          debugPrint('Background sync failed after update: $e');
+        }),
+      );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(

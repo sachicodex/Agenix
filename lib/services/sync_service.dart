@@ -15,18 +15,11 @@ class SyncStatus {
   final DateTime? lastSyncTime;
   final String? error;
 
-  const SyncStatus({
-    required this.state,
-    this.lastSyncTime,
-    this.error,
-  });
+  const SyncStatus({required this.state, this.lastSyncTime, this.error});
 }
 
 class SyncService {
-  SyncService(
-    this._localStore,
-    this._remoteSource,
-  );
+  SyncService(this._localStore, this._remoteSource);
 
   final LocalEventStore _localStore;
   final RemoteCalendarDataSource _remoteSource;
@@ -101,9 +94,7 @@ class SyncService {
         SyncStatus(state: SyncState.idle, lastSyncTime: DateTime.now()),
       );
     } catch (e) {
-      _setStatus(
-        SyncStatus(state: SyncState.error, error: e.toString()),
-      );
+      _setStatus(SyncStatus(state: SyncState.error, error: e.toString()));
     }
   }
 
@@ -162,9 +153,7 @@ class SyncService {
         SyncStatus(state: SyncState.idle, lastSyncTime: DateTime.now()),
       );
     } catch (e) {
-      _setStatus(
-        SyncStatus(state: SyncState.error, error: e.toString()),
-      );
+      _setStatus(SyncStatus(state: SyncState.error, error: e.toString()));
     }
   }
 
@@ -178,7 +167,9 @@ class SyncService {
       final normalizedEvent = _normalizeRemoteIdentity(event);
       try {
         if (normalizedEvent.pendingAction == PendingAction.create) {
-          final created = await _remoteSource.insertEvent(event: normalizedEvent);
+          final created = await _remoteSource.insertEvent(
+            event: normalizedEvent,
+          );
           final updated = normalizedEvent.copyWith(
             gEventId: created.gEventId,
             dirty: false,
@@ -187,9 +178,17 @@ class SyncService {
             updatedAtRemote: created.updatedAtRemote,
           );
           await _localStore.upsertEvent(updated);
+          if (updated.gEventId != null) {
+            await _localStore.removeDuplicateGoogleEventCopies(
+              gEventId: updated.gEventId!,
+              keepEventId: updated.id,
+            );
+          }
         } else if (normalizedEvent.pendingAction == PendingAction.update) {
           if (normalizedEvent.gEventId == null) {
-            final created = await _remoteSource.insertEvent(event: normalizedEvent);
+            final created = await _remoteSource.insertEvent(
+              event: normalizedEvent,
+            );
             final updated = normalizedEvent.copyWith(
               gEventId: created.gEventId,
               dirty: false,
@@ -198,16 +197,51 @@ class SyncService {
               updatedAtRemote: created.updatedAtRemote,
             );
             await _localStore.upsertEvent(updated);
+            if (updated.gEventId != null) {
+              await _localStore.removeDuplicateGoogleEventCopies(
+                gEventId: updated.gEventId!,
+                keepEventId: updated.id,
+              );
+            }
           } else {
-            final updatedRemote = await _remoteSource.updateEvent(
-              event: normalizedEvent,
+            var eventForRemote = normalizedEvent;
+            final sourceCalendarId = _extractCalendarIdFromLocalId(
+              normalizedEvent.id,
             );
-            final updated = normalizedEvent.copyWith(
+
+            if (sourceCalendarId != null &&
+                sourceCalendarId.isNotEmpty &&
+                sourceCalendarId != normalizedEvent.calendarId) {
+              await _remoteSource.moveEvent(
+                event: normalizedEvent,
+                sourceCalendarId: sourceCalendarId,
+              );
+
+              final movedLocalId = _buildRemoteLocalId(
+                calendarId: normalizedEvent.calendarId,
+                gEventId: normalizedEvent.gEventId!,
+              );
+              if (movedLocalId != normalizedEvent.id) {
+                await _localStore.deleteEventById(normalizedEvent.id);
+                eventForRemote = normalizedEvent.copyWith(id: movedLocalId);
+              }
+            }
+
+            final updatedRemote = await _remoteSource.updateEvent(
+              event: eventForRemote,
+            );
+            final updated = eventForRemote.copyWith(
               dirty: false,
               pendingAction: PendingAction.none,
               updatedAtRemote: updatedRemote.updatedAtRemote,
             );
             await _localStore.upsertEvent(updated);
+            if (updated.gEventId != null) {
+              await _localStore.removeDuplicateGoogleEventCopies(
+                gEventId: updated.gEventId!,
+                keepEventId: updated.id,
+              );
+            }
           }
         } else if (normalizedEvent.pendingAction == PendingAction.delete) {
           if (normalizedEvent.gEventId != null) {
@@ -224,21 +258,34 @@ class SyncService {
   CalendarEvent _normalizeRemoteIdentity(CalendarEvent event) {
     final parts = event.id.split(':');
     final looksLikeRemoteId = parts.length >= 3 && parts.first == 'g';
-    final inferredCalendarId = looksLikeRemoteId ? parts[1] : null;
-    final inferredGEventId = looksLikeRemoteId ? parts.sublist(2).join(':') : null;
-
-    final calendarId = (inferredCalendarId != null && inferredCalendarId.isNotEmpty)
-        ? inferredCalendarId
-        : event.calendarId;
+    final inferredGEventId = looksLikeRemoteId
+        ? parts.sublist(2).join(':')
+        : null;
 
     final gEventId = (event.gEventId != null && event.gEventId!.isNotEmpty)
         ? event.gEventId
         : inferredGEventId;
 
     return event.copyWith(
-      calendarId: calendarId,
+      // Preserve edited calendar choice from local record.
+      calendarId: event.calendarId,
       gEventId: gEventId,
     );
+  }
+
+  String? _extractCalendarIdFromLocalId(String localId) {
+    final parts = localId.split(':');
+    if (parts.length < 3 || parts.first != 'g') {
+      return null;
+    }
+    return parts[1];
+  }
+
+  String _buildRemoteLocalId({
+    required String calendarId,
+    required String gEventId,
+  }) {
+    return 'g:$calendarId:$gEventId';
   }
 
   Future<void> _applyRemoteEvent(CalendarEvent remoteEvent) async {
@@ -279,15 +326,19 @@ class SyncService {
     );
 
     await _localStore.upsertEvent(merged);
+    if (merged.gEventId != null) {
+      await _localStore.removeDuplicateGoogleEventCopies(
+        gEventId: merged.gEventId!,
+        keepEventId: merged.id,
+      );
+    }
   }
 
   Future<bool> _ensureSignedIn() async {
     return await GoogleCalendarService.instance.isSignedIn();
   }
 
-  Future<List<String>> _getTargetCalendarIds({
-    required String fallback,
-  }) async {
+  Future<List<String>> _getTargetCalendarIds({required String fallback}) async {
     try {
       final calendars = await GoogleCalendarService.instance.getUserCalendars();
       final ids = calendars

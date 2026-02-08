@@ -72,17 +72,14 @@ CREATE TABLE events (
     }
   }
 
-  Future<List<CalendarEvent>> getEventsForDateRange(
-    DateTimeRange range,
-  ) async {
+  Future<List<CalendarEvent>> getEventsForDateRange(DateTimeRange range) async {
     final db = _requireDb();
     final rangeStartUtc = range.start.toUtc().millisecondsSinceEpoch;
     final rangeEndUtc = range.end.toUtc().millisecondsSinceEpoch;
 
     final rows = await db.query(
       'events',
-      where:
-          'deleted = 0 AND start_utc < ? AND end_utc > ?',
+      where: 'deleted = 0 AND start_utc < ? AND end_utc > ?',
       whereArgs: [rangeEndUtc, rangeStartUtc],
     );
 
@@ -136,11 +133,7 @@ CREATE TABLE events (
     final db = _requireDb();
     await db.update(
       'events',
-      {
-        'deleted': 1,
-        'dirty': 0,
-        'pending_action': PendingAction.none.name,
-      },
+      {'deleted': 1, 'dirty': 0, 'pending_action': PendingAction.none.name},
       where: 'id = ?',
       whereArgs: [id],
     );
@@ -155,6 +148,21 @@ CREATE TABLE events (
       whereArgs: [PendingAction.none.name],
     );
     return rows.map(_fromRow).toList();
+  }
+
+  Future<void> removeDuplicateGoogleEventCopies({
+    required String gEventId,
+    required String keepEventId,
+  }) async {
+    final db = _requireDb();
+    final deleted = await db.delete(
+      'events',
+      where: 'g_event_id = ? AND id != ?',
+      whereArgs: [gEventId, keepEventId],
+    );
+    if (deleted > 0) {
+      _emitChange();
+    }
   }
 
   void _emitChange() {
@@ -197,8 +205,8 @@ CREATE TABLE events (
     final reminders = remindersRaw == null
         ? <int>[]
         : (jsonDecode(remindersRaw) as List<dynamic>)
-            .map((e) => e as int)
-            .toList();
+              .map((e) => e as int)
+              .toList();
 
     return CalendarEvent(
       id: row['id'] as String,

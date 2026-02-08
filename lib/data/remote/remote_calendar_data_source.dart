@@ -35,9 +35,7 @@ class RemoteCalendarDataSource {
     );
   }
 
-  Future<CalendarEvent> insertEvent({
-    required CalendarEvent event,
-  }) async {
+  Future<CalendarEvent> insertEvent({required CalendarEvent event}) async {
     final reminders = event.reminders.isNotEmpty
         ? [
             {'method': 'popup', 'minutes': event.reminders.first},
@@ -60,9 +58,7 @@ class RemoteCalendarDataSource {
     );
   }
 
-  Future<CalendarEvent> updateEvent({
-    required CalendarEvent event,
-  }) async {
+  Future<CalendarEvent> updateEvent({required CalendarEvent event}) async {
     if (event.gEventId == null) {
       throw StateError('Cannot update event without gEventId');
     }
@@ -90,9 +86,28 @@ class RemoteCalendarDataSource {
     );
   }
 
-  Future<void> deleteEvent({
+  Future<CalendarEvent> moveEvent({
     required CalendarEvent event,
+    required String sourceCalendarId,
   }) async {
+    if (event.gEventId == null) {
+      throw StateError('Cannot move event without gEventId');
+    }
+
+    final moved = await _googleService.moveEvent(
+      eventId: event.gEventId!,
+      sourceCalendarId: sourceCalendarId,
+      destinationCalendarId: event.calendarId,
+    );
+
+    return _mapFromApiEvent(
+      moved,
+      calendarId: event.calendarId,
+      fallbackColor: event.color,
+    );
+  }
+
+  Future<void> deleteEvent({required CalendarEvent event}) async {
     if (event.gEventId == null) {
       return;
     }
@@ -125,7 +140,8 @@ class RemoteCalendarDataSource {
       deleted: deleted,
       pendingAction: PendingAction.none,
       color: Color(colorValue),
-      reminders: (data['reminders'] as List<dynamic>?)
+      reminders:
+          (data['reminders'] as List<dynamic>?)
               ?.map((e) => e as int)
               .toList() ??
           [],
@@ -145,10 +161,7 @@ class RemoteCalendarDataSource {
     final end = endDateTime?.toLocal() ?? start.add(const Duration(hours: 1));
 
     return CalendarEvent(
-      id: _buildRemoteLocalId(
-        calendarId: calendarId,
-        gEventId: event.id,
-      ),
+      id: _buildRemoteLocalId(calendarId: calendarId, gEventId: event.id),
       gEventId: event.id,
       calendarId: calendarId,
       title: event.summary?.trim().isNotEmpty == true
@@ -165,10 +178,8 @@ class RemoteCalendarDataSource {
       deleted: event.status == 'cancelled',
       pendingAction: PendingAction.none,
       color: fallbackColor,
-      reminders: event.reminders?.overrides
-              ?.map((r) => r.minutes ?? 0)
-              .toList() ??
-          [],
+      reminders:
+          event.reminders?.overrides?.map((r) => r.minutes ?? 0).toList() ?? [],
     );
   }
 

@@ -54,7 +54,7 @@ class GoogleCalendarService {
     final calApi = calendar.CalendarApi(client);
     final list = await calApi.calendarList.list();
     final items = list.items ?? [];
-    
+
     return items
         .map((c) {
           // Get calendar color - Google Calendar API provides backgroundColor
@@ -82,14 +82,15 @@ class GoogleCalendarService {
             };
             calendarColor = colorMap[c.colorId] ?? 0xFF039BE5;
           }
-          
+
           return {
             'id': c.id ?? '',
             'name': c.summary ?? c.id ?? '',
             'color': calendarColor,
             'backgroundColor': c.backgroundColor,
             'colorId': c.colorId,
-            'selected': c.selected ?? true, // Whether calendar is selected/visible
+            'selected':
+                c.selected ?? true, // Whether calendar is selected/visible
           };
         })
         .where((c) {
@@ -630,14 +631,23 @@ class GoogleCalendarService {
 
     // Get local timezone for proper date range calculation
     final localTimeZone = DateTime.now().timeZoneName;
-    
+
     // Use UTC for API calls, but ensure we include the full day range
     // Add buffer to account for timezone differences
-    final timeMin = DateTime(start.year, start.month, start.day, 0, 0, 0).toUtc();
+    final timeMin = DateTime(
+      start.year,
+      start.month,
+      start.day,
+      0,
+      0,
+      0,
+    ).toUtc();
     // End should be start of next day in UTC to include all events of the selected day
     final timeMax = DateTime(end.year, end.month, end.day, 23, 59, 59).toUtc();
 
-    debugPrint('Fetching events: timeMin=$timeMin (${start.toLocal()}), timeMax=$timeMax (${end.toLocal()}), timezone=$localTimeZone');
+    debugPrint(
+      'Fetching events: timeMin=$timeMin (${start.toLocal()}), timeMax=$timeMax (${end.toLocal()}), timezone=$localTimeZone',
+    );
 
     try {
       final allParsedEvents = <Map<String, dynamic>>[];
@@ -646,7 +656,9 @@ class GoogleCalendarService {
 
       do {
         calendar.Events events;
-        if (syncToken != null && syncToken.isNotEmpty && currentPageToken == null) {
+        if (syncToken != null &&
+            syncToken.isNotEmpty &&
+            currentPageToken == null) {
           // Incremental sync (only on first page)
           events = await cal.events.list(
             calendarId,
@@ -668,8 +680,10 @@ class GoogleCalendarService {
         }
 
         final items = events.items ?? [];
-        debugPrint('Page returned ${items.length} events (pageToken: ${currentPageToken ?? 'none'})');
-        
+        debugPrint(
+          'Page returned ${items.length} events (pageToken: ${currentPageToken ?? 'none'})',
+        );
+
         // Parse all events from this page
         final parsedEvents = items
             .map(
@@ -683,23 +697,25 @@ class GoogleCalendarService {
             .where((e) => e != null)
             .cast<Map<String, dynamic>>()
             .toList();
-        
+
         allParsedEvents.addAll(parsedEvents);
-        
+
         // Save syncToken from first page
         if (finalSyncToken == null) {
           finalSyncToken = events.nextSyncToken;
         }
-        
+
         // Check if there are more pages
         currentPageToken = events.nextPageToken;
-        
+
         if (currentPageToken != null) {
           debugPrint('More pages available, fetching next page...');
         }
       } while (currentPageToken != null);
 
-      debugPrint('Total events fetched after pagination: ${allParsedEvents.length}');
+      debugPrint(
+        'Total events fetched after pagination: ${allParsedEvents.length}',
+      );
 
       return {
         'events': allParsedEvents,
@@ -713,7 +729,7 @@ class GoogleCalendarService {
         // Retry with full sync (with pagination)
         final allParsedEvents = <Map<String, dynamic>>[];
         String? currentPageToken;
-        
+
         do {
           final events = await cal.events.list(
             calendarId,
@@ -724,7 +740,7 @@ class GoogleCalendarService {
             pageToken: currentPageToken,
             timeZone: localTimeZone,
           );
-          
+
           final items = events.items ?? [];
           final parsedEvents = items
               .map(
@@ -738,11 +754,11 @@ class GoogleCalendarService {
               .where((e) => e != null)
               .cast<Map<String, dynamic>>()
               .toList();
-          
+
           allParsedEvents.addAll(parsedEvents);
           currentPageToken = events.nextPageToken;
         } while (currentPageToken != null);
-        
+
         return {
           'events': allParsedEvents,
           'syncToken': null, // Will be set on next successful sync
@@ -781,43 +797,56 @@ class GoogleCalendarService {
     final calApi = calendar.CalendarApi(client);
     final list = await calApi.calendarList.list();
     final items = list.items ?? [];
-    
+
     // Process all calendars (no filtering)
-    final calendars = items.map((c) {
-      // Get calendar color
-      int calendarColor = 0xFF039BE5; // Default blue
-      if (c.backgroundColor != null) {
-        final hexColor = c.backgroundColor!.replaceAll('#', '');
-        if (hexColor.length == 6) {
-          calendarColor = int.parse('FF$hexColor', radix: 16);
-        }
-      } else if (c.colorId != null) {
-        final colorMap = {
-          '1': 0xFF7986CB, '2': 0xFF33B679, '3': 0xFF8E24AA, '4': 0xFFE67C73,
-          '5': 0xFFF6BF26, '6': 0xFFF4511E, '7': 0xFF039BE5, '8': 0xFF0097A7,
-          '9': 0xFFAD1457, '10': 0xFF616161, '11': 0xFF795548,
-        };
-        calendarColor = colorMap[c.colorId] ?? 0xFF039BE5;
-      }
-      
-      return {
-        'id': c.id ?? '',
-        'name': c.summary ?? c.id ?? '',
-        'color': calendarColor,
-        'selected': c.selected ?? true,
-      };
-    }).where((c) {
-      // Only filter out calendars with empty IDs
-      final id = c['id'] as String?;
-      return id != null && id.isNotEmpty;
-    }).toList();
-    
+    final calendars = items
+        .map((c) {
+          // Get calendar color
+          int calendarColor = 0xFF039BE5; // Default blue
+          if (c.backgroundColor != null) {
+            final hexColor = c.backgroundColor!.replaceAll('#', '');
+            if (hexColor.length == 6) {
+              calendarColor = int.parse('FF$hexColor', radix: 16);
+            }
+          } else if (c.colorId != null) {
+            final colorMap = {
+              '1': 0xFF7986CB,
+              '2': 0xFF33B679,
+              '3': 0xFF8E24AA,
+              '4': 0xFFE67C73,
+              '5': 0xFFF6BF26,
+              '6': 0xFFF4511E,
+              '7': 0xFF039BE5,
+              '8': 0xFF0097A7,
+              '9': 0xFFAD1457,
+              '10': 0xFF616161,
+              '11': 0xFF795548,
+            };
+            calendarColor = colorMap[c.colorId] ?? 0xFF039BE5;
+          }
+
+          return {
+            'id': c.id ?? '',
+            'name': c.summary ?? c.id ?? '',
+            'color': calendarColor,
+            'selected': c.selected ?? true,
+          };
+        })
+        .where((c) {
+          // Only filter out calendars with empty IDs
+          final id = c['id'] as String?;
+          return id != null && id.isNotEmpty;
+        })
+        .toList();
+
     final allEvents = <Map<String, dynamic>>[];
 
     debugPrint('=== FETCHING EVENTS FROM ALL CALENDARS ===');
     debugPrint('Total calendars found: ${calendars.length}');
     for (final cal in calendars) {
-      debugPrint('  - ${cal['name']} (ID: ${cal['id']}, selected: ${cal['selected']})');
+      debugPrint(
+        '  - ${cal['name']} (ID: ${cal['id']}, selected: ${cal['selected']})',
+      );
     }
 
     // Fetch events from each calendar
@@ -825,7 +854,7 @@ class GoogleCalendarService {
     // This ensures all calendar events are shown, not just default calendar
     int calendarsProcessed = 0;
     int calendarsWithEvents = 0;
-    
+
     for (final cal in calendars) {
       final calendarId = cal['id'] as String;
       final calendarColor = cal['color'] as int;
@@ -836,27 +865,29 @@ class GoogleCalendarService {
       calendarsProcessed++;
 
       try {
-        debugPrint('[Calendar $calendarsProcessed/${calendars.length}] Fetching from: $calendarName (ID: $calendarId)');
+        debugPrint(
+          '[Calendar $calendarsProcessed/${calendars.length}] Fetching from: $calendarName (ID: $calendarId)',
+        );
         final result = await getEventsWithSync(
           start: start,
           end: end,
           calendarId: calendarId,
           calendarColor: calendarColor,
         );
-        
+
         final events = result['events'] as List<Map<String, dynamic>>;
-        
+
         if (events.isNotEmpty) {
           calendarsWithEvents++;
         }
-        
+
         // Update each event with the calendar's color
         for (final event in events) {
           event['color'] = calendarColor; // Use calendar color, not event color
           event['calendarId'] = calendarId;
           event['calendarName'] = calendarName;
         }
-        
+
         allEvents.addAll(events);
         debugPrint('  ✓ Found ${events.length} events in "$calendarName"');
       } catch (e) {
@@ -917,7 +948,7 @@ class GoogleCalendarService {
 
     DateTime? start;
     DateTime? end;
-    
+
     if (isAllDay && startDateTime != null) {
       // All-day events use date only - keep in local timezone
       final dateStr = event.start!.date!.toIso8601String();
@@ -931,13 +962,15 @@ class GoogleCalendarService {
       start = startDateTime.toLocal();
       end = endDateTime.toLocal();
     } else {
-      debugPrint('Skipping event with invalid date/time: ${event.id}, start=$startDateTime, end=$endDateTime');
+      debugPrint(
+        'Skipping event with invalid date/time: ${event.id}, start=$startDateTime, end=$endDateTime',
+      );
       return null; // Skip invalid events
     }
 
     // Get color - prioritize calendar color, then event colorId, then default
     int eventColorValue = 0xFF039BE5; // Default blue
-    
+
     // First, use the calendar's color (this is what Google Calendar does)
     if (calendarColor != null) {
       eventColorValue = calendarColor;
@@ -974,7 +1007,8 @@ class GoogleCalendarService {
       'color': eventColorValue,
       'description': event.description ?? '',
       'location': event.location ?? '',
-      'reminders': event.reminders?.overrides?.map((r) => r.minutes ?? 0).toList() ?? [],
+      'reminders':
+          event.reminders?.overrides?.map((r) => r.minutes ?? 0).toList() ?? [],
       'googleCalendarId': event.id,
       'calendarId': calendarId,
       'timezone': event.start?.timeZone ?? '',
@@ -996,7 +1030,9 @@ class GoogleCalendarService {
     final client = await _getAuthenticatedClient();
     final cal = calendar.CalendarApi(client);
 
-    final expirationMs = DateTime.now().add(Duration(minutes: expirationMinutes)).millisecondsSinceEpoch;
+    final expirationMs = DateTime.now()
+        .add(Duration(minutes: expirationMinutes))
+        .millisecondsSinceEpoch;
     final channel = calendar.Channel()
       ..id = channelId
       ..type = 'web_hook'
@@ -1004,7 +1040,7 @@ class GoogleCalendarService {
       ..expiration = expirationMs.toString();
 
     final result = await cal.events.watch(channel, calendarId);
-    
+
     return {
       'channelId': result.id,
       'resourceId': result.resourceId,
@@ -1076,6 +1112,21 @@ class GoogleCalendarService {
     }
 
     return await cal.events.update(existingEvent, calendarId, eventId);
+  }
+
+  /// Moves an existing event from one calendar to another.
+  Future<calendar.Event> moveEvent({
+    required String eventId,
+    required String sourceCalendarId,
+    required String destinationCalendarId,
+  }) async {
+    final client = await _getAuthenticatedClient();
+    final cal = calendar.CalendarApi(client);
+    return await cal.events.move(
+      sourceCalendarId,
+      eventId,
+      destinationCalendarId,
+    );
   }
 
   /// Deletes an event

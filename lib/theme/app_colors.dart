@@ -1,37 +1,41 @@
 import 'package:flutter/material.dart';
 
 class AppColors {
-  // Google Calendar color scheme
-  static const Color primary = Color(0xFF1A73E8); // Google Blue
-  static const Color secondary = Color(0xFF34A853); // Google Green
-  static const Color background = Color(0xFFFFFFFF); // White background (light mode)
-  static const Color surface = Color(0xFFFAFAFA); // Light gray surface
-  static const Color error = Color(0xFFEA4335); // Google Red
-  static const Color onPrimary = Color(0xFFFFFFFF);
-  static const Color onBackground = Color(0xFF202124); // Dark text on light
-  static const Color onSurface = Color(0xFF5F6368); // Gray text
+  // Brand dark-mode palette
+  static const Color primary = Color(0xFFF97015); // Brand
+  static const Color secondary = Color(0xFFFFA04D); // Highlight
+  static const Color background = Color(0xFF1A1614); // Dark background
+  static const Color surface = Color(0xFF252220); // Dark surface
+  static const Color error = Color(0xFFCB4B0B); // Emphasis
+  static const Color onPrimary = Color(
+    0xFF1A1614,
+  ); // Dark text on orange button
+  static const Color onBackground = Color(0xFFFAF9F7); // Light text on dark
+  static const Color onSurface = Color(0xFFE7E1DC); // Secondary light text
   static const Color onError = Color(0xFFFFFFFF);
-  
-  // Google Calendar specific colors
-  static const Color borderColor = Color(0xFFDADCE0); // Light gray border
-  static const Color dividerColor = Color(0xFFE8EAED); // Divider color
-  static const Color hoverColor = Color(0xFFF1F3F4); // Hover state
-  static const Color selectedColor = Color(0xFFE8F0FE); // Selected state (light blue)
-  static const Color timeTextColor = Color(0xFF5F6368); // Time label color
-  
-  // Google Calendar event colors (matching Google's palette)
+
+  // Supporting UI colors
+  static const Color borderColor = Color(0xFF3B322E);
+  static const Color dividerColor = Color(0xFF332C28);
+  static const Color hoverColor = Color(0x33252220); // Surface with low opacity
+  static const Color selectedColor = Color(
+    0x33F97015,
+  ); // Brand with low opacity
+  static const Color timeTextColor = Color(0xFFC2B8B1);
+
+  // Event colors (kept varied while aligned with warm dark UI)
   static const List<Color> eventColors = [
-    Color(0xFF7986CB), // Lavender
-    Color(0xFF33B679), // Green
-    Color(0xFF8E24AA), // Purple
-    Color(0xFFE67C73), // Red
-    Color(0xFFF6BF26), // Yellow
-    Color(0xFFF4511E), // Orange
-    Color(0xFF039BE5), // Blue
-    Color(0xFF0097A7), // Teal
-    Color(0xFFAD1457), // Pink
-    Color(0xFF616161), // Grey
-    Color(0xFF795548), // Brown
+    Color(0xFFF97015), // Brand orange
+    Color(0xFFFFA04D), // Highlight orange
+    Color(0xFFCB4B0B), // Emphasis orange
+    Color(0xFFFF7729), // Hover orange
+    Color(0xFFE67E22), // Amber
+    Color(0xFFD35400), // Deep orange
+    Color(0xFF16A085), // Teal
+    Color(0xFF2E86C1), // Blue
+    Color(0xFF8E44AD), // Purple
+    Color(0xFF27AE60), // Green
+    Color(0xFFC0392B), // Red
   ];
 }
 

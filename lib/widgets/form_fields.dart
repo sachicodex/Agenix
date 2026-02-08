@@ -3,6 +3,8 @@ import '../theme/app_colors.dart';
 
 class LargeTextField extends StatelessWidget {
   final TextEditingController? controller;
+  final FocusNode? focusNode;
+  final bool autofocus;
   final String? hint;
   final String? label;
   final bool requiredField;
@@ -12,6 +14,8 @@ class LargeTextField extends StatelessWidget {
   const LargeTextField({
     super.key,
     this.controller,
+    this.focusNode,
+    this.autofocus = false,
     this.hint,
     this.label,
     this.requiredField = false,
@@ -25,6 +29,8 @@ class LargeTextField extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: TextField(
         controller: controller,
+        focusNode: focusNode,
+        autofocus: autofocus,
         decoration: InputDecoration(
           hintText: hint,
           labelText: label,

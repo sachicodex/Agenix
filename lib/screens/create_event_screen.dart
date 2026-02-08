@@ -13,7 +13,6 @@ import 'settings_screen.dart';
 import '../models/calendar_event.dart';
 import '../providers/event_providers.dart';
 
-
 class CreateEventScreen extends ConsumerStatefulWidget {
   static const routeName = '/create';
   final VoidCallback? onSignOut;
@@ -21,8 +20,7 @@ class CreateEventScreen extends ConsumerStatefulWidget {
   const CreateEventScreen({super.key, this.onSignOut});
 
   @override
-  ConsumerState<CreateEventScreen> createState() =>
-      _CreateEventScreenState();
+  ConsumerState<CreateEventScreen> createState() => _CreateEventScreenState();
 }
 
 class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
@@ -253,6 +251,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
       children: [
         LargeTextField(
           controller: _titleController,
+          autofocus: true,
           hint: 'Event title',
           label: 'Title',
           requiredField: true,
@@ -377,9 +376,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
         ElevatedButton.icon(
           onPressed: _saving ? null : _onSavePressed,
           icon: const Icon(Icons.event_available),
-          label: _saving
-              ? const Text('Saving...')
-              : const Text('Save'),
+          label: _saving ? const Text('Saving...') : const Text('Save'),
         ),
       ],
     );
@@ -595,10 +592,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
       final calendarId = _selectedCalendarId ?? 'primary';
       final selected = _availableCalendars
           .cast<Map<String, dynamic>>()
-          .firstWhere(
-            (c) => c['id'] == calendarId,
-            orElse: () => {},
-          );
+          .firstWhere((c) => c['id'] == calendarId, orElse: () => {});
       final colorValue = selected['color'] as int?;
       final minutes = reminderOn ? _parseReminderMinutes(reminderValue) : null;
 
