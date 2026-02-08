@@ -40,6 +40,21 @@ class _CalendarSelectionScreenState extends State<CalendarSelectionScreen> {
     });
 
     try {
+      final cached = await GoogleCalendarService.instance.getCachedCalendars();
+      if (cached.isNotEmpty && mounted) {
+        final filteredCached = cached.where((cal) {
+          final name = (cal['name'] as String?) ?? '';
+          return name.isNotEmpty && name.toLowerCase() != 'calendar';
+        }).toList();
+        setState(() {
+          _calendars = filteredCached;
+          if (_calendars.isNotEmpty && _selectedCalendarId == null) {
+            _selectedCalendarId = _calendars.first['id'] as String?;
+          }
+          _loading = false;
+        });
+      }
+
       final calendars = await GoogleCalendarService.instance.getUserCalendars();
       if (mounted) {
         // Filter out calendars with name "Calendar" (not a real calendar)
@@ -60,6 +75,12 @@ class _CalendarSelectionScreenState extends State<CalendarSelectionScreen> {
       }
     } catch (e) {
       if (mounted) {
+        if (_calendars.isNotEmpty) {
+          setState(() {
+            _loading = false;
+          });
+          return;
+        }
         final errorString = e.toString().toLowerCase();
         final isPermissionError =
             errorString.contains('insufficient_scope') ||
@@ -251,7 +272,8 @@ class _CalendarSelectionScreenState extends State<CalendarSelectionScreen> {
                             ),
                             onTap: () {
                               final calId = calendar['id'] as String?;
-                              if (calId != null && calId != _selectedCalendarId) {
+                              if (calId != null &&
+                                  calId != _selectedCalendarId) {
                                 setState(() {
                                   _selectedCalendarId = calId;
                                 });

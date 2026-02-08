@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../google_oauth_config.dart';
 import 'auth_storage_service.dart';
+import '../data/local/local_event_store.dart';
 
 /// Lightweight service to sign in and insert events into Google Calendar.
 ///
@@ -55,7 +56,7 @@ class GoogleCalendarService {
     final list = await calApi.calendarList.list();
     final items = list.items ?? [];
 
-    return items
+    final calendars = items
         .map((c) {
           // Get calendar color - Google Calendar API provides backgroundColor
           int calendarColor = 0xFF039BE5; // Default blue
@@ -104,6 +105,23 @@ class GoogleCalendarService {
           return name.isNotEmpty && name.toLowerCase() != 'calendar';
         })
         .toList();
+
+    try {
+      await LocalEventStore.instance.upsertCalendars(calendars);
+    } catch (e) {
+      debugPrint('Failed to cache calendars locally: $e');
+    }
+
+    return calendars;
+  }
+
+  Future<List<Map<String, dynamic>>> getCachedCalendars() async {
+    try {
+      return await LocalEventStore.instance.getCachedCalendars();
+    } catch (e) {
+      debugPrint('Failed to read cached calendars: $e');
+      return const [];
+    }
   }
 
   GoogleCalendarService._privateConstructor();

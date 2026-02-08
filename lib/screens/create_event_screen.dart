@@ -75,10 +75,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
       false; // Track if user manually selected a calendar
 
   Future<void> _fetchCalendars() async {
-    try {
-      final calendars = await GoogleCalendarService.instance.getUserCalendars();
-      // Filter out calendars with name "Calendar" (this is the default primary calendar
-      // that Google creates automatically, but it's confusing to show it as just "Calendar")
+    void applyCalendars(List<Map<String, dynamic>> calendars) {
       final filteredCalendars = calendars.where((cal) {
         final name = (cal['name'] as String?) ?? '';
         return name.isNotEmpty && name.toLowerCase() != 'calendar';
@@ -92,15 +89,31 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
           }
         });
       }
+    }
+
+    try {
+      final cached = await GoogleCalendarService.instance.getCachedCalendars();
+      if (cached.isNotEmpty) {
+        applyCalendars(cached);
+      }
+
+      final calendars = await GoogleCalendarService.instance.getUserCalendars();
+      applyCalendars(calendars);
     } catch (e) {
       // fallback to primary if error
       if (mounted) {
         setState(() {
-          _availableCalendars = [
-            {'id': 'primary', 'name': 'Primary Calendar', 'color': 0xFF039BE5},
-          ];
-          if (_selectedCalendarId == null) {
-            _selectedCalendarId = 'primary';
+          if (_availableCalendars.isEmpty) {
+            _availableCalendars = [
+              {
+                'id': 'primary',
+                'name': 'Primary Calendar',
+                'color': 0xFF039BE5,
+              },
+            ];
+            if (_selectedCalendarId == null) {
+              _selectedCalendarId = 'primary';
+            }
           }
         });
       }

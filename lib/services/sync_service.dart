@@ -48,7 +48,7 @@ class SyncService {
 
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 90), (_) async {
-      await incrementalSync();
+      await incrementalSync(showProgress: false);
     });
   }
 
@@ -98,13 +98,16 @@ class SyncService {
     }
   }
 
-  Future<void> incrementalSync() async {
-    if (_defaultCalendarId == null || _currentRange == null) return;
-    if (!await _ensureSignedIn()) return;
+  Future<bool> incrementalSync({bool showProgress = true}) async {
+    if (_defaultCalendarId == null || _currentRange == null) return false;
+    if (!await _ensureSignedIn()) return false;
 
-    _setStatus(const SyncStatus(state: SyncState.syncing));
+    if (showProgress) {
+      _setStatus(const SyncStatus(state: SyncState.syncing));
+    }
 
     final range = _currentRange!;
+    var hasChanges = false;
 
     try {
       final calendarIds = await _getTargetCalendarIds(
@@ -121,7 +124,8 @@ class SyncService {
           );
 
           for (final remoteEvent in result.events) {
-            await _applyRemoteEvent(remoteEvent);
+            final changed = await _applyRemoteEvent(remoteEvent);
+            hasChanges = hasChanges || changed;
           }
 
           if (result.nextSyncToken != null) {
@@ -138,7 +142,8 @@ class SyncService {
               syncToken: null,
             );
             for (final remoteEvent in fallbackResult.events) {
-              await _applyRemoteEvent(remoteEvent);
+              final changed = await _applyRemoteEvent(remoteEvent);
+              hasChanges = hasChanges || changed;
             }
             if (fallbackResult.nextSyncToken != null) {
               await _saveSyncToken(calendarId, fallbackResult.nextSyncToken!);
@@ -149,11 +154,15 @@ class SyncService {
         }
       }
 
-      _setStatus(
-        SyncStatus(state: SyncState.idle, lastSyncTime: DateTime.now()),
-      );
+      if (showProgress || hasChanges) {
+        _setStatus(
+          SyncStatus(state: SyncState.idle, lastSyncTime: DateTime.now()),
+        );
+      }
+      return hasChanges;
     } catch (e) {
       _setStatus(SyncStatus(state: SyncState.error, error: e.toString()));
+      return false;
     }
   }
 
@@ -222,8 +231,11 @@ class SyncService {
                 gEventId: normalizedEvent.gEventId!,
               );
               if (movedLocalId != normalizedEvent.id) {
-                await _localStore.deleteEventById(normalizedEvent.id);
                 eventForRemote = normalizedEvent.copyWith(id: movedLocalId);
+                await _localStore.replaceEventId(
+                  oldId: normalizedEvent.id,
+                  eventWithNewId: eventForRemote,
+                );
               }
             }
 
@@ -288,8 +300,8 @@ class SyncService {
     return 'g:$calendarId:$gEventId';
   }
 
-  Future<void> _applyRemoteEvent(CalendarEvent remoteEvent) async {
-    if (remoteEvent.gEventId == null) return;
+  Future<bool> _applyRemoteEvent(CalendarEvent remoteEvent) async {
+    if (remoteEvent.gEventId == null) return false;
 
     final existing = await _localStore.getByGoogleId(
       remoteEvent.gEventId!,
@@ -297,14 +309,19 @@ class SyncService {
     );
 
     if (existing != null && existing.dirty) {
-      return;
+      return false;
     }
 
     if (remoteEvent.deleted) {
       if (existing != null) {
         await _localStore.markDeleted(existing.id);
+        return true;
       }
-      return;
+      return false;
+    }
+
+    if (existing != null && _sameEventContent(existing, remoteEvent)) {
+      return false;
     }
 
     final merged = (existing ?? remoteEvent).copyWith(
@@ -332,6 +349,25 @@ class SyncService {
         keepEventId: merged.id,
       );
     }
+    return true;
+  }
+
+  bool _sameEventContent(CalendarEvent a, CalendarEvent b) {
+    if (a.title != b.title) return false;
+    if (a.description != b.description) return false;
+    if (a.location != b.location) return false;
+    if (a.startDateTime != b.startDateTime) return false;
+    if (a.endDateTime != b.endDateTime) return false;
+    if (a.allDay != b.allDay) return false;
+    if (a.timezone != b.timezone) return false;
+    if (a.color.toARGB32() != b.color.toARGB32()) return false;
+    if (a.calendarId != b.calendarId) return false;
+    if (a.gEventId != b.gEventId) return false;
+    if (a.reminders.length != b.reminders.length) return false;
+    for (var i = 0; i < a.reminders.length; i++) {
+      if (a.reminders[i] != b.reminders[i]) return false;
+    }
+    return true;
   }
 
   Future<bool> _ensureSignedIn() async {

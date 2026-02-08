@@ -101,8 +101,7 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
   }
 
   Future<void> _fetchCalendars() async {
-    try {
-      final calendars = await GoogleCalendarService.instance.getUserCalendars();
+    final applyCalendars = (List<Map<String, dynamic>> calendars) {
       final filteredCalendars = calendars.where((cal) {
         final name = (cal['name'] as String?) ?? '';
         return name.isNotEmpty && name.toLowerCase() != 'calendar';
@@ -116,13 +115,30 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
           }
         });
       }
-    } catch (_) {
+    };
+
+    try {
+      final cached = await GoogleCalendarService.instance.getCachedCalendars();
+      if (cached.isNotEmpty) {
+        applyCalendars(cached);
+      }
+
+      final calendars = await GoogleCalendarService.instance.getUserCalendars();
+      applyCalendars(calendars);
+    } catch (e) {
+      debugPrint('Error loading calendars: $e');
       if (mounted) {
         setState(() {
-          _availableCalendars = [
-            {'id': 'primary', 'name': 'Primary Calendar', 'color': 0xFF039BE5},
-          ];
-          _selectedCalendarId ??= 'primary';
+          if (_availableCalendars.isEmpty) {
+            _availableCalendars = [
+              {
+                'id': 'primary',
+                'name': 'Primary Calendar',
+                'color': 0xFF039BE5,
+              },
+            ];
+            _selectedCalendarId ??= 'primary';
+          }
         });
       }
     }

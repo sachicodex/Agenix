@@ -25,7 +25,7 @@ class LocalEventStore {
 
     _db = await openDatabase(
       dbPath,
-      version: 1,
+      version: 2,
       onCreate: (db, version) async {
         await db.execute('''
 CREATE TABLE events (
@@ -56,6 +56,28 @@ CREATE TABLE events (
         await db.execute(
           'CREATE INDEX idx_events_g_event_id ON events(g_event_id)',
         );
+        await db.execute('''
+CREATE TABLE calendars (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  color INTEGER NOT NULL,
+  selected INTEGER NOT NULL DEFAULT 1,
+  updated_at INTEGER NOT NULL
+)
+''');
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute('''
+CREATE TABLE IF NOT EXISTS calendars (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  color INTEGER NOT NULL,
+  selected INTEGER NOT NULL DEFAULT 1,
+  updated_at INTEGER NOT NULL
+)
+''');
+        }
       },
     );
   }
@@ -129,6 +151,24 @@ CREATE TABLE events (
     _emitChange();
   }
 
+  Future<void> replaceEventId({
+    required String oldId,
+    required CalendarEvent eventWithNewId,
+  }) async {
+    final db = _requireDb();
+    await db.transaction((txn) async {
+      await txn.insert(
+        'events',
+        _toRow(eventWithNewId),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      if (oldId != eventWithNewId.id) {
+        await txn.delete('events', where: 'id = ?', whereArgs: [oldId]);
+      }
+    });
+    _emitChange();
+  }
+
   Future<void> markDeleted(String id) async {
     final db = _requireDb();
     await db.update(
@@ -148,6 +188,42 @@ CREATE TABLE events (
       whereArgs: [PendingAction.none.name],
     );
     return rows.map(_fromRow).toList();
+  }
+
+  Future<void> upsertCalendars(List<Map<String, dynamic>> calendars) async {
+    final db = _requireDb();
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    await db.transaction((txn) async {
+      for (final calendar in calendars) {
+        final id = (calendar['id'] as String?) ?? '';
+        if (id.isEmpty) continue;
+        await txn.insert('calendars', {
+          'id': id,
+          'name': (calendar['name'] as String?) ?? id,
+          'color': (calendar['color'] as int?) ?? 0xFF039BE5,
+          'selected': ((calendar['selected'] as bool?) ?? true) ? 1 : 0,
+          'updated_at': nowMs,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> getCachedCalendars() async {
+    final db = _requireDb();
+    final rows = await db.query(
+      'calendars',
+      orderBy: 'name COLLATE NOCASE ASC',
+    );
+    return rows
+        .map(
+          (row) => <String, dynamic>{
+            'id': row['id'] as String,
+            'name': row['name'] as String,
+            'color': row['color'] as int,
+            'selected': (row['selected'] as int? ?? 1) == 1,
+          },
+        )
+        .toList();
   }
 
   Future<void> removeDuplicateGoogleEventCopies({

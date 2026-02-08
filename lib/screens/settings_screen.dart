@@ -245,6 +245,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _loadingCalendars = true);
 
     try {
+      final cached = await GoogleCalendarService.instance.getCachedCalendars();
+      if (mounted && cached.isNotEmpty) {
+        setState(() {
+          _availableCalendars = cached;
+          if (_selectedCalendarId == null && cached.isNotEmpty) {
+            _selectedCalendarId = cached.first['id'] as String?;
+          }
+          _loadingCalendars = false;
+        });
+      }
+
       final calendars = await GoogleCalendarService.instance.getUserCalendars();
       if (mounted) {
         setState(() {

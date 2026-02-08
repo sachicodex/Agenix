@@ -28,6 +28,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     with WidgetsBindingObserver {
   static const Color _eventBlockTextColor = Color(0xFF141614);
   static const double _pastEventOpacity = 0.55;
+  static const double _timeColumnWidth = 72.0;
 
   DateTime _currentDate = DateTime.now();
   late final EventRepository _repository;
@@ -90,6 +91,8 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
 
   // Touch support
   bool _isTouchInteraction = false;
+  bool _didInitialNowScroll = false;
+  int _initialNowScrollAttempts = 0;
 
   @override
   void initState() {
@@ -192,6 +195,44 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
         _updateEventLists();
         _isLoading = false;
       });
+      _scrollToNowOnInitialOpen();
+    });
+  }
+
+  void _scrollToNowOnInitialOpen() {
+    if (_didInitialNowScroll) return;
+    final now = DateTime.now();
+    final viewedDay = DateTime(
+      _currentDate.year,
+      _currentDate.month,
+      _currentDate.day,
+    );
+    final today = DateTime(now.year, now.month, now.day);
+    if (!viewedDay.isAtSameMomentAs(today)) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _didInitialNowScroll) return;
+      if (!_dayGridScrollController.hasClients) {
+        if (_initialNowScrollAttempts < 8) {
+          _initialNowScrollAttempts++;
+          _scrollToNowOnInitialOpen();
+        }
+        return;
+      }
+
+      const hourHeight = 60.0;
+      final nowPosition = ((now.hour * 60 + now.minute) / 60) * hourHeight;
+      final viewport = _dayGridScrollController.position.viewportDimension;
+      final targetOffset = (nowPosition - (viewport / 2)).clamp(
+        0.0,
+        _dayGridScrollController.position.maxScrollExtent,
+      );
+
+      _dayGridScrollController.jumpTo(targetOffset);
+      if (_timeColumnScrollController.hasClients) {
+        _timeColumnScrollController.jumpTo(targetOffset);
+      }
+      _didInitialNowScroll = true;
     });
   }
 
@@ -223,6 +264,18 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
 
   Future<void> _loadCalendarColors() async {
     try {
+      final cached = await GoogleCalendarService.instance.getCachedCalendars();
+      if (cached.isNotEmpty) {
+        _calendarColors.clear();
+        for (final cal in cached) {
+          final calendarId = cal['id'] as String?;
+          final calendarColor = cal['color'] as int?;
+          if (calendarId != null && calendarColor != null) {
+            _calendarColors[calendarId] = calendarColor;
+          }
+        }
+      }
+
       final signedIn = await GoogleCalendarService.instance.isSignedIn();
       if (!signedIn) return;
 
@@ -435,7 +488,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
               Container(
                 height: allDayRowHeight,
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 60,
+                  horizontal: _timeColumnWidth,
                   vertical: 4,
                 ),
                 decoration: BoxDecoration(
@@ -447,7 +500,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                 child: Row(
                   children: [
                     SizedBox(
-                      width: 60,
+                      width: _timeColumnWidth,
                       child: Text(
                         'All day',
                         style: TextStyle(
@@ -537,7 +590,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                 children: [
                   // Time column
                   SizedBox(
-                    width: 60,
+                    width: _timeColumnWidth,
                     child: ScrollConfiguration(
                       behavior: noScrollbarBehavior,
                       child: SingleChildScrollView(
@@ -571,7 +624,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                           height: totalHeight,
                           child: _buildDayGrid(
                             BoxConstraints(
-                              maxWidth: constraints.maxWidth - 60,
+                              maxWidth: constraints.maxWidth - _timeColumnWidth,
                               maxHeight: totalHeight,
                             ),
                           ),
@@ -599,7 +652,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
           return Expanded(
             child: Container(
               padding: const EdgeInsets.only(right: 8),
-              alignment: Alignment.topRight,
+              alignment: Alignment.centerRight,
               child: Text(
                 hour == 0
                     ? '12 AM'
@@ -613,6 +666,8 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                   color: AppColors.timeTextColor,
                   fontWeight: FontWeight.w400,
                 ),
+                maxLines: 1,
+                softWrap: false,
               ),
             ),
           );
@@ -635,8 +690,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
             child: Container(height: 1, color: AppColors.dividerColor),
           );
         }),
-        // Current time indicator (Google Calendar style - red line)
-        _buildCurrentTimeIndicator(constraints),
         // Clickable grid for creating events (under events)
         IgnorePointer(
           ignoring:
@@ -647,6 +700,8 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
         ),
         // Events (top-most)
         ..._buildEventWidgets(constraints),
+        // Keep current-time indicator above event blocks.
+        _buildCurrentTimeIndicator(constraints),
       ],
     );
   }
@@ -837,6 +892,10 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     bool isDraggingOriginal = false,
   }) {
     const edgeHitHeight = 14.0;
+    final eventDurationMinutes = event.endDateTime
+        .difference(event.startDateTime)
+        .inMinutes;
+    final isShortEvent = eventDurationMinutes < 40;
     final now = DateTime.now();
     final isPastEvent =
         !isPreview &&
@@ -849,9 +908,8 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
         : 1.0;
 
     bool? resizeZoneForLocal(Offset localPosition) {
-      final isTop = localPosition.dy <= edgeHitHeight;
       final isBottom = localPosition.dy >= (cardHeight - edgeHitHeight);
-      if (isTop) return true;
+      // Top-edge resize is intentionally disabled.
       if (isBottom) return false;
       return null;
     }
@@ -897,10 +955,9 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
           if (event.allDay) return;
 
           final zone = resizeZoneForLocal(pointerEvent.localPosition);
-          final isTopResize = zone == true;
           final isBottomResize = zone == false;
 
-          if (isTopResize || isBottomResize) {
+          if (isBottomResize) {
             _isPointerDownOnEvent = true;
             _pendingPointerEventId = null;
             _pointerDownGlobalPosition = null;
@@ -911,10 +968,10 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
 
             setState(() {
               _resizingEventId = event.id;
-              _resizingFromTop = isTopResize;
+              _resizingFromTop = false;
               _resizingEventOriginal = event;
               _resizeHoverEventId = event.id;
-              _resizeHoverFromTop = isTopResize;
+              _resizeHoverFromTop = false;
               _resizeStartGlobalY = pointerEvent.position.dy;
               _resizeAnchorStart = event.startDateTime;
               _resizeAnchorEnd = event.endDateTime;
@@ -1068,33 +1125,62 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                   borderRadius: BorderRadius.circular(6),
                 ),
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  children: [
-                    Text(
-                      event.title,
-                      style: const TextStyle(
-                        color: _eventBlockTextColor,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        height: 1.2,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    if (cardHeight >= 34)
-                      Text(
-                        '${DateFormat('h:mm').format(event.startDateTime)} - ${DateFormat('h:mm').format(event.endDateTime)}',
-                        style: const TextStyle(
-                          color: _eventBlockTextColor,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                          height: 1.2,
+                child: isShortEvent
+                    ? RichText(
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        text: TextSpan(
+                          children: [
+                            TextSpan(
+                              text: event.title,
+                              style: const TextStyle(
+                                color: _eventBlockTextColor,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                height: 1.2,
+                              ),
+                            ),
+                            TextSpan(
+                              text:
+                                  ', ${DateFormat('h:mma').format(event.startDateTime).toLowerCase()}',
+                              style: const TextStyle(
+                                color: _eventBlockTextColor,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                height: 1.2,
+                              ),
+                            ),
+                          ],
                         ),
+                      )
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.start,
+                        children: [
+                          Text(
+                            event.title,
+                            style: const TextStyle(
+                              color: _eventBlockTextColor,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              height: 1.2,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            '${DateFormat('h:mm').format(event.startDateTime)} - ${DateFormat('h:mm').format(event.endDateTime)}',
+                            style: const TextStyle(
+                              color: _eventBlockTextColor,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                              height: 1.2,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
                       ),
-                  ],
-                ),
               ),
             ),
           ),
@@ -1645,10 +1731,11 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
         (startMinutes / 60) * hourHeight - scrollOffset + allDayRowHeight;
     final height = ((endMinutes - startMinutes) / 60) * hourHeight;
 
-    final isCompact = height < 32;
+    final isTiny = height < 22;
+    final isCompact = height < 48;
 
     return Positioned(
-      left: 60,
+      left: _timeColumnWidth,
       top: startPosition,
       right: 0,
       height: height,
@@ -1658,33 +1745,64 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
           border: Border.all(color: selectionColor.withOpacity(0.95), width: 1),
           borderRadius: BorderRadius.circular(4),
         ),
-        padding: const EdgeInsets.all(6),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (!isCompact) ...[
-              Text(
-                '(No title)',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: textColor,
-                ),
-              ),
-              const SizedBox(height: 2),
-            ],
-            Text(
-              '${DateFormat('h:mm a').format(startTime)} - ${DateFormat('h:mm a').format(endTime)}',
-              style: TextStyle(
-                color: textColor.withOpacity(isCompact ? 0.9 : 0.8),
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
+        padding: EdgeInsets.symmetric(
+          horizontal: isTiny ? 4 : 6,
+          vertical: isTiny ? 1 : 4,
         ),
+        child: isTiny
+            ? Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '${DateFormat('h:mma').format(startTime).toLowerCase()} - ${DateFormat('h:mma').format(endTime).toLowerCase()}',
+                  style: TextStyle(
+                    color: textColor.withOpacity(0.9),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    height: 1.0,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              )
+            : isCompact
+            ? Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '(No title)  ${DateFormat('h:mma').format(startTime).toLowerCase()} - ${DateFormat('h:mma').format(endTime).toLowerCase()}',
+                  style: TextStyle(
+                    color: textColor.withOpacity(0.9),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    height: 1.1,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '(No title)',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: textColor,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${DateFormat('h:mm a').format(startTime)} - ${DateFormat('h:mm a').format(endTime)}',
+                    style: TextStyle(
+                      color: textColor.withOpacity(0.8),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
       ),
     );
   }
