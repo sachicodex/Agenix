@@ -108,6 +108,30 @@ CREATE TABLE IF NOT EXISTS calendars (
     return rows.map(_fromRow).toList();
   }
 
+  Future<List<CalendarEvent>> getSyncedEventsForCalendarInRange({
+    required String calendarId,
+    required DateTimeRange range,
+  }) async {
+    final db = _requireDb();
+    final rangeStartUtc = range.start.toUtc().millisecondsSinceEpoch;
+    final rangeEndUtc = range.end.toUtc().millisecondsSinceEpoch;
+
+    final rows = await db.query(
+      'events',
+      where:
+          'deleted = 0 AND dirty = 0 AND pending_action = ? AND g_event_id IS NOT NULL '
+          'AND calendar_id = ? AND start_utc < ? AND end_utc > ?',
+      whereArgs: [
+        PendingAction.none.name,
+        calendarId,
+        rangeEndUtc,
+        rangeStartUtc,
+      ],
+    );
+
+    return rows.map(_fromRow).toList();
+  }
+
   Future<CalendarEvent?> getByGoogleId(
     String gEventId,
     String calendarId,

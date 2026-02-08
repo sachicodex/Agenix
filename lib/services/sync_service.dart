@@ -84,6 +84,11 @@ class SyncService {
         for (final remoteEvent in result.events) {
           await _applyRemoteEvent(remoteEvent);
         }
+        await _reconcileMissingRemoteEvents(
+          calendarId: calendarId,
+          range: range,
+          remoteEvents: result.events,
+        );
 
         if (result.nextSyncToken != null) {
           await _saveSyncToken(calendarId, result.nextSyncToken!);
@@ -116,6 +121,7 @@ class SyncService {
       for (final calendarId in calendarIds) {
         final token = await _getSyncToken(calendarId);
         try {
+          final isIncremental = token != null && token.isNotEmpty;
           final result = await _remoteSource.listEvents(
             timeMin: range.start,
             timeMax: range.end,
@@ -126,6 +132,14 @@ class SyncService {
           for (final remoteEvent in result.events) {
             final changed = await _applyRemoteEvent(remoteEvent);
             hasChanges = hasChanges || changed;
+          }
+          if (!isIncremental) {
+            final reconciled = await _reconcileMissingRemoteEvents(
+              calendarId: calendarId,
+              range: range,
+              remoteEvents: result.events,
+            );
+            hasChanges = hasChanges || reconciled;
           }
 
           if (result.nextSyncToken != null) {
@@ -145,6 +159,12 @@ class SyncService {
               final changed = await _applyRemoteEvent(remoteEvent);
               hasChanges = hasChanges || changed;
             }
+            final reconciled = await _reconcileMissingRemoteEvents(
+              calendarId: calendarId,
+              range: range,
+              remoteEvents: fallbackResult.events,
+            );
+            hasChanges = hasChanges || reconciled;
             if (fallbackResult.nextSyncToken != null) {
               await _saveSyncToken(calendarId, fallbackResult.nextSyncToken!);
             }
@@ -350,6 +370,35 @@ class SyncService {
       );
     }
     return true;
+  }
+
+  Future<bool> _reconcileMissingRemoteEvents({
+    required String calendarId,
+    required DateTimeRange range,
+    required List<CalendarEvent> remoteEvents,
+  }) async {
+    final remoteGoogleIds = remoteEvents
+        .map((e) => e.gEventId)
+        .whereType<String>()
+        .toSet();
+
+    final localSyncedEvents = await _localStore
+        .getSyncedEventsForCalendarInRange(
+          calendarId: calendarId,
+          range: range,
+        );
+
+    var changed = false;
+    for (final localEvent in localSyncedEvents) {
+      final localGoogleId = localEvent.gEventId;
+      if (localGoogleId == null || remoteGoogleIds.contains(localGoogleId)) {
+        continue;
+      }
+
+      await _localStore.markDeleted(localEvent.id);
+      changed = true;
+    }
+    return changed;
   }
 
   bool _sameEventContent(CalendarEvent a, CalendarEvent b) {

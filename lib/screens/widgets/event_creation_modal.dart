@@ -47,6 +47,7 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
 
   bool _titleAILoading = false;
   bool _descriptionAILoading = false;
+  bool _deleting = false;
   String? _originalUserTitle;
   final GroqService _groqService = GroqService();
   final ApiKeyStorageService _apiKeyStorage = ApiKeyStorageService();
@@ -423,6 +424,61 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
     }
   }
 
+  Future<void> _deleteEvent() async {
+    final existing = widget.existingEvent;
+    if (existing == null || _deleting) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Event'),
+        content: const Text('Are you sure you want to delete this event?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text(
+              'Delete',
+              style: TextStyle(color: AppColors.error),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() {
+      _deleting = true;
+    });
+
+    try {
+      await ref.read(eventRepositoryProvider).deleteEvent(existing.id);
+      if (!mounted) return;
+      Navigator.pop(context);
+      widget.onEventCreated();
+      unawaited(
+        ref.read(syncServiceProvider).pushLocalChanges().catchError((e) {
+          debugPrint('Background sync failed after delete: $e');
+        }),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error deleting event: $e')));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _deleting = false;
+        });
+      }
+    }
+  }
+
   int _parseReminderMinutes(String value) {
     switch (value) {
       case '30 minutes':
@@ -563,6 +619,14 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
         Row(
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
+            if (widget.existingEvent != null)
+              TextButton.icon(
+                onPressed: _deleting ? null : _deleteEvent,
+                icon: const Icon(Icons.delete_outline),
+                label: Text(_deleting ? 'Deleting...' : 'Delete'),
+                style: TextButton.styleFrom(foregroundColor: AppColors.error),
+              ),
+            if (widget.existingEvent != null) const Spacer(),
             TextButton(
               onPressed: () => Navigator.pop(context),
               child: const Text('Cancel'),
