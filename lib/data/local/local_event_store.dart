@@ -25,7 +25,7 @@ class LocalEventStore {
 
     _db = await openDatabase(
       dbPath,
-      version: 2,
+      version: 3,
       onCreate: (db, version) async {
         await db.execute('''
 CREATE TABLE events (
@@ -65,6 +65,14 @@ CREATE TABLE calendars (
   updated_at INTEGER NOT NULL
 )
 ''');
+        await db.execute('''
+CREATE TABLE user_profile (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  email TEXT,
+  photo_url TEXT,
+  updated_at INTEGER NOT NULL
+)
+''');
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -74,6 +82,16 @@ CREATE TABLE IF NOT EXISTS calendars (
   name TEXT NOT NULL,
   color INTEGER NOT NULL,
   selected INTEGER NOT NULL DEFAULT 1,
+  updated_at INTEGER NOT NULL
+)
+''');
+        }
+        if (oldVersion < 3) {
+          await db.execute('''
+CREATE TABLE IF NOT EXISTS user_profile (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  email TEXT,
+  photo_url TEXT,
   updated_at INTEGER NOT NULL
 )
 ''');
@@ -248,6 +266,42 @@ CREATE TABLE IF NOT EXISTS calendars (
           },
         )
         .toList();
+  }
+
+  Future<void> upsertUserProfile({
+    required String? email,
+    required String? photoUrl,
+  }) async {
+    final db = _requireDb();
+    await db.insert('user_profile', {
+      'id': 1,
+      'email': email,
+      'photo_url': photoUrl,
+      'updated_at': DateTime.now().millisecondsSinceEpoch,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<Map<String, String?>> getCachedUserProfile() async {
+    final db = _requireDb();
+    final rows = await db.query(
+      'user_profile',
+      where: 'id = ?',
+      whereArgs: [1],
+      limit: 1,
+    );
+    if (rows.isEmpty) {
+      return {'email': null, 'photoUrl': null};
+    }
+    final row = rows.first;
+    return {
+      'email': row['email'] as String?,
+      'photoUrl': row['photo_url'] as String?,
+    };
+  }
+
+  Future<void> clearUserProfile() async {
+    final db = _requireDb();
+    await db.delete('user_profile', where: 'id = ?', whereArgs: [1]);
   }
 
   Future<void> removeDuplicateGoogleEventCopies({

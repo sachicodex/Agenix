@@ -25,9 +25,20 @@ class SyncService {
   final RemoteCalendarDataSource _remoteSource;
 
   Timer? _timer;
+  Timer? _rangeUpdateDebounceTimer;
   DateTimeRange? _currentRange;
   String? _defaultCalendarId;
   SharedPreferences? _prefs;
+  bool _backgroundSyncInProgress = false;
+
+  // Keep this aligned with LocalEventStore database version.
+  static const int _localDbSchemaVersion = 3;
+  static const int _syncEngineVersion = 1;
+  static const Duration _startupSyncFreshWindow = Duration(minutes: 5);
+  static const Duration _rangeSyncDebounce = Duration(milliseconds: 320);
+  static const String _prefLastSuccessfulSyncMs = 'sync_last_successful_ms';
+  static const String _prefKnownDbVersion = 'sync_known_db_version';
+  static const String _prefKnownEngineVersion = 'sync_known_engine_version';
 
   final StreamController<SyncStatus> _statusController =
       StreamController<SyncStatus>.broadcast();
@@ -44,23 +55,38 @@ class SyncService {
     _defaultCalendarId = calendarId;
     _prefs ??= await SharedPreferences.getInstance();
 
-    await fullSync(range: range, calendarId: calendarId);
+    final lastSyncTime = _getStoredLastSuccessfulSyncTime();
+    if (lastSyncTime != null) {
+      _setStatus(SyncStatus(state: SyncState.idle, lastSyncTime: lastSyncTime));
+    }
+    await _runStartupSync(range: range, calendarId: calendarId);
 
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 90), (_) async {
-      await incrementalSync(showProgress: false);
+      await _runBackgroundSyncTask(() async {
+        await pushLocalChanges();
+        await incrementalSync(showProgress: false);
+      });
     });
   }
 
   Future<void> stop() async {
     _timer?.cancel();
     _timer = null;
+    _rangeUpdateDebounceTimer?.cancel();
+    _rangeUpdateDebounceTimer = null;
   }
 
   Future<void> updateRange(DateTimeRange range) async {
     if (_defaultCalendarId == null) return;
     _currentRange = range;
-    await fullSync(range: range, calendarId: _defaultCalendarId!);
+    _rangeUpdateDebounceTimer?.cancel();
+    _rangeUpdateDebounceTimer = Timer(_rangeSyncDebounce, () async {
+      await _runBackgroundSyncTask(() async {
+        await pushLocalChanges();
+        await incrementalSync(showProgress: false);
+      });
+    });
   }
 
   Future<void> fullSync({
@@ -98,6 +124,7 @@ class SyncService {
       _setStatus(
         SyncStatus(state: SyncState.idle, lastSyncTime: DateTime.now()),
       );
+      await _persistSuccessfulSyncMetadata();
     } catch (e) {
       _setStatus(SyncStatus(state: SyncState.error, error: e.toString()));
     }
@@ -179,6 +206,7 @@ class SyncService {
           SyncStatus(state: SyncState.idle, lastSyncTime: DateTime.now()),
         );
       }
+      await _persistSuccessfulSyncMetadata();
       return hasChanges;
     } catch (e) {
       _setStatus(SyncStatus(state: SyncState.error, error: e.toString()));
@@ -461,4 +489,92 @@ class SyncService {
   }
 
   String _syncTokenKey(String calendarId) => 'sync_token_$calendarId';
+
+  Future<void> _runStartupSync({
+    required DateTimeRange range,
+    required String calendarId,
+  }) async {
+    final hasPendingLocalChanges = (await _localStore.getPendingEvents()).isNotEmpty;
+    if (hasPendingLocalChanges) {
+      await pushLocalChanges();
+    }
+
+    final shouldForceFull = await _shouldForceFullSyncOnStartup();
+    final isFresh = _isLastSyncFresh();
+
+    if (shouldForceFull) {
+      await fullSync(range: range, calendarId: calendarId);
+      return;
+    }
+
+    // Avoid redundant startup network calls when we already synced very recently.
+    if (isFresh && !hasPendingLocalChanges) {
+      return;
+    }
+
+    final hasToken = await _hasAtLeastOneSyncToken(fallbackCalendarId: calendarId);
+    if (hasToken) {
+      await incrementalSync(showProgress: false);
+    } else {
+      await fullSync(range: range, calendarId: calendarId);
+    }
+  }
+
+  Future<bool> _shouldForceFullSyncOnStartup() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    final knownDbVersion = _prefs!.getInt(_prefKnownDbVersion) ?? -1;
+    final knownEngineVersion = _prefs!.getInt(_prefKnownEngineVersion) ?? -1;
+    final changed =
+        knownDbVersion != _localDbSchemaVersion ||
+        knownEngineVersion != _syncEngineVersion;
+    if (!changed) return false;
+
+    await _prefs!.setInt(_prefKnownDbVersion, _localDbSchemaVersion);
+    await _prefs!.setInt(_prefKnownEngineVersion, _syncEngineVersion);
+    return true;
+  }
+
+  bool _isLastSyncFresh() {
+    final lastSync = _getStoredLastSuccessfulSyncTime();
+    if (lastSync == null) return false;
+    return DateTime.now().difference(lastSync) <= _startupSyncFreshWindow;
+  }
+
+  DateTime? _getStoredLastSuccessfulSyncTime() {
+    if (_prefs == null) return null;
+    final epochMs = _prefs!.getInt(_prefLastSuccessfulSyncMs);
+    if (epochMs == null || epochMs <= 0) return null;
+    return DateTime.fromMillisecondsSinceEpoch(epochMs);
+  }
+
+  Future<void> _persistSuccessfulSyncMetadata() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setInt(
+      _prefLastSuccessfulSyncMs,
+      DateTime.now().millisecondsSinceEpoch,
+    );
+  }
+
+  Future<bool> _hasAtLeastOneSyncToken({
+    required String fallbackCalendarId,
+  }) async {
+    final calendarIds = await _getTargetCalendarIds(fallback: fallbackCalendarId);
+    for (final calendarId in calendarIds) {
+      final token = await _getSyncToken(calendarId);
+      if (token != null && token.isNotEmpty) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  Future<void> _runBackgroundSyncTask(Future<void> Function() task) async {
+    if (_backgroundSyncInProgress) return;
+    _backgroundSyncInProgress = true;
+    try {
+      await task();
+    } finally {
+      _backgroundSyncInProgress = false;
+    }
+  }
 }

@@ -37,13 +37,23 @@ class GoogleCalendarService {
       final acc =
           await _googleSignIn!.signInSilently() ??
           await _googleSignIn!.signIn();
-      return {'email': acc?.email, 'photoUrl': acc?.photoUrl};
+      final profile = {'email': acc?.email, 'photoUrl': acc?.photoUrl};
+      await _persistUserProfileToLocalDb(
+        email: profile['email'],
+        photoUrl: profile['photoUrl'],
+      );
+      return profile;
     }
     // For desktop, return stored info if available
     if (_signedIn) {
-      return {'email': _desktopUserEmail, 'photoUrl': _desktopUserPhotoUrl};
+      final profile = {'email': _desktopUserEmail, 'photoUrl': _desktopUserPhotoUrl};
+      await _persistUserProfileToLocalDb(
+        email: profile['email'],
+        photoUrl: profile['photoUrl'],
+      );
+      return profile;
     }
-    return {'email': null, 'photoUrl': null};
+    return await _getUserProfileFromLocalDb();
   }
 
   /// Returns a list of the user's calendars as maps with 'id', 'name', and 'color'.
@@ -222,6 +232,10 @@ class GoogleCalendarService {
 
       _desktopUserEmail = userEmail;
       _desktopUserPhotoUrl = userPhotoUrl;
+      await _persistUserProfileToLocalDb(
+        email: _desktopUserEmail,
+        photoUrl: _desktopUserPhotoUrl,
+      );
       _signedIn = true;
       debugPrint('Desktop auth restored from storage');
     } catch (e) {
@@ -470,6 +484,10 @@ class GoogleCalendarService {
         );
         debugPrint('Credentials saved to secure storage');
       }
+      await _persistUserProfileToLocalDb(
+        email: _desktopUserEmail,
+        photoUrl: _desktopUserPhotoUrl,
+      );
     } catch (err) {
       final errStr = err.toString();
       if (errStr.contains('invalid_client')) {
@@ -1195,9 +1213,37 @@ class GoogleCalendarService {
     // Clear stored credentials and default calendar from secure storage
     await _storage.clearCredentials();
     await _storage.clearDefaultCalendar();
+    try {
+      await LocalEventStore.instance.clearUserProfile();
+    } catch (e) {
+      debugPrint('Failed to clear cached user profile: $e');
+    }
     debugPrint(
       'Signed out and cleared stored credentials and default calendar',
     );
+  }
+
+  Future<void> _persistUserProfileToLocalDb({
+    required String? email,
+    required String? photoUrl,
+  }) async {
+    try {
+      await LocalEventStore.instance.upsertUserProfile(
+        email: email,
+        photoUrl: photoUrl,
+      );
+    } catch (e) {
+      debugPrint('Failed to cache user profile locally: $e');
+    }
+  }
+
+  Future<Map<String, String?>> _getUserProfileFromLocalDb() async {
+    try {
+      return await LocalEventStore.instance.getCachedUserProfile();
+    } catch (e) {
+      debugPrint('Failed to read cached user profile: $e');
+      return {'email': null, 'photoUrl': null};
+    }
   }
 
   /// Return a human-readable account label when available (displayName or email).

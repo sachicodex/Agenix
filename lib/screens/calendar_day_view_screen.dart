@@ -35,6 +35,10 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   static const double _mobileDoubleTapDistance = 28.0;
   static const Duration _desktopDoubleClickWindow = Duration(milliseconds: 260);
   static const double _desktopDoubleClickDistance = 18.0;
+  static const double _mobileMinEventInteractionHeight = 52.0;
+  static const double _horizontalSwipeMinDistance = 56.0;
+  static const double _horizontalSwipeDominanceRatio = 1.2;
+  static const int _horizontalSwipeMaxDurationMs = 700;
 
   DateTime _currentDate = DateTime.now();
   late final EventRepository _repository;
@@ -42,6 +46,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   StreamSubscription<List<CalendarEvent>>? _eventsSubscription;
   late final ProviderSubscription<AsyncValue<SyncStatus>> _syncStatusSub;
   late final AnimationController _syncRotationController;
+  late final FocusNode _keyboardListenerFocusNode;
 
   // Use Map to prevent duplicates - key is event ID
   final Map<String, CalendarEvent> _eventsMap = {};
@@ -70,10 +75,8 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   DateTime? _resizeAnchorStart;
   DateTime? _resizeAnchorEnd;
 
-  // Scroll controllers for synchronized scrolling
-  final ScrollController _timeColumnScrollController = ScrollController();
+  // Scroll controller for unified timeline scrolling
   final ScrollController _dayGridScrollController = ScrollController();
-  bool _isScrolling = false;
 
   // Interaction state (Google Calendar-like)
   final Map<String, FocusNode> _eventFocusNodes = {};
@@ -100,6 +103,9 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   // Touch support
   bool _didInitialNowScroll = false;
   int _initialNowScrollAttempts = 0;
+  bool _isSwipeNavigating = false;
+  Offset? _swipeStartGlobalPosition;
+  DateTime? _swipeStartTime;
   Timer? _eventLongPressTimer;
   bool _eventLongPressArmed = false;
   String? _touchPendingEventId;
@@ -126,6 +132,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       vsync: this,
       duration: const Duration(milliseconds: 900),
     );
+    _keyboardListenerFocusNode = FocusNode();
 
     _initialize();
     _syncStatusSub = ref.listenManual<AsyncValue<SyncStatus>>(
@@ -142,8 +149,10 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       },
     );
     _updateSyncRotation(ref.read(syncStatusProvider));
-    // Setup scroll synchronization
-    _syncScrollControllers();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _keyboardListenerFocusNode.requestFocus();
+    });
   }
 
   Future<void> _initialize() async {
@@ -154,7 +163,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       range: _currentRange,
       calendarId: _selectedCalendarId ?? 'primary',
     );
-    await _syncService.pushLocalChanges();
   }
 
   @override
@@ -163,8 +171,8 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     _eventsSubscription?.cancel();
     _syncStatusSub.close();
     _syncRotationController.dispose();
+    _keyboardListenerFocusNode.dispose();
     _syncService.stop();
-    _timeColumnScrollController.dispose();
     _dayGridScrollController.dispose();
     for (final node in _eventFocusNodes.values) {
       node.dispose();
@@ -203,23 +211,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     return _isMobileLayout(context)
         ? _mobileTimeColumnWidth
         : _desktopTimeColumnWidth;
-  }
-
-  void _syncScrollControllers() {
-    // One-way sync from day grid to time column avoids feedback-loop jitter.
-    _dayGridScrollController.addListener(() {
-      if (!_isScrolling && _timeColumnScrollController.hasClients) {
-        _isScrolling = true;
-        final targetOffset = _dayGridScrollController.offset.clamp(
-          0.0,
-          _timeColumnScrollController.position.maxScrollExtent,
-        );
-        if (_timeColumnScrollController.offset != targetOffset) {
-          _timeColumnScrollController.jumpTo(targetOffset);
-        }
-        _isScrolling = false;
-      }
-    });
   }
 
   DateTimeRange get _currentRange {
@@ -282,19 +273,82 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       );
 
       _dayGridScrollController.jumpTo(targetOffset);
-      if (_timeColumnScrollController.hasClients) {
-        _timeColumnScrollController.jumpTo(targetOffset);
-      }
       _didInitialNowScroll = true;
     });
   }
 
   Future<void> _handleDateChange(DateTime newDate) async {
+    final normalizedDate = DateTime(newDate.year, newDate.month, newDate.day);
+    final currentNormalized = DateTime(
+      _currentDate.year,
+      _currentDate.month,
+      _currentDate.day,
+    );
+    if (normalizedDate.isAtSameMomentAs(currentNormalized)) return;
+
     setState(() {
-      _currentDate = newDate;
+      _currentDate = normalizedDate;
+      _didInitialNowScroll = false;
+      _initialNowScrollAttempts = 0;
     });
     _subscribeToEvents();
-    await _syncService.updateRange(_currentRange);
+    unawaited(
+      _syncService.updateRange(_currentRange).catchError((e) {
+        debugPrint('Error updating range after date change: $e');
+      }),
+    );
+  }
+
+  void _handleSwipePointerDown(PointerDownEvent event) {
+    if (!_isMobileLayout(context)) return;
+    _swipeStartGlobalPosition = event.position;
+    _swipeStartTime = DateTime.now();
+  }
+
+  void _resetSwipeTracking() {
+    _swipeStartGlobalPosition = null;
+    _swipeStartTime = null;
+  }
+
+  Future<void> _handleSwipePointerUp(PointerUpEvent event) async {
+    try {
+      if (!_isMobileLayout(context)) return;
+      if (_isDraggingEvent ||
+          _isDraggingToCreate ||
+          _resizingEventId != null ||
+          _isSwipeNavigating) {
+        return;
+      }
+      if (_swipeStartGlobalPosition == null || _swipeStartTime == null) return;
+
+      final swipeDurationMs = DateTime.now()
+          .difference(_swipeStartTime!)
+          .inMilliseconds;
+      final delta = event.position - _swipeStartGlobalPosition!;
+      final absDx = delta.dx.abs();
+      final absDy = delta.dy.abs();
+
+      final isHorizontalEnough = absDx >= _horizontalSwipeMinDistance;
+      final isMostlyHorizontal =
+          absDx >= (absDy * _horizontalSwipeDominanceRatio);
+      final isQuickEnough = swipeDurationMs <= _horizontalSwipeMaxDurationMs;
+
+      if (!isHorizontalEnough || !isMostlyHorizontal || !isQuickEnough) return;
+
+      final currentDay = DateTime(
+        _currentDate.year,
+        _currentDate.month,
+        _currentDate.day,
+      );
+      // Requested mapping: swipe left => +1 day, swipe right => -1 day.
+      final dayDelta = delta.dx < 0 ? 1 : -1;
+      _isSwipeNavigating = true;
+      await _handleDateChange(currentDay.add(Duration(days: dayDelta)));
+      _isSwipeNavigating = false;
+    } finally {
+      _isSwipeNavigating = false;
+      _resetSwipeTracking();
+    }
   }
 
   @override
@@ -360,7 +414,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   Widget build(BuildContext context) {
     final syncStatusAsync = ref.watch(syncStatusProvider);
     return KeyboardListener(
-      focusNode: FocusNode()..requestFocus(),
+      focusNode: _keyboardListenerFocusNode,
       onKeyEvent: _keyboardShortcutsEnabled ? _handleKeyboardShortcut : null,
       child: Scaffold(
         backgroundColor: AppColors.background,
@@ -491,7 +545,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                         horizontal: isMobile ? 40 : 60,
                         vertical: 17,
                       ),
-                      backgroundColor: Color(0xffF97015).withOpacity(0.1),
                       minimumSize: const Size(0, 36),
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
@@ -501,7 +554,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: isMobile ? 14 : 17,
+                        fontSize: isMobile ? 15 : 17,
                         fontWeight: FontWeight.w400,
                         color: AppColors.onBackground,
                         letterSpacing: 0,
@@ -545,13 +598,12 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     return LayoutBuilder(
       builder: (context, constraints) {
         final isDesktopLike = !_isMobileLayout(context);
-        final timelinePhysics = (_isDraggingToCreate || _isDraggingEvent)
+        final timelinePhysics =
+            (_isDraggingToCreate ||
+                _isDraggingEvent ||
+                _resizingEventId != null)
             ? const NeverScrollableScrollPhysics()
-            : isDesktopLike
-            ? const ClampingScrollPhysics()
-            : const BouncingScrollPhysics(
-                parent: AlwaysScrollableScrollPhysics(),
-              );
+            : const ClampingScrollPhysics();
         final allDayHorizontalPhysics = isDesktopLike
             ? const ClampingScrollPhysics()
             : const BouncingScrollPhysics(
@@ -566,150 +618,154 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
           context,
         ).copyWith(scrollbars: false);
 
-        return Column(
-          children: [
-            // All-day events row (Google Calendar style)
-            if (_allDayEvents.isNotEmpty)
-              Container(
-                height: allDayRowHeight,
-                padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  border: Border(
-                    bottom: BorderSide(color: AppColors.dividerColor),
+        return Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerDown: _handleSwipePointerDown,
+          onPointerUp: (event) {
+            _handleSwipePointerUp(event);
+          },
+          onPointerCancel: (_) {
+            _resetSwipeTracking();
+          },
+          child: Column(
+            children: [
+              // All-day events row (Google Calendar style)
+              if (_allDayEvents.isNotEmpty)
+                Container(
+                  height: allDayRowHeight,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 0,
+                    vertical: 4,
                   ),
-                ),
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: timeColumnWidth,
-                      child: Text(
-                        'All day',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppColors.timeTextColor,
-                          fontWeight: FontWeight.w400,
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    border: Border(
+                      bottom: BorderSide(color: AppColors.dividerColor),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: timeColumnWidth,
+                        child: Text(
+                          'All day',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.timeTextColor,
+                            fontWeight: FontWeight.w400,
+                          ),
                         ),
                       ),
-                    ),
-                    Expanded(
-                      child: ScrollConfiguration(
-                        behavior: noScrollbarBehavior,
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          physics: allDayHorizontalPhysics,
-                          child: Row(
-                            children: _allDayEvents.map((event) {
-                              return Container(
-                                margin: const EdgeInsets.only(right: 4),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
-                                ),
-                                child: Builder(
-                                  builder: (context) {
-                                    final now = DateTime.now();
-                                    final isPastEvent =
-                                        event.endDateTime.isBefore(now) ||
-                                        event.endDateTime.isAtSameMomentAs(now);
-                                    return Container(
-                                      child: Opacity(
-                                        opacity: isPastEvent
-                                            ? _pastEventOpacity
-                                            : 1,
-                                        child: Container(
-                                          decoration: BoxDecoration(
-                                            color: event.color,
-                                            border: Border(
-                                              left: BorderSide(
-                                                color: event.color,
-                                                width: 3,
+                      Expanded(
+                        child: ScrollConfiguration(
+                          behavior: noScrollbarBehavior,
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            physics: allDayHorizontalPhysics,
+                            child: Row(
+                              children: _allDayEvents.map((event) {
+                                return Container(
+                                  margin: const EdgeInsets.only(right: 4),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  child: Builder(
+                                    builder: (context) {
+                                      final now = DateTime.now();
+                                      final isPastEvent =
+                                          event.endDateTime.isBefore(now) ||
+                                          event.endDateTime.isAtSameMomentAs(
+                                            now,
+                                          );
+                                      return Container(
+                                        child: Opacity(
+                                          opacity: isPastEvent
+                                              ? _pastEventOpacity
+                                              : 1,
+                                          child: Container(
+                                            decoration: BoxDecoration(
+                                              color: event.color,
+                                              border: Border(
+                                                left: BorderSide(
+                                                  color: event.color,
+                                                  width: 3,
+                                                ),
                                               ),
+                                              borderRadius:
+                                                  BorderRadius.circular(2),
                                             ),
-                                            borderRadius: BorderRadius.circular(
-                                              2,
-                                            ),
-                                          ),
-                                          child: GestureDetector(
-                                            onTap: () {
-                                              _keyboardActiveEventId = event.id;
-                                            },
-                                            onDoubleTap: () {
-                                              _keyboardActiveEventId = event.id;
-                                              _showEditEventModal(event);
-                                            },
-                                            child: Padding(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 8,
-                                                    vertical: 4,
+                                            child: GestureDetector(
+                                              onTap: () {
+                                                _keyboardActiveEventId =
+                                                    event.id;
+                                              },
+                                              onDoubleTap: () {
+                                                _keyboardActiveEventId =
+                                                    event.id;
+                                                _showEditEventModal(event);
+                                              },
+                                              child: Padding(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 4,
+                                                    ),
+                                                child: Text(
+                                                  event.title,
+                                                  style: const TextStyle(
+                                                    color: _eventBlockTextColor,
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w500,
                                                   ),
-                                              child: Text(
-                                                event.title,
-                                                style: const TextStyle(
-                                                  color: _eventBlockTextColor,
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w500,
                                                 ),
                                               ),
                                             ),
                                           ),
                                         ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                              );
-                            }).toList(),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            // Time grid
-            Expanded(
-              child: Row(
-                children: [
-                  // Time column
-                  SizedBox(
-                    width: timeColumnWidth,
-                    child: ScrollConfiguration(
-                      behavior: noScrollbarBehavior,
-                      child: SingleChildScrollView(
-                        controller: _timeColumnScrollController,
-                        physics: const NeverScrollableScrollPhysics(),
-                        child: SizedBox(
-                          height: totalHeight,
-                          child: _buildTimeColumn(),
-                        ),
-                      ),
-                    ),
-                  ),
-                  // Day grid
-                  Expanded(
-                    child: ScrollConfiguration(
-                      behavior: noScrollbarBehavior,
-                      child: SingleChildScrollView(
-                        controller: _dayGridScrollController,
-                        physics: timelinePhysics,
-                        child: SizedBox(
-                          height: totalHeight,
-                          child: _buildDayGrid(
-                            BoxConstraints(
-                              maxWidth: constraints.maxWidth - timeColumnWidth,
-                              maxHeight: totalHeight,
+                                      );
+                                    },
+                                  ),
+                                );
+                              }).toList(),
                             ),
                           ),
                         ),
                       ),
+                    ],
+                  ),
+                ),
+              // Time grid
+              Expanded(
+                child: ScrollConfiguration(
+                  behavior: noScrollbarBehavior,
+                  child: SingleChildScrollView(
+                    controller: _dayGridScrollController,
+                    physics: timelinePhysics,
+                    child: SizedBox(
+                      height: totalHeight,
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            width: timeColumnWidth,
+                            child: _buildTimeColumn(),
+                          ),
+                          Expanded(
+                            child: _buildDayGrid(
+                              BoxConstraints(
+                                maxWidth: constraints.maxWidth - timeColumnWidth,
+                                maxHeight: totalHeight,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         );
       },
     );
@@ -883,9 +939,9 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
         child: Opacity(
           opacity: isPastEvent ? _pastEventOpacity : 1,
           child: Container(
-            // Use the exact event color without opacity blending.
-            color: event.color,
             decoration: BoxDecoration(
+              // Keep color inside BoxDecoration to avoid color+decoration assert.
+              color: event.color,
               border: Border(left: BorderSide(color: event.color, width: 3)),
               borderRadius: BorderRadius.circular(2),
             ),
@@ -941,21 +997,45 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     bool isDraggingOriginal = false,
   }) {
     const hourHeight = 60.0;
-    final startMinutes =
-        event.startDateTime.hour * 60 + event.startDateTime.minute;
-    final endMinutes = event.endDateTime.hour * 60 + event.endDateTime.minute;
+    final visibleSegment = _eventVisibleSegmentForCurrentDay(event);
+    if (visibleSegment == null) {
+      return const SizedBox.shrink();
+    }
+
+    final dayStart = DateTime(
+      _currentDate.year,
+      _currentDate.month,
+      _currentDate.day,
+    );
+    final startMinutes = visibleSegment.start.difference(dayStart).inMinutes;
+    final endMinutes = visibleSegment.end.difference(dayStart).inMinutes;
     final startPosition = (startMinutes / 60) * hourHeight;
-    final height = ((endMinutes - startMinutes) / 60) * hourHeight;
+    final rawHeight = ((endMinutes - startMinutes) / 60) * hourHeight;
+    final visualHeight = rawHeight < 1.0 ? 1.0 : rawHeight;
+    final isMobile = _isMobileLayout(context);
+    final interactionHeight = isMobile
+        ? (visualHeight < _mobileMinEventInteractionHeight
+              ? _mobileMinEventInteractionHeight
+              : visualHeight)
+        : visualHeight;
+    final topInsetForVisual = (interactionHeight - visualHeight) / 2;
+    final maxTop = (24 * hourHeight) - interactionHeight;
+    final interactionTop = (startPosition - topInsetForVisual).clamp(
+      0.0,
+      maxTop < 0 ? 0.0 : maxTop,
+    );
+    final visualTopInset = startPosition - interactionTop;
 
     return Positioned(
       left: leftOffset + 2,
-      top: startPosition,
+      top: interactionTop,
       width: width - 4,
-      height: height,
+      height: interactionHeight,
       child: _buildEventCard(
         event,
-        cardWidth: width - 4,
-        cardHeight: height,
+        cardHeight: interactionHeight,
+        visualHeight: visualHeight,
+        visualTopInset: visualTopInset,
         isPreview: isPreview,
         isDraggingOriginal: isDraggingOriginal,
       ),
@@ -964,12 +1044,13 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
 
   Widget _buildEventCard(
     CalendarEvent event, {
-    required double cardWidth,
     required double cardHeight,
+    required double visualHeight,
+    required double visualTopInset,
     bool isPreview = false,
     bool isDraggingOriginal = false,
   }) {
-    const edgeHitHeight = 14.0;
+    final edgeHitHeight = _isMobileLayout(context) ? 24.0 : 14.0;
     final eventDurationMinutes = event.endDateTime
         .difference(event.startDateTime)
         .inMinutes;
@@ -986,7 +1067,8 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
         : 1.0;
 
     bool? resizeZoneForLocal(Offset localPosition) {
-      final isBottom = localPosition.dy >= (cardHeight - edgeHitHeight);
+      final visualBottom = visualTopInset + visualHeight;
+      final isBottom = localPosition.dy >= (visualBottom - edgeHitHeight);
       // Top-edge resize is intentionally disabled.
       if (isBottom) return false;
       return null;
@@ -1045,37 +1127,18 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
             _dragStartTime = null;
             _draggedEventOriginal = null;
 
+            setState(() {
+              _resizingEventId = event.id;
+              _resizingFromTop = false;
+              _resizingEventOriginal = event;
+              _resizeHoverEventId = event.id;
+              _resizeHoverFromTop = false;
+              _resizeStartGlobalY = pointerEvent.position.dy;
+              _resizeAnchorStart = event.startDateTime;
+              _resizeAnchorEnd = event.endDateTime;
+            });
             if (pointerEvent.kind == PointerDeviceKind.touch) {
-              _resizeLongPressTimer?.cancel();
-              _touchPendingResizeEventId = event.id;
-              _resizeTouchDownGlobalPosition = pointerEvent.position;
-              _resizeLongPressTimer = Timer(_touchLongPressDuration, () {
-                if (!mounted) return;
-                if (_touchPendingResizeEventId != event.id) return;
-                setState(() {
-                  _resizingEventId = event.id;
-                  _resizingFromTop = false;
-                  _resizingEventOriginal = event;
-                  _resizeHoverEventId = event.id;
-                  _resizeHoverFromTop = false;
-                  _resizeStartGlobalY = pointerEvent.position.dy;
-                  _resizeAnchorStart = event.startDateTime;
-                  _resizeAnchorEnd = event.endDateTime;
-                });
-                HapticFeedback.selectionClick();
-                _clearPendingResizeTouch();
-              });
-            } else {
-              setState(() {
-                _resizingEventId = event.id;
-                _resizingFromTop = false;
-                _resizingEventOriginal = event;
-                _resizeHoverEventId = event.id;
-                _resizeHoverFromTop = false;
-                _resizeStartGlobalY = pointerEvent.position.dy;
-                _resizeAnchorStart = event.startDateTime;
-                _resizeAnchorEnd = event.endDateTime;
-              });
+              HapticFeedback.selectionClick();
             }
             return;
           }
@@ -1258,73 +1321,88 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
         },
         child: IgnorePointer(
           ignoring: isPreview,
-          child: Opacity(
-            opacity: effectiveOpacity,
-            child: Container(
-              decoration: BoxDecoration(
-                // Use exact event color for the block fill.
-                color: event.color,
-                border: Border(left: BorderSide(color: event.color, width: 3)),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              child: isShortEvent
-                  ? RichText(
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      text: TextSpan(
-                        children: [
-                          TextSpan(
-                            text: event.title,
-                            style: const TextStyle(
-                              color: _eventBlockTextColor,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              height: 1.2,
-                            ),
-                          ),
-                          TextSpan(
-                            text:
-                                ', ${DateFormat('h:mma').format(event.startDateTime).toLowerCase()}',
-                            style: const TextStyle(
-                              color: _eventBlockTextColor,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w400,
-                              height: 1.2,
-                            ),
-                          ),
-                        ],
+          child: Stack(
+            children: [
+              Positioned(
+                left: 0,
+                right: 0,
+                top: visualTopInset,
+                height: visualHeight,
+                child: Opacity(
+                  opacity: effectiveOpacity,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      // Use exact event color for the block fill.
+                      color: event.color,
+                      border: Border(
+                        left: BorderSide(color: event.color, width: 3),
                       ),
-                    )
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.start,
-                      children: [
-                        Text(
-                          event.title,
-                          style: const TextStyle(
-                            color: _eventBlockTextColor,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            height: 1.2,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        Text(
-                          '${DateFormat('h:mm').format(event.startDateTime)} - ${DateFormat('h:mm').format(event.endDateTime)}',
-                          style: const TextStyle(
-                            color: _eventBlockTextColor,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
-                            height: 1.2,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
+                      borderRadius: BorderRadius.circular(6),
                     ),
-            ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    child: isShortEvent
+                        ? RichText(
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            text: TextSpan(
+                              children: [
+                                TextSpan(
+                                  text: event.title,
+                                  style: const TextStyle(
+                                    color: _eventBlockTextColor,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                    height: 1.2,
+                                  ),
+                                ),
+                                TextSpan(
+                                  text:
+                                      ', ${DateFormat('h:mma').format(event.startDateTime).toLowerCase()}',
+                                  style: const TextStyle(
+                                    color: _eventBlockTextColor,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w400,
+                                    height: 1.2,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.start,
+                            children: [
+                              Text(
+                                event.title,
+                                style: const TextStyle(
+                                  color: _eventBlockTextColor,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  height: 1.2,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              Text(
+                                '${DateFormat('h:mm').format(event.startDateTime)} - ${DateFormat('h:mm').format(event.endDateTime)}',
+                                style: const TextStyle(
+                                  color: _eventBlockTextColor,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
+                                  height: 1.2,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -1378,12 +1456,20 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     }
 
     for (final event in _timedEvents) {
+      final visibleSegment = _eventVisibleSegmentForCurrentDay(event);
+      if (visibleSegment == null) continue;
+
       const hourHeight = 60.0;
-      final startMinutes =
-          event.startDateTime.hour * 60 + event.startDateTime.minute;
-      final endMinutes = event.endDateTime.hour * 60 + event.endDateTime.minute;
+      final dayStart = DateTime(
+        _currentDate.year,
+        _currentDate.month,
+        _currentDate.day,
+      );
+      final startMinutes = visibleSegment.start.difference(dayStart).inMinutes;
+      final endMinutes = visibleSegment.end.difference(dayStart).inMinutes;
       final top = (startMinutes / 60) * hourHeight;
-      final height = ((endMinutes - startMinutes) / 60) * hourHeight;
+      final rawHeight = ((endMinutes - startMinutes) / 60) * hourHeight;
+      final height = rawHeight < 1.0 ? 1.0 : rawHeight;
 
       final rect = Rect.fromLTWH(2, top, gridWidth - 4, height);
       if (rect.contains(localPosition)) {
@@ -1408,6 +1494,25 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       hour,
       minute,
     );
+  }
+
+  DateTimeRange? _eventVisibleSegmentForCurrentDay(CalendarEvent event) {
+    final dayStart = DateTime(
+      _currentDate.year,
+      _currentDate.month,
+      _currentDate.day,
+    );
+    final dayEnd = dayStart.add(const Duration(days: 1));
+
+    final visibleStart = event.startDateTime.isBefore(dayStart)
+        ? dayStart
+        : event.startDateTime;
+    final visibleEnd = event.endDateTime.isAfter(dayEnd)
+        ? dayEnd
+        : event.endDateTime;
+
+    if (!visibleEnd.isAfter(visibleStart)) return null;
+    return DateTimeRange(start: visibleStart, end: visibleEnd);
   }
 
   void _handleGridPointerDownEvent(PointerDownEvent event) {
@@ -1627,7 +1732,11 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
 
     try {
       await _repository.updateEvent(updatedEvent);
-      await _syncService.pushLocalChanges();
+      unawaited(
+        _syncService.pushLocalChanges().catchError((e) {
+          debugPrint('Background sync failed after drag update: $e');
+        }),
+      );
     } catch (e) {
       debugPrint('Error updating event: $e');
       _eventsMap[originalEvent.id] = originalEvent;
@@ -1698,7 +1807,11 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
 
     try {
       await _repository.updateEvent(event);
-      await _syncService.pushLocalChanges();
+      unawaited(
+        _syncService.pushLocalChanges().catchError((e) {
+          debugPrint('Background sync failed after resize update: $e');
+        }),
+      );
     } catch (e) {
       debugPrint('Error resizing event: $e');
       // Revert on error
@@ -1800,7 +1913,11 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
 
     try {
       await _repository.deleteEvent(event.id);
-      await _syncService.pushLocalChanges();
+      unawaited(
+        _syncService.pushLocalChanges().catchError((e) {
+          debugPrint('Background sync failed after delete: $e');
+        }),
+      );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2093,7 +2210,11 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
 
     try {
       await _repository.updateEvent(updated);
-      await _syncService.pushLocalChanges();
+      unawaited(
+        _syncService.pushLocalChanges().catchError((e) {
+          debugPrint('Background sync failed after keyboard move: $e');
+        }),
+      );
     } catch (e) {
       debugPrint('Error moving event with keyboard: $e');
       if (!mounted) return;
