@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/google_calendar_service.dart';
 import '../theme/app_colors.dart';
+import '../widgets/app_animations.dart';
 
 /// Screen for selecting default calendar on first login
 class CalendarSelectionScreen extends StatefulWidget {
@@ -160,10 +161,18 @@ class _CalendarSelectionScreenState extends State<CalendarSelectionScreen> {
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : _error != null
-            ? Center(
+        child: AnimatedSwitcher(
+          duration: AppAnimationDurations.normal,
+          switchInCurve: AppAnimationCurves.emphasized,
+          switchOutCurve: Curves.easeInCubic,
+          child: _loading
+              ? const Center(
+                  key: ValueKey<String>('calendar-selection-loading'),
+                  child: CircularProgressIndicator(),
+                )
+              : _error != null
+              ? Center(
+                  key: const ValueKey<String>('calendar-selection-error'),
                 child: Padding(
                   padding: const EdgeInsets.all(24.0),
                   child: Column(
@@ -197,39 +206,46 @@ class _CalendarSelectionScreenState extends State<CalendarSelectionScreen> {
                       ),
                       const SizedBox(height: 32),
                       if (_isPermissionError)
-                        ElevatedButton.icon(
-                          onPressed: _reAuthenticate,
-                          icon: const Icon(Icons.login),
-                          label: Text(
-                            'Sign In Again',
-                            style: AppTextStyles.button,
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: AppColors.onPrimary,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 24,
-                              vertical: 16,
+                        AppPressFeedback(
+                          child: ElevatedButton.icon(
+                            onPressed: _reAuthenticate,
+                            icon: const Icon(Icons.login),
+                            label: Text(
+                              'Sign In Again',
+                              style: AppTextStyles.button,
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              foregroundColor: AppColors.onPrimary,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 24,
+                                vertical: 16,
+                              ),
                             ),
                           ),
                         )
                       else
-                        ElevatedButton(
-                          onPressed: _loadCalendars,
-                          child: Text('Retry', style: AppTextStyles.button),
+                        AppPressFeedback(
+                          child: ElevatedButton(
+                            onPressed: _loadCalendars,
+                            child: Text('Retry', style: AppTextStyles.button),
+                          ),
                         ),
                     ],
                   ),
                 ),
               )
-            : _calendars.isEmpty
-            ? Center(
+              : _calendars.isEmpty
+              ? Center(
+                  key: const ValueKey<String>('calendar-selection-empty'),
                 child: Text(
                   'No calendars found',
                   style: AppTextStyles.bodyText1,
                 ),
               )
-            : Column(
+              : AppFadeSlideIn(
+                  key: const ValueKey<String>('calendar-selection-list'),
+                  child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
@@ -285,18 +301,22 @@ class _CalendarSelectionScreenState extends State<CalendarSelectionScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  ElevatedButton.icon(
-                    onPressed: _saveAndContinue,
-                    icon: const Icon(Icons.check),
-                    label: Text('Continue', style: AppTextStyles.button),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: AppColors.onPrimary,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
+                  AppPressFeedback(
+                    child: ElevatedButton.icon(
+                      onPressed: _saveAndContinue,
+                      icon: const Icon(Icons.check),
+                      label: Text('Continue', style: AppTextStyles.button),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: AppColors.onPrimary,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                      ),
                     ),
                   ),
                 ],
               ),
+                ),
+        ),
       ),
     );
   }

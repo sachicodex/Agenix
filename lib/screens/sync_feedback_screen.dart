@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../widgets/app_animations.dart';
 
 class SyncFeedbackScreen extends StatefulWidget {
   static const routeName = '/sync';
@@ -94,9 +95,11 @@ class _SyncFeedbackScreenState extends State<SyncFeedbackScreen> {
       body = Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          ElevatedButton(
-            onPressed: () => setState(() => state = 'syncing'),
-            child: Text('Retry', style: AppTextStyles.button),
+          AppPressFeedback(
+            child: ElevatedButton(
+              onPressed: () => setState(() => state = 'syncing'),
+              child: Text('Retry', style: AppTextStyles.button),
+            ),
           ),
         ],
       );
@@ -109,7 +112,18 @@ class _SyncFeedbackScreenState extends State<SyncFeedbackScreen> {
           color: AppColors.surface,
           elevation: 8,
           borderRadius: BorderRadius.circular(AppRadius.card),
-          child: Padding(padding: EdgeInsets.all(24), child: body),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: AnimatedSwitcher(
+              duration: AppAnimationDurations.normal,
+              switchInCurve: AppAnimationCurves.emphasized,
+              switchOutCurve: Curves.easeInCubic,
+              child: AppFadeSlideIn(
+                key: ValueKey<String>('sync-state-$state'),
+                child: body,
+              ),
+            ),
+          ),
         ),
       ),
     );

@@ -12,6 +12,7 @@ import '../theme/app_colors.dart';
 import 'settings_screen.dart';
 import '../models/calendar_event.dart';
 import '../providers/event_providers.dart';
+import '../widgets/app_animations.dart';
 
 class CreateEventScreen extends ConsumerStatefulWidget {
   static const routeName = '/create';
@@ -75,6 +76,12 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
       false; // Track if user manually selected a calendar
 
   Future<void> _fetchCalendars() async {
+    String? defaultCalendarId;
+    try {
+      defaultCalendarId =
+          await GoogleCalendarService.instance.storage.getDefaultCalendarId();
+    } catch (_) {}
+
     void applyCalendars(List<Map<String, dynamic>> calendars) {
       final filteredCalendars = calendars.where((cal) {
         final name = (cal['name'] as String?) ?? '';
@@ -84,8 +91,29 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
       if (mounted) {
         setState(() {
           _availableCalendars = filteredCalendars;
-          if (_availableCalendars.isNotEmpty && _selectedCalendarId == null) {
-            _selectedCalendarId = _availableCalendars.first['id'] as String?;
+
+          if (_userHasSelectedCalendar) {
+            return;
+          }
+
+          final defaultExists =
+              defaultCalendarId != null &&
+              defaultCalendarId.isNotEmpty &&
+              _availableCalendars.any(
+                (cal) => (cal['id'] as String?) == defaultCalendarId,
+              );
+          if (defaultExists) {
+            _selectedCalendarId = defaultCalendarId;
+            return;
+          }
+
+          final currentExists =
+              _selectedCalendarId != null &&
+              _availableCalendars.any(
+                (cal) => (cal['id'] as String?) == _selectedCalendarId,
+              );
+          if (!currentExists) {
+            _selectedCalendarId = null;
           }
         });
       }
@@ -241,16 +269,20 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
           builder: (context, constraints) {
             if (isWide) {
               return Center(
-                child: RoundedCard(
-                  width: 720,
-                  child: SingleChildScrollView(child: form),
+                child: AppFadeSlideIn(
+                  child: RoundedCard(
+                    width: 720,
+                    child: SingleChildScrollView(child: form),
+                  ),
                 ),
               );
             }
 
-            return Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: SingleChildScrollView(child: form),
+            return AppFadeSlideIn(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: SingleChildScrollView(child: form),
+              ),
             );
           },
         ),
@@ -310,11 +342,15 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
           ),
         const SizedBox(height: 16),
         DropdownButtonFormField<String>(
-          value:
-              _selectedCalendarId ??
-              (_availableCalendars.isNotEmpty
-                  ? _availableCalendars.first['id'] as String?
-                  : null),
+          value: _selectedCalendarId,
+          hint: Text(
+            _availableCalendars.isEmpty
+                ? 'Loading calendars...'
+                : 'Select calendar',
+            style: AppTextStyles.bodyText1.copyWith(
+              color: AppColors.onSurface.withOpacity(0.7),
+            ),
+          ),
           decoration: InputDecoration(
             labelText: 'Select Calendar',
             labelStyle: AppTextStyles.bodyText1.copyWith(
@@ -386,10 +422,13 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
           },
         ),
         const SizedBox(height: 24),
-        ElevatedButton.icon(
-          onPressed: _saving ? null : _onSavePressed,
-          icon: const Icon(Icons.event_available),
-          label: _saving ? const Text('Saving...') : const Text('Save'),
+        AppPressFeedback(
+          enabled: !_saving,
+          child: ElevatedButton.icon(
+            onPressed: _saving ? null : _onSavePressed,
+            icon: const Icon(Icons.event_available),
+            label: _saving ? const Text('Saving...') : const Text('Save'),
+          ),
         ),
       ],
     );
@@ -397,35 +436,20 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
 
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
+      leading: AppPressFeedback(
+        child: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new),
+          tooltip: 'Back',
+          onPressed: () {
+            Navigator.maybePop(context);
+          },
+        ),
+      ),
       title: Padding(
         padding: const EdgeInsets.only(left: 10),
         child: Text('Create Event', style: AppTextStyles.headline2),
       ),
-      actions: [
-        IconButton(
-          icon: const Icon(Icons.calendar_month),
-          tooltip: 'View Calendar',
-          onPressed: () {
-            Navigator.pushNamed(context, '/calendar');
-          },
-        ),
-        IconButton(
-          icon: _userPhotoUrl != null
-              ? CircleAvatar(
-                  backgroundImage: NetworkImage(
-                    _userPhotoUrl!,
-                    headers: const {'Cache-Control': 'max-age=3600'},
-                  ),
-                  radius: 16,
-                )
-              : const Icon(Icons.account_circle, size: 32),
-
-          onPressed: () {
-            Navigator.pushNamed(context, SettingsScreen.routeName);
-          },
-        ),
-        const SizedBox(width: 10),
-      ],
+      actions: const [],
     );
   }
 

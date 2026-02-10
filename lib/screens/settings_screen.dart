@@ -4,6 +4,7 @@ import '../services/api_key_storage_service.dart';
 import '../services/google_calendar_service.dart';
 import '../services/groq_service.dart';
 import 'auth_wrapper.dart';
+import '../widgets/app_animations.dart';
 
 class SettingsScreen extends StatefulWidget {
   static const routeName = '/settings';
@@ -360,6 +361,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Widget _animatedSection(int index, Widget child) {
+    return AppFadeSlideIn(
+      delay: Duration(milliseconds: 50 * index),
+      child: child,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isWide = MediaQuery.of(context).size.width > 720;
@@ -379,73 +387,78 @@ class _SettingsScreenState extends State<SettingsScreen> {
             padding: EdgeInsets.all(isWide ? 24 : 16),
             children: [
               // AI API Key Section
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'AI API Key',
-                        style: AppTextStyles.headline2.copyWith(fontSize: 18),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Enter your AI API key to enable AI features',
-                        style: AppTextStyles.bodyText1.copyWith(
-                          color: AppColors.onSurface.withOpacity(0.7),
+              _animatedSection(
+                0,
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'AI API Key',
+                          style: AppTextStyles.headline2.copyWith(fontSize: 18),
                         ),
-                      ),
-                      const SizedBox(height: 16),
-                      TextField(
-                        controller: _apiKeyController,
-                        decoration: InputDecoration(
-                          hintText: 'Enter your AI API key',
-                          hintStyle: AppTextStyles.bodyText1.copyWith(
-                            color: AppColors.onSurface.withOpacity(0.5),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Enter your AI API key to enable AI features',
+                          style: AppTextStyles.bodyText1.copyWith(
+                            color: AppColors.onSurface.withOpacity(0.7),
                           ),
-                          filled: true,
-                          fillColor: AppColors.surface,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none,
-                          ),
-                          suffixIcon: _isSavingApiKey
-                              ? const Padding(
-                                  padding: EdgeInsets.all(12.0),
-                                  child: SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
+                        ),
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: _apiKeyController,
+                          decoration: InputDecoration(
+                            hintText: 'Enter your AI API key',
+                            hintStyle: AppTextStyles.bodyText1.copyWith(
+                              color: AppColors.onSurface.withOpacity(0.5),
+                            ),
+                            filled: true,
+                            fillColor: AppColors.surface,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
+                            suffixIcon: _isSavingApiKey
+                                ? const Padding(
+                                    padding: EdgeInsets.all(12.0),
+                                    child: SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    ),
+                                  )
+                                : AppPressFeedback(
+                                    child: IconButton(
+                                      icon: Icon(
+                                        _apiKeyValid
+                                            ? Icons.check_circle
+                                            : Icons.check_circle_outline,
+                                      ),
+                                      color: _apiKeyValid
+                                          ? Colors.green
+                                          : AppColors.primary,
+                                      onPressed: _saveApiKey,
                                     ),
                                   ),
-                                )
-                              : IconButton(
-                                  icon: Icon(
-                                    _apiKeyValid
-                                        ? Icons.check_circle
-                                        : Icons.check_circle_outline,
-                                  ),
-                                  color: _apiKeyValid
-                                      ? Colors.green
-                                      : AppColors.primary,
-                                  onPressed: _saveApiKey,
-                                ),
+                          ),
+                          style: AppTextStyles.bodyText1,
+                          obscureText: true,
+                          enabled: !_isSavingApiKey,
+                          onChanged: (value) {
+                            // Reset validation state when user types
+                            if (_apiKeyValid) {
+                              setState(() {
+                                _apiKeyValid = false;
+                              });
+                            }
+                          },
                         ),
-                        style: AppTextStyles.bodyText1,
-                        obscureText: true,
-                        enabled: !_isSavingApiKey,
-                        onChanged: (value) {
-                          // Reset validation state when user types
-                          if (_apiKeyValid) {
-                            setState(() {
-                              _apiKeyValid = false;
-                            });
-                          }
-                        },
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -453,7 +466,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
               // Default Calendar Section
               if (_signedIn)
-                Card(
+                _animatedSection(
+                  1,
+                  Card(
                   child: Padding(
                     padding: const EdgeInsets.all(16.0),
                     child: Column(
@@ -540,10 +555,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
                 ),
+                ),
               if (_signedIn) const SizedBox(height: 16),
 
               // Account Section
-              Card(
+              _animatedSection(
+                2,
+                Card(
                 child: ListTile(
                   leading: _userPhotoUrl != null
                       ? CircleAvatar(
@@ -570,10 +588,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       : null,
                 ),
               ),
+              ),
               const SizedBox(height: 16),
 
               // Logout Button
-              Card(
+              _animatedSection(
+                3,
+                Card(
                 child: ListTile(
                   leading: Icon(Icons.logout, color: AppColors.error),
                   title: Text(
@@ -586,10 +607,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   enabled: _signedIn,
                 ),
               ),
+              ),
               const SizedBox(height: 16),
 
               // About Section
-              Card(
+              _animatedSection(
+                4,
+                Card(
                 child: ListTile(
                   title: Text('About', style: AppTextStyles.bodyText1),
                   subtitle: Text(
@@ -599,6 +623,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
                 ),
+              ),
               ),
             ],
           );

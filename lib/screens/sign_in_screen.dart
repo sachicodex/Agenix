@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/google_calendar_service.dart';
 import '../theme/app_colors.dart';
+import '../widgets/app_animations.dart';
 
 class SignInScreen extends StatefulWidget {
   final VoidCallback? onSignInSuccess;
@@ -62,23 +63,37 @@ class _SignInScreenState extends State<SignInScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Image.asset('assets/logo/agenix.png', width: 250),
-              SizedBox(height: 48),
-              Text(
-                'You must sign in with Google to save events to your calendar.',
-                style: AppTextStyles.bodyText1,
-                textAlign: TextAlign.center,
+              AppFadeSlideIn(
+                child: Image.asset('assets/logo/agenix.png', width: 250),
+              ),
+              const SizedBox(height: 48),
+              AppFadeSlideIn(
+                delay: const Duration(milliseconds: 80),
+                child: Text(
+                  'You must sign in with Google to save events to your calendar.',
+                  style: AppTextStyles.bodyText1,
+                  textAlign: TextAlign.center,
+                ),
               ),
               const SizedBox(height: 32),
-              ElevatedButton.icon(
-                onPressed: _loading ? null : _signIn,
-                icon: const Icon(Icons.login),
-                label: _loading
-                    ? Text('Signing in…', style: AppTextStyles.button)
-                    : Text('Sign in with Google', style: AppTextStyles.button),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: AppColors.onPrimary,
+              AppFadeSlideIn(
+                delay: const Duration(milliseconds: 140),
+                child: AppPressFeedback(
+                  enabled: !_loading,
+                  child: ElevatedButton.icon(
+                    onPressed: _loading ? null : _signIn,
+                    icon: const Icon(Icons.login),
+                    label: _loading
+                        ? Text('Signing in...', style: AppTextStyles.button)
+                        : Text(
+                            'Sign in with Google',
+                            style: AppTextStyles.button,
+                          ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: AppColors.onPrimary,
+                    ),
+                  ),
                 ),
               ),
             ],

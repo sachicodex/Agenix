@@ -104,6 +104,12 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
   }
 
   Future<void> _fetchCalendars() async {
+    String? defaultCalendarId;
+    try {
+      defaultCalendarId =
+          await GoogleCalendarService.instance.storage.getDefaultCalendarId();
+    } catch (_) {}
+
     final applyCalendars = (List<Map<String, dynamic>> calendars) {
       final filteredCalendars = calendars.where((cal) {
         final name = (cal['name'] as String?) ?? '';
@@ -113,8 +119,32 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
       if (mounted) {
         setState(() {
           _availableCalendars = filteredCalendars;
-          if (_availableCalendars.isNotEmpty && _selectedCalendarId == null) {
-            _selectedCalendarId = _availableCalendars.first['id'] as String?;
+          if (widget.existingEvent != null) {
+            return;
+          }
+          if (_userHasSelectedCalendar) {
+            return;
+          }
+
+          final defaultExists =
+              defaultCalendarId != null &&
+              defaultCalendarId.isNotEmpty &&
+              _availableCalendars.any(
+                (cal) => (cal['id'] as String?) == defaultCalendarId,
+              );
+
+          if (defaultExists) {
+            _selectedCalendarId = defaultCalendarId;
+            return;
+          }
+
+          final currentExists =
+              _selectedCalendarId != null &&
+              _availableCalendars.any(
+                (cal) => (cal['id'] as String?) == _selectedCalendarId,
+              );
+          if (!currentExists) {
+            _selectedCalendarId = null;
           }
         });
       }
@@ -140,7 +170,9 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
                 'color': 0xFF039BE5,
               },
             ];
-            _selectedCalendarId ??= 'primary';
+            if (widget.existingEvent == null && !_userHasSelectedCalendar) {
+              _selectedCalendarId = 'primary';
+            }
           }
         });
       }
@@ -541,11 +573,15 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
         ),
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
-          value:
-              _selectedCalendarId ??
-              (_availableCalendars.isNotEmpty
-                  ? _availableCalendars.first['id'] as String?
-                  : null),
+          value: _selectedCalendarId,
+          hint: Text(
+            _availableCalendars.isEmpty
+                ? 'Loading calendars...'
+                : 'Select calendar',
+            style: AppTextStyles.bodyText1.copyWith(
+              color: AppColors.onSurface.withValues(alpha: 0.7),
+            ),
+          ),
           decoration: InputDecoration(
             labelText: 'Select Calendar',
             labelStyle: AppTextStyles.bodyText1.copyWith(

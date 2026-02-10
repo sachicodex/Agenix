@@ -3,7 +3,8 @@ import 'dart:io' show Platform;
 import '../services/google_calendar_service.dart';
 import 'sign_in_screen.dart';
 import 'calendar_selection_screen.dart';
-import 'create_event_screen.dart';
+import 'calendar_day_view_screen.dart';
+import '../widgets/app_animations.dart';
 
 /// Wrapper widget that checks authentication status and routes accordingly.
 /// Shows sign-in screen if not authenticated, otherwise shows the main app.
@@ -98,33 +99,43 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
   @override
   Widget build(BuildContext context) {
+    Widget child;
     if (_isLoading) {
       // Show loading screen while checking auth
-      return const Scaffold(
+      child = const Scaffold(
         body: Center(
           child: CircularProgressIndicator(),
         ),
       );
-    }
-
-    if (!_isSignedIn) {
+    } else if (!_isSignedIn) {
       // Not signed in - show sign-in screen
-      return SignInScreen(
+      child = SignInScreen(
         onSignInSuccess: _onSignInSuccess,
       );
-    }
-
-    if (!_hasDefaultCalendar) {
+    } else if (!_hasDefaultCalendar) {
       // Signed in but no default calendar selected - show calendar selection
-      return CalendarSelectionScreen(
+      child = CalendarSelectionScreen(
         onCalendarSelected: _onCalendarSelected,
         onReAuthenticationNeeded: _onReAuthenticationNeeded,
       );
+    } else {
+      // Signed in and has default calendar - show main app (CalendarDayViewScreen)
+      child = CalendarDayViewScreen(
+        onSignOut: _onSignOut,
+      );
     }
 
-    // Signed in and has default calendar - show main app (CreateEventScreen)
-    return CreateEventScreen(
-      onSignOut: _onSignOut,
+    return AnimatedSwitcher(
+      duration: AppAnimationDurations.slow,
+      switchInCurve: AppAnimationCurves.emphasized,
+      switchOutCurve: Curves.easeInCubic,
+      child: KeyedSubtree(
+        key: ValueKey<String>('auth-${child.runtimeType}'),
+        child: AppFadeSlideIn(
+          key: ValueKey<String>('auth-entry-${child.runtimeType}'),
+          child: child,
+        ),
+      ),
     );
   }
 }

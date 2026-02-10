@@ -30,6 +30,8 @@ class SyncService {
   String? _defaultCalendarId;
   SharedPreferences? _prefs;
   bool _backgroundSyncInProgress = false;
+  Future<void>? _pushLocalChangesInFlight;
+  bool _pushLocalChangesNeedsAnotherPass = false;
 
   // Keep this aligned with LocalEventStore database version.
   static const int _localDbSchemaVersion = 3;
@@ -217,6 +219,31 @@ class SyncService {
   Future<void> pushLocalChanges() async {
     if (!await _ensureSignedIn()) return;
 
+    if (_pushLocalChangesInFlight != null) {
+      _pushLocalChangesNeedsAnotherPass = true;
+      await _pushLocalChangesInFlight;
+      return;
+    }
+
+    final inFlight = _runQueuedPushLocalChanges();
+    _pushLocalChangesInFlight = inFlight;
+    try {
+      await inFlight;
+    } finally {
+      if (identical(_pushLocalChangesInFlight, inFlight)) {
+        _pushLocalChangesInFlight = null;
+      }
+    }
+  }
+
+  Future<void> _runQueuedPushLocalChanges() async {
+    do {
+      _pushLocalChangesNeedsAnotherPass = false;
+      await _pushLocalChangesOnce();
+    } while (_pushLocalChangesNeedsAnotherPass);
+  }
+
+  Future<void> _pushLocalChangesOnce() async {
     final pending = await _localStore.getPendingEvents();
     if (pending.isEmpty) return;
 
@@ -227,14 +254,26 @@ class SyncService {
           final created = await _remoteSource.insertEvent(
             event: normalizedEvent,
           );
+          final remoteUpdatedAt = created.updatedAtRemote ?? DateTime.now().toUtc();
           final updated = normalizedEvent.copyWith(
             gEventId: created.gEventId,
             dirty: false,
             deleted: false,
             pendingAction: PendingAction.none,
-            updatedAtRemote: created.updatedAtRemote,
+            updatedAtRemote: remoteUpdatedAt,
           );
-          await _localStore.upsertEvent(updated);
+          final latestLocal = await _localStore.getById(normalizedEvent.id);
+          if (_hasNewerLocalMutation(latestLocal, normalizedEvent)) {
+            final rebased = _rebaseLocalEventOnRemoteAck(
+              latest: latestLocal!,
+              pushedSnapshot: normalizedEvent,
+              remoteGEventId: created.gEventId,
+              remoteUpdatedAt: remoteUpdatedAt,
+            );
+            await _localStore.upsertEvent(rebased);
+          } else {
+            await _localStore.upsertEvent(updated);
+          }
           if (updated.gEventId != null) {
             await _localStore.removeDuplicateGoogleEventCopies(
               gEventId: updated.gEventId!,
@@ -246,14 +285,27 @@ class SyncService {
             final created = await _remoteSource.insertEvent(
               event: normalizedEvent,
             );
+            final remoteUpdatedAt =
+                created.updatedAtRemote ?? DateTime.now().toUtc();
             final updated = normalizedEvent.copyWith(
               gEventId: created.gEventId,
               dirty: false,
               deleted: false,
               pendingAction: PendingAction.none,
-              updatedAtRemote: created.updatedAtRemote,
+              updatedAtRemote: remoteUpdatedAt,
             );
-            await _localStore.upsertEvent(updated);
+            final latestLocal = await _localStore.getById(normalizedEvent.id);
+            if (_hasNewerLocalMutation(latestLocal, normalizedEvent)) {
+              final rebased = _rebaseLocalEventOnRemoteAck(
+                latest: latestLocal!,
+                pushedSnapshot: normalizedEvent,
+                remoteGEventId: created.gEventId,
+                remoteUpdatedAt: remoteUpdatedAt,
+              );
+              await _localStore.upsertEvent(rebased);
+            } else {
+              await _localStore.upsertEvent(updated);
+            }
             if (updated.gEventId != null) {
               await _localStore.removeDuplicateGoogleEventCopies(
                 gEventId: updated.gEventId!,
@@ -290,12 +342,25 @@ class SyncService {
             final updatedRemote = await _remoteSource.updateEvent(
               event: eventForRemote,
             );
+            final remoteUpdatedAt =
+                updatedRemote.updatedAtRemote ?? DateTime.now().toUtc();
             final updated = eventForRemote.copyWith(
               dirty: false,
               pendingAction: PendingAction.none,
-              updatedAtRemote: updatedRemote.updatedAtRemote,
+              updatedAtRemote: remoteUpdatedAt,
             );
-            await _localStore.upsertEvent(updated);
+            final latestLocal = await _localStore.getById(eventForRemote.id);
+            if (_hasNewerLocalMutation(latestLocal, eventForRemote)) {
+              final rebased = _rebaseLocalEventOnRemoteAck(
+                latest: latestLocal!,
+                pushedSnapshot: eventForRemote,
+                remoteGEventId: eventForRemote.gEventId,
+                remoteUpdatedAt: remoteUpdatedAt,
+              );
+              await _localStore.upsertEvent(rebased);
+            } else {
+              await _localStore.upsertEvent(updated);
+            }
             if (updated.gEventId != null) {
               await _localStore.removeDuplicateGoogleEventCopies(
                 gEventId: updated.gEventId!,
@@ -360,6 +425,12 @@ class SyncService {
       return false;
     }
 
+    // Guard against out-of-order remote snapshots (or same-timestamp echoes)
+    // right after a successful local push.
+    if (existing != null && _isOlderRemoteSnapshot(existing, remoteEvent)) {
+      return false;
+    }
+
     if (remoteEvent.deleted) {
       if (existing != null) {
         await _localStore.markDeleted(existing.id);
@@ -398,6 +469,68 @@ class SyncService {
       );
     }
     return true;
+  }
+
+  bool _isOlderRemoteSnapshot(CalendarEvent local, CalendarEvent remote) {
+    final localUpdated = local.updatedAtRemote;
+    final remoteUpdated = remote.updatedAtRemote;
+    if (localUpdated == null || remoteUpdated == null) {
+      return false;
+    }
+    return !remoteUpdated.isAfter(localUpdated);
+  }
+
+  bool _hasNewerLocalMutation(
+    CalendarEvent? latestLocal,
+    CalendarEvent pushedSnapshot,
+  ) {
+    if (latestLocal == null) return false;
+    if (latestLocal.id != pushedSnapshot.id) return false;
+    if (latestLocal.pendingAction == PendingAction.delete &&
+        pushedSnapshot.pendingAction != PendingAction.delete) {
+      return true;
+    }
+    if (!latestLocal.dirty && latestLocal.pendingAction == PendingAction.none) {
+      return false;
+    }
+    return !_eventPayloadEquals(latestLocal, pushedSnapshot);
+  }
+
+  bool _eventPayloadEquals(CalendarEvent a, CalendarEvent b) {
+    if (a.title != b.title) return false;
+    if (a.description != b.description) return false;
+    if (a.location != b.location) return false;
+    if (a.startDateTime != b.startDateTime) return false;
+    if (a.endDateTime != b.endDateTime) return false;
+    if (a.allDay != b.allDay) return false;
+    if (a.timezone != b.timezone) return false;
+    if (a.color.toARGB32() != b.color.toARGB32()) return false;
+    if (a.calendarId != b.calendarId) return false;
+    if (a.deleted != b.deleted) return false;
+    if (a.reminders.length != b.reminders.length) return false;
+    for (var i = 0; i < a.reminders.length; i++) {
+      if (a.reminders[i] != b.reminders[i]) return false;
+    }
+    return true;
+  }
+
+  CalendarEvent _rebaseLocalEventOnRemoteAck({
+    required CalendarEvent latest,
+    required CalendarEvent pushedSnapshot,
+    required String? remoteGEventId,
+    required DateTime remoteUpdatedAt,
+  }) {
+    final resolvedGEventId = remoteGEventId ?? latest.gEventId ?? pushedSnapshot.gEventId;
+    final nextPending = latest.pendingAction == PendingAction.delete
+        ? PendingAction.delete
+        : PendingAction.update;
+
+    return latest.copyWith(
+      gEventId: resolvedGEventId,
+      updatedAtRemote: remoteUpdatedAt,
+      dirty: true,
+      pendingAction: nextPending,
+    );
   }
 
   Future<bool> _reconcileMissingRemoteEvents({

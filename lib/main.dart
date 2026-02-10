@@ -9,6 +9,7 @@ import 'screens/create_event_screen.dart';
 import 'screens/sync_feedback_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/calendar_day_view_screen.dart';
+import 'navigation/app_route_observer.dart';
 import 'theme/app_theme.dart';
 import 'services/google_calendar_service.dart';
 import 'data/local/local_event_store.dart';
@@ -49,6 +50,7 @@ class MyApp extends StatelessWidget {
       title: 'Agenix',
       theme: AppTheme.build(),
       home: const AuthWrapper(),
+      navigatorObservers: [appRouteObserver],
       routes: {
         CreateEventScreen.routeName: (_) => const CreateEventScreen(),
         SyncFeedbackScreen.routeName: (_) => const SyncFeedbackScreen(),

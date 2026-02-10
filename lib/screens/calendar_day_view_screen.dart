@@ -11,7 +11,11 @@ import '../repositories/event_repository.dart';
 import '../services/sync_service.dart';
 import '../theme/app_colors.dart';
 import 'widgets/event_creation_modal.dart';
+import 'create_event_screen.dart';
+import 'settings_screen.dart';
 import '../widgets/context_menu.dart';
+import '../navigation/app_route_observer.dart';
+import '../widgets/app_animations.dart';
 
 class CalendarDayViewScreen extends ConsumerStatefulWidget {
   final VoidCallback? onSignOut;
@@ -24,7 +28,7 @@ class CalendarDayViewScreen extends ConsumerStatefulWidget {
 }
 
 class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
-    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin, RouteAware {
   static const Color _eventBlockTextColor = Color(0xFF141614);
   static const double _pastEventOpacity = 0.55;
   static const double _desktopTimeColumnWidth = 72.0;
@@ -39,8 +43,12 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   static const double _horizontalSwipeMinDistance = 56.0;
   static const double _horizontalSwipeDominanceRatio = 1.2;
   static const int _horizontalSwipeMaxDurationMs = 700;
+  static const Duration _optimisticEventOverrideTtl = Duration(seconds: 6);
 
   DateTime _currentDate = DateTime.now();
+  late DateTime _selectedRangeStartDate;
+  late DateTime _selectedRangeEndDate;
+  late DateTime _miniCalendarVisibleMonth;
   late final EventRepository _repository;
   late final SyncService _syncService;
   StreamSubscription<List<CalendarEvent>>? _eventsSubscription;
@@ -50,12 +58,15 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
 
   // Use Map to prevent duplicates - key is event ID
   final Map<String, CalendarEvent> _eventsMap = {};
+  final Map<String, CalendarEvent> _optimisticEventOverrides = {};
+  final Map<String, DateTime> _optimisticEventOverrideExpiresAt = {};
   List<CalendarEvent> _allDayEvents = [];
   List<CalendarEvent> _timedEvents = [];
 
   bool _keyboardShortcutsEnabled = true;
   bool _isLoading = true;
   String? _selectedCalendarId;
+  String? _userPhotoUrl;
   Map<String, int> _calendarColors = {}; // Map of calendarId -> color
 
   // Drag state
@@ -121,10 +132,29 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   Timer? _gridLongPressTimer;
   bool _gridLongPressArmed = false;
   Offset? _lastGridPointerPosition;
+  bool _isRouteVisible = false;
+  bool _syncLoopActive = false;
+  bool _screenInitialized = false;
+  ModalRoute<dynamic>? _subscribedRoute;
+
+  // Mini calendar range-selection state
+  bool _isMiniCalendarRangeSelecting = false;
+  DateTime? _miniCalendarPreviewStartDate;
+  DateTime? _miniCalendarPreviewEndDate;
+  DateTime? _miniCalendarDragAnchorDate;
+  final GlobalKey _miniCalendarGridKey = GlobalKey();
 
   @override
   void initState() {
     super.initState();
+    final today = DateTime(
+      _currentDate.year,
+      _currentDate.month,
+      _currentDate.day,
+    );
+    _selectedRangeStartDate = today;
+    _selectedRangeEndDate = today;
+    _miniCalendarVisibleMonth = DateTime(_currentDate.year, _currentDate.month);
     WidgetsBinding.instance.addObserver(this);
     _repository = ref.read(eventRepositoryProvider);
     _syncService = ref.read(syncServiceProvider);
@@ -158,11 +188,27 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   Future<void> _initialize() async {
     await _loadCalendarId();
     await _loadCalendarColors();
+    await _refreshUserInfo();
     _subscribeToEvents();
-    await _syncService.start(
-      range: _currentRange,
-      calendarId: _selectedCalendarId ?? 'primary',
-    );
+    _screenInitialized = true;
+    await _resumeSyncLoopIfNeeded();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute && _subscribedRoute != route) {
+      if (_subscribedRoute is PageRoute) {
+        appRouteObserver.unsubscribe(this);
+      }
+      _subscribedRoute = route;
+      appRouteObserver.subscribe(this, route);
+      _isRouteVisible = route.isCurrent;
+      unawaited(
+        _isRouteVisible ? _resumeSyncLoopIfNeeded() : _pauseSyncLoopIfNeeded(),
+      );
+    }
   }
 
   @override
@@ -172,7 +218,10 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     _syncStatusSub.close();
     _syncRotationController.dispose();
     _keyboardListenerFocusNode.dispose();
-    _syncService.stop();
+    if (_subscribedRoute is PageRoute) {
+      appRouteObserver.unsubscribe(this);
+    }
+    unawaited(_pauseSyncLoopIfNeeded());
     _dayGridScrollController.dispose();
     for (final node in _eventFocusNodes.values) {
       node.dispose();
@@ -181,6 +230,21 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     _resizeLongPressTimer?.cancel();
     _gridLongPressTimer?.cancel();
     super.dispose();
+  }
+
+  Future<void> _resumeSyncLoopIfNeeded() async {
+    if (!_screenInitialized || !_isRouteVisible || _syncLoopActive) return;
+    await _syncService.start(
+      range: _currentRange,
+      calendarId: _selectedCalendarId ?? 'primary',
+    );
+    _syncLoopActive = true;
+  }
+
+  Future<void> _pauseSyncLoopIfNeeded() async {
+    if (!_syncLoopActive) return;
+    await _syncService.stop();
+    _syncLoopActive = false;
   }
 
   void _updateSyncRotation(AsyncValue<SyncStatus> syncState) {
@@ -215,12 +279,68 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
 
   DateTimeRange get _currentRange {
     final dayStart = DateTime(
-      _currentDate.year,
-      _currentDate.month,
-      _currentDate.day,
+      _selectedRangeStartDate.year,
+      _selectedRangeStartDate.month,
+      _selectedRangeStartDate.day,
     );
-    final dayEnd = dayStart.add(const Duration(days: 1));
+    final dayEnd = DateTime(
+      _selectedRangeEndDate.year,
+      _selectedRangeEndDate.month,
+      _selectedRangeEndDate.day,
+    ).add(const Duration(days: 1));
     return DateTimeRange(start: dayStart, end: dayEnd);
+  }
+
+  int get _selectedRangeDayCount {
+    return _selectedRangeEndDate.difference(_selectedRangeStartDate).inDays + 1;
+  }
+
+  List<DateTime> get _selectedRangeDays {
+    return List<DateTime>.generate(_selectedRangeDayCount, (index) {
+      return _selectedRangeStartDate.add(Duration(days: index));
+    });
+  }
+
+  DateTime _normalizeDate(DateTime date) {
+    return DateTime(date.year, date.month, date.day);
+  }
+
+  Future<void> _handleDateRangeChange(DateTime start, DateTime end) async {
+    final normalizedStart = _normalizeDate(start);
+    final normalizedEnd = _normalizeDate(end);
+    var rangeStart = normalizedStart.isBefore(normalizedEnd)
+        ? normalizedStart
+        : normalizedEnd;
+    var rangeEnd = normalizedStart.isBefore(normalizedEnd)
+        ? normalizedEnd
+        : normalizedStart;
+
+    // Keep range compact and readable in the day timeline area.
+    const maxDays = 7;
+    if (rangeEnd.difference(rangeStart).inDays + 1 > maxDays) {
+      rangeEnd = rangeStart.add(const Duration(days: maxDays - 1));
+    }
+
+    final currentStart = _normalizeDate(_selectedRangeStartDate);
+    final currentEnd = _normalizeDate(_selectedRangeEndDate);
+    if (rangeStart == currentStart && rangeEnd == currentEnd) return;
+
+    setState(() {
+      _currentDate = rangeStart;
+      _selectedRangeStartDate = rangeStart;
+      _selectedRangeEndDate = rangeEnd;
+      _miniCalendarVisibleMonth = DateTime(rangeStart.year, rangeStart.month);
+      _optimisticEventOverrides.clear();
+      _optimisticEventOverrideExpiresAt.clear();
+      _didInitialNowScroll = false;
+      _initialNowScrollAttempts = 0;
+    });
+    _subscribeToEvents();
+    unawaited(
+      _syncService.updateRange(_currentRange).catchError((e) {
+        debugPrint('Error updating range after date change: $e');
+      }),
+    );
   }
 
   void _subscribeToEvents() {
@@ -232,15 +352,75 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     _eventsSubscription = _repository.watchEvents(_currentRange).listen((
       events,
     ) {
+      final resolvedEvents = _resolveOptimisticEvents(events);
       _eventsMap
         ..clear()
-        ..addEntries(events.map((e) => MapEntry(e.id, e)));
+        ..addEntries(resolvedEvents.map((e) => MapEntry(e.id, e)));
       setState(() {
         _updateEventLists();
         _isLoading = false;
       });
       _scrollToNowOnInitialOpen();
     });
+  }
+
+  List<CalendarEvent> _resolveOptimisticEvents(List<CalendarEvent> incoming) {
+    if (_optimisticEventOverrides.isEmpty) return incoming;
+
+    final now = DateTime.now();
+    final mergedById = <String, CalendarEvent>{
+      for (final event in incoming) event.id: event,
+    };
+
+    final expiredIds = <String>[];
+    for (final entry in _optimisticEventOverrideExpiresAt.entries) {
+      if (now.isAfter(entry.value)) {
+        expiredIds.add(entry.key);
+      }
+    }
+    for (final id in expiredIds) {
+      _optimisticEventOverrideExpiresAt.remove(id);
+      _optimisticEventOverrides.remove(id);
+    }
+
+    final resolvedOverrideIds = <String>[];
+    for (final entry in _optimisticEventOverrides.entries) {
+      final id = entry.key;
+      final optimistic = entry.value;
+      final incomingEvent = mergedById[id];
+
+      if (incomingEvent != null &&
+          _eventTimingMatches(optimistic, incomingEvent)) {
+        resolvedOverrideIds.add(id);
+        continue;
+      }
+
+      mergedById[id] = optimistic;
+    }
+    for (final id in resolvedOverrideIds) {
+      _optimisticEventOverrides.remove(id);
+      _optimisticEventOverrideExpiresAt.remove(id);
+    }
+
+    return mergedById.values.toList();
+  }
+
+  bool _eventTimingMatches(CalendarEvent a, CalendarEvent b) {
+    return a.startDateTime == b.startDateTime &&
+        a.endDateTime == b.endDateTime &&
+        a.allDay == b.allDay;
+  }
+
+  void _pinOptimisticEventOverride(CalendarEvent event) {
+    _optimisticEventOverrides[event.id] = event;
+    _optimisticEventOverrideExpiresAt[event.id] = DateTime.now().add(
+      _optimisticEventOverrideTtl,
+    );
+  }
+
+  void _clearOptimisticEventOverride(String eventId) {
+    _optimisticEventOverrides.remove(eventId);
+    _optimisticEventOverrideExpiresAt.remove(eventId);
   }
 
   void _scrollToNowOnInitialOpen() {
@@ -278,25 +458,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   }
 
   Future<void> _handleDateChange(DateTime newDate) async {
-    final normalizedDate = DateTime(newDate.year, newDate.month, newDate.day);
-    final currentNormalized = DateTime(
-      _currentDate.year,
-      _currentDate.month,
-      _currentDate.day,
-    );
-    if (normalizedDate.isAtSameMomentAs(currentNormalized)) return;
-
-    setState(() {
-      _currentDate = normalizedDate;
-      _didInitialNowScroll = false;
-      _initialNowScrollAttempts = 0;
-    });
-    _subscribeToEvents();
-    unawaited(
-      _syncService.updateRange(_currentRange).catchError((e) {
-        debugPrint('Error updating range after date change: $e');
-      }),
-    );
+    await _handleDateRangeChange(newDate, newDate);
   }
 
   void _handleSwipePointerDown(PointerDownEvent event) {
@@ -308,6 +470,81 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   void _resetSwipeTracking() {
     _swipeStartGlobalPosition = null;
     _swipeStartTime = null;
+  }
+
+  void _handleGlobalPointerUp(PointerUpEvent event) {
+    if (_isPointerDownOnGrid) {
+      _handleGridPointerUp(event);
+      return;
+    }
+
+    if (_resizingEventId != null) {
+      _isPointerDownOnEvent = false;
+      _finalizeEventResize();
+      return;
+    }
+
+    if (_isDraggingEvent && _draggedEventId != null) {
+      _isPointerDownOnEvent = false;
+      _pendingPointerEventId = null;
+      _pointerDownGlobalPosition = null;
+      _eventLongPressTimer?.cancel();
+      _clearEventTouchPressState();
+      _finalizeEventDrag();
+      return;
+    }
+
+    if (_isPointerDownOnEvent || _pendingPointerEventId != null) {
+      setState(() {
+        _isPointerDownOnEvent = false;
+        _pendingPointerEventId = null;
+        _pointerDownGlobalPosition = null;
+        _dragThresholdExceeded = false;
+        _dragStartGlobalPosition = null;
+        _dragStartTime = null;
+        _draggedEventOriginal = null;
+      });
+      _clearEventTouchPressState();
+    }
+  }
+
+  void _handleGlobalPointerCancel() {
+    if (_isPointerDownOnGrid) {
+      _handleGridPointerCancel();
+    }
+
+    if (_resizingEventId != null) {
+      final original = _resizingEventOriginal;
+      if (original != null) {
+        _eventsMap[original.id] = original;
+        _updateEventLists();
+      }
+      setState(() {
+        _resizingEventId = null;
+        _resizingFromTop = null;
+        _resizingEventOriginal = null;
+        _resizeHoverEventId = null;
+        _resizeHoverFromTop = null;
+        _resizeStartGlobalY = null;
+        _resizeAnchorStart = null;
+        _resizeAnchorEnd = null;
+        _isPointerDownOnEvent = false;
+      });
+      return;
+    }
+
+    if (_isDraggingEvent ||
+        _pendingPointerEventId != null ||
+        _isPointerDownOnEvent) {
+      setState(() {
+        _clearDragState();
+        _pendingPointerEventId = null;
+        _pointerDownGlobalPosition = null;
+        _dragThresholdExceeded = false;
+        _isPointerDownOnEvent = false;
+      });
+    }
+    _clearEventTouchPressState();
   }
 
   Future<void> _handleSwipePointerUp(PointerUpEvent event) async {
@@ -353,10 +590,35 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
+    if (state == AppLifecycleState.resumed && _isRouteVisible) {
       _syncService.incrementalSync();
       _syncService.pushLocalChanges();
+      _refreshUserInfo();
     }
+  }
+
+  @override
+  void didPush() {
+    _isRouteVisible = true;
+    unawaited(_resumeSyncLoopIfNeeded());
+  }
+
+  @override
+  void didPopNext() {
+    _isRouteVisible = true;
+    unawaited(_resumeSyncLoopIfNeeded());
+  }
+
+  @override
+  void didPushNext() {
+    _isRouteVisible = false;
+    unawaited(_pauseSyncLoopIfNeeded());
+  }
+
+  @override
+  void didPop() {
+    _isRouteVisible = false;
+    unawaited(_pauseSyncLoopIfNeeded());
   }
 
   Future<void> _loadCalendarId() async {
@@ -366,6 +628,22 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       _selectedCalendarId = calendarId ?? 'primary';
     } catch (e) {
       _selectedCalendarId = 'primary';
+    }
+  }
+
+  Future<void> _refreshUserInfo() async {
+    try {
+      final accountDetails = await GoogleCalendarService.instance
+          .getAccountDetails();
+      if (!mounted) return;
+      final newPhotoUrl = accountDetails['photoUrl'];
+      if (_userPhotoUrl != newPhotoUrl) {
+        setState(() {
+          _userPhotoUrl = newPhotoUrl;
+        });
+      }
+    } catch (_) {
+      // Keep screen usable even if account details are unavailable.
     }
   }
 
@@ -413,36 +691,45 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   @override
   Widget build(BuildContext context) {
     final syncStatusAsync = ref.watch(syncStatusProvider);
-    return KeyboardListener(
-      focusNode: _keyboardListenerFocusNode,
-      onKeyEvent: _keyboardShortcutsEnabled ? _handleKeyboardShortcut : null,
-      child: Scaffold(
-        backgroundColor: AppColors.background,
-        body: SafeArea(
-          child: Column(
-            children: [
-              _buildTopBar(syncStatusAsync),
-              Expanded(
-                child: _isLoading
-                    ? const Center(child: CircularProgressIndicator())
-                    : Stack(
-                        children: [
-                          _buildCalendarContent(),
-                          // Context menu overlay
-                          if (_contextMenuPosition != null &&
-                              _contextMenuEvent != null)
-                            _buildContextMenuOverlay(),
-                          // Drag-to-create selection block
-                          if ((_isDraggingToCreate &&
-                                  _gridDragStartTime != null &&
-                                  _gridDragEndTime != null) ||
-                              (_pendingCreateStartTime != null &&
-                                  _pendingCreateEndTime != null))
-                            _buildDragCreateSelection(),
-                        ],
-                      ),
-              ),
-            ],
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: AppColors.surface,
+        statusBarIconBrightness: Brightness.light,
+        statusBarBrightness: Brightness.dark,
+      ),
+      child: KeyboardListener(
+        focusNode: _keyboardListenerFocusNode,
+        onKeyEvent: _keyboardShortcutsEnabled ? _handleKeyboardShortcut : null,
+        child: Scaffold(
+          backgroundColor: AppColors.background,
+          floatingActionButton: FloatingActionButton(
+            backgroundColor: AppColors.primary,
+            onPressed: () {
+              Navigator.pushNamed(context, CreateEventScreen.routeName);
+            },
+            child: Icon(Icons.add, color: AppColors.onPrimary),
+          ),
+          body: SafeArea(
+            child: Column(
+              children: [
+                _buildTopBar(syncStatusAsync),
+                Expanded(
+                  child: AppFadeSlideIn(
+                    child: _isLoading
+                        ? const Center(child: CircularProgressIndicator())
+                        : Stack(
+                            children: [
+                              _buildCalendarContent(),
+                              // Context menu overlay
+                              if (_contextMenuPosition != null &&
+                                  _contextMenuEvent != null)
+                                _buildContextMenuOverlay(),
+                            ],
+                          ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -452,7 +739,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   Widget _buildTopBar(AsyncValue<SyncStatus> syncStatusAsync) {
     final isMobile = _isMobileLayout(context);
     final dateString = DateFormat('d MMM y').format(_currentDate);
-    final showStatusText = !isMobile;
     Future<void> handlePickDate() async {
       final picked = await showDatePicker(
         context: context,
@@ -471,39 +757,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       await _syncService.pushLocalChanges();
     }
 
-    final statusWidget = syncStatusAsync.when(
-      data: (status) {
-        if (status.state == SyncState.syncing) {
-          return const Text(
-            'Syncing…',
-            style: TextStyle(color: AppColors.onBackground, fontSize: 12),
-          );
-        }
-        if (status.state == SyncState.error) {
-          return const Text(
-            'Sync error',
-            style: TextStyle(color: AppColors.error, fontSize: 12),
-          );
-        }
-        if (status.lastSyncTime != null) {
-          final time = DateFormat('h:mm a').format(status.lastSyncTime!);
-          return Text(
-            'Last sync $time',
-            style: const TextStyle(color: AppColors.onBackground, fontSize: 12),
-          );
-        }
-        return const SizedBox.shrink();
-      },
-      loading: () => const Text(
-        'Syncing…',
-        style: TextStyle(color: AppColors.onBackground, fontSize: 12),
-      ),
-      error: (error, stackTrace) => const Text(
-        'Sync error',
-        style: TextStyle(color: AppColors.error, fontSize: 12),
-      ),
-    );
-
     return Container(
       height: isMobile ? 60 : 64,
       padding: EdgeInsets.symmetric(horizontal: isMobile ? 4 : 20),
@@ -515,73 +768,97 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
         children: [
           Align(
             alignment: Alignment.centerLeft,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: Icon(
-                    Icons.arrow_back_ios_new,
-                    color: AppColors.onBackground,
-                    size: isMobile ? 18 : 20,
-                  ),
-                  visualDensity: isMobile ? VisualDensity.compact : null,
-                  onPressed: () {
-                    Navigator.pop(context);
-                  },
-                ),
-              ],
-            ),
+            child: isMobile
+                ? AppPressFeedback(
+                    child: IconButton(
+                      icon: RotationTransition(
+                        turns: _syncRotationController,
+                        child: const Icon(
+                          Icons.sync_rounded,
+                          color: AppColors.onBackground,
+                        ),
+                      ),
+                      visualDensity: VisualDensity.compact,
+                      onPressed: handleSync,
+                    ),
+                  )
+                : const SizedBox.shrink(),
           ),
           Align(
             alignment: Alignment.center,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  child: TextButton(
-                    onPressed: handlePickDate,
-                    style: TextButton.styleFrom(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: isMobile ? 40 : 60,
-                        vertical: 17,
+            child: isMobile
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        child: AppPressFeedback(
+                          child: TextButton(
+                            onPressed: handlePickDate,
+                            style:
+                                TextButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 40,
+                                    vertical: 17,
+                                  ),
+                                  minimumSize: const Size(0, 36),
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                ).copyWith(
+                                  overlayColor:
+                                      MaterialStateProperty.resolveWith<Color?>(
+                                        (states) {
+                                          if (states.contains(
+                                            MaterialState.hovered,
+                                          )) {
+                                            return Colors.transparent;
+                                          }
+                                          return null;
+                                        },
+                                      ),
+                                ),
+                            child: Text(
+                              dateString,
+                              textAlign: TextAlign.center,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w400,
+                                color: AppColors.onBackground,
+                                letterSpacing: 0,
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                      minimumSize: const Size(0, 36),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    child: Text(
-                      dateString,
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: isMobile ? 15 : 17,
-                        fontWeight: FontWeight.w400,
-                        color: AppColors.onBackground,
-                        letterSpacing: 0,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+                    ],
+                  )
+                : const SizedBox.shrink(),
           ),
           Align(
             alignment: Alignment.centerRight,
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                IconButton(
-                  icon: RotationTransition(
-                    turns: _syncRotationController,
-                    child: const Icon(
-                      Icons.sync_rounded,
-                      color: AppColors.onBackground,
-                    ),
+                AppPressFeedback(
+                  child: IconButton(
+                    icon: _userPhotoUrl != null
+                        ? CircleAvatar(
+                            backgroundImage: NetworkImage(
+                              _userPhotoUrl!,
+                              headers: const {'Cache-Control': 'max-age=3600'},
+                            ),
+                            radius: 16,
+                          )
+                        : const Icon(Icons.account_circle, size: 32),
+                    visualDensity: isMobile ? VisualDensity.compact : null,
+                    tooltip: 'Settings',
+                    onPressed: () {
+                      Navigator.pushNamed(context, SettingsScreen.routeName);
+                    },
                   ),
-                  visualDensity: isMobile ? VisualDensity.compact : null,
-                  onPressed: handleSync,
                 ),
-                if (showStatusText) ...[const SizedBox(width: 8), statusWidget],
+                if (!isMobile) const SizedBox(width: 8),
               ],
             ),
           ),
@@ -618,14 +895,16 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
           context,
         ).copyWith(scrollbars: false);
 
-        return Listener(
+        final timelineContent = Listener(
           behavior: HitTestBehavior.translucent,
           onPointerDown: _handleSwipePointerDown,
           onPointerUp: (event) {
             _handleSwipePointerUp(event);
+            _handleGlobalPointerUp(event);
           },
           onPointerCancel: (_) {
             _resetSwipeTracking();
+            _handleGlobalPointerCancel();
           },
           child: Column(
             children: [
@@ -685,10 +964,14 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                                               : 1,
                                           child: Container(
                                             decoration: BoxDecoration(
-                                              color: event.color,
+                                              gradient: _eventBlockGradient(
+                                                event.color,
+                                              ),
                                               border: Border(
                                                 left: BorderSide(
-                                                  color: event.color,
+                                                  color: _eventBlockBorderColor(
+                                                    event.color,
+                                                  ),
                                                   width: 3,
                                                 ),
                                               ),
@@ -753,7 +1036,8 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                           Expanded(
                             child: _buildDayGrid(
                               BoxConstraints(
-                                maxWidth: constraints.maxWidth - timeColumnWidth,
+                                maxWidth:
+                                    constraints.maxWidth - timeColumnWidth,
                                 maxHeight: totalHeight,
                               ),
                             ),
@@ -767,8 +1051,891 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
             ],
           ),
         );
+
+        final desktopMultiDay = isDesktopLike && _selectedRangeDayCount > 1;
+        final mainTimeline = desktopMultiDay
+            ? _buildMultiDayTimeline(
+                timeColumnWidth: timeColumnWidth,
+                noScrollbarBehavior: noScrollbarBehavior,
+              )
+            : timelineContent;
+
+        if (!isDesktopLike) {
+          return mainTimeline;
+        }
+
+        return Row(
+          children: [
+            _buildMiniCalendarSidebar(),
+            Expanded(child: mainTimeline),
+          ],
+        );
       },
     );
+  }
+
+  Widget _buildMultiDayTimeline({
+    required double timeColumnWidth,
+    required ScrollBehavior noScrollbarBehavior,
+  }) {
+    return LayoutBuilder(
+      builder: (context, panelConstraints) {
+        const hourHeight = 60.0;
+        const totalHeight = 24 * hourHeight;
+        final days = _selectedRangeDays;
+        final gridWidth = (panelConstraints.maxWidth - timeColumnWidth).clamp(
+          0.0,
+          double.infinity,
+        );
+
+        return Column(
+          children: [
+            _buildMultiDayHeaderRow(
+              days,
+              timeColumnWidth,
+              gridWidth: gridWidth,
+            ),
+            Expanded(
+              child: ScrollConfiguration(
+                behavior: noScrollbarBehavior,
+                child: SingleChildScrollView(
+                  controller: _dayGridScrollController,
+                  child: SizedBox(
+                    height: totalHeight,
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: timeColumnWidth,
+                          child: _buildTimeColumn(),
+                        ),
+                        SizedBox(
+                          width: gridWidth,
+                          child: _buildMultiDayGrid(
+                            BoxConstraints(
+                              maxWidth: gridWidth,
+                              maxHeight: totalHeight,
+                            ),
+                            days,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildMultiDayHeaderRow(
+    List<DateTime> days,
+    double timeColumnWidth, {
+    required double gridWidth,
+  }) {
+    final dayWidth = days.isEmpty ? 0.0 : gridWidth / days.length;
+    return Container(
+      height: 58,
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        border: Border(bottom: BorderSide(color: AppColors.dividerColor)),
+      ),
+      child: Row(
+        children: [
+          SizedBox(width: timeColumnWidth),
+          SizedBox(
+            width: gridWidth,
+            child: Row(
+              children: days.map((day) {
+                final label = DateFormat('EEE').format(day).toUpperCase();
+                final dayNumber = DateFormat('d').format(day);
+                final now = DateTime.now();
+                final isToday =
+                    day.year == now.year &&
+                    day.month == now.month &&
+                    day.day == now.day;
+                return SizedBox(
+                  width: dayWidth,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      border: Border(
+                        left: BorderSide(color: AppColors.dividerColor),
+                      ),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          label,
+                          style: TextStyle(
+                            color: AppColors.timeTextColor,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          dayNumber,
+                          style: TextStyle(
+                            color: isToday
+                                ? AppColors.primary
+                                : AppColors.onBackground,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMultiDayGrid(BoxConstraints constraints, List<DateTime> days) {
+    const hourHeight = 60.0;
+    final dayWidth = constraints.maxWidth / days.length;
+    return Stack(
+      children: [
+        ...List.generate(24, (index) {
+          return Positioned(
+            top: hourHeight * index,
+            left: 0,
+            right: 0,
+            child: Container(height: 1, color: AppColors.dividerColor),
+          );
+        }),
+        ...List.generate(days.length - 1, (index) {
+          return Positioned(
+            left: dayWidth * (index + 1),
+            top: 0,
+            bottom: 0,
+            child: Container(width: 1, color: AppColors.dividerColor),
+          );
+        }),
+        ..._buildMultiDayEventWidgets(days, dayWidth),
+      ],
+    );
+  }
+
+  List<Widget> _buildMultiDayEventWidgets(
+    List<DateTime> days,
+    double dayWidth,
+  ) {
+    const hourHeight = 60.0;
+    final widgets = <Widget>[];
+    for (final event in _timedEvents) {
+      for (var dayIndex = 0; dayIndex < days.length; dayIndex++) {
+        final segment = _eventVisibleSegmentForDay(event, days[dayIndex]);
+        if (segment == null) continue;
+
+        final dayStart = DateTime(
+          days[dayIndex].year,
+          days[dayIndex].month,
+          days[dayIndex].day,
+        );
+        final startMinutes = segment.start.difference(dayStart).inMinutes;
+        final endMinutes = segment.end.difference(dayStart).inMinutes;
+        final top = (startMinutes / 60) * hourHeight;
+        final height = (((endMinutes - startMinutes) / 60) * hourHeight).clamp(
+          1.0,
+          24 * hourHeight,
+        );
+
+        widgets.add(
+          Positioned(
+            left: dayIndex * dayWidth + 2,
+            top: top,
+            width: dayWidth - 4,
+            height: height,
+            child: Opacity(
+              opacity: _isPastEvent(event) ? _pastEventOpacity : 1,
+              child: _buildReadOnlyEventCard(event),
+            ),
+          ),
+        );
+      }
+    }
+    return widgets;
+  }
+
+  bool _isPastEvent(CalendarEvent event) {
+    final now = DateTime.now();
+    return event.endDateTime.isBefore(now) ||
+        event.endDateTime.isAtSameMomentAs(now);
+  }
+
+  Widget _buildReadOnlyEventCard(CalendarEvent event) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: _eventBlockGradient(event.color),
+        border: Border(
+          left: BorderSide(
+            color: _eventBlockBorderColor(event.color),
+            width: 3,
+          ),
+        ),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            event.title,
+            style: const TextStyle(
+              color: _eventBlockTextColor,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              height: 1.2,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          Text(
+            '${DateFormat('h:mm').format(event.startDateTime)} - ${DateFormat('h:mm').format(event.endDateTime)}',
+            style: const TextStyle(
+              color: _eventBlockTextColor,
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              height: 1.2,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+  }
+
+  DateTimeRange? _eventVisibleSegmentForDay(CalendarEvent event, DateTime day) {
+    final dayStart = DateTime(day.year, day.month, day.day);
+    final dayEnd = dayStart.add(const Duration(days: 1));
+    final visibleStart = event.startDateTime.isBefore(dayStart)
+        ? dayStart
+        : event.startDateTime;
+    final visibleEnd = event.endDateTime.isAfter(dayEnd)
+        ? dayEnd
+        : event.endDateTime;
+    if (!visibleEnd.isAfter(visibleStart)) return null;
+    return DateTimeRange(start: visibleStart, end: visibleEnd);
+  }
+
+  Widget _buildMiniCalendarSidebar() {
+    const weekLabels = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
+    final monthLabel = DateFormat('MMMM').format(_miniCalendarVisibleMonth);
+    final monthDays = _miniCalendarDays(_miniCalendarVisibleMonth);
+    const sidebarTitleStyle = TextStyle(
+      color: AppColors.onBackground,
+      fontSize: 18,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 0.1,
+    );
+
+    return Container(
+      width: 322,
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        border: Border(right: BorderSide(color: AppColors.dividerColor)),
+      ),
+      child: LayoutBuilder(
+        builder: (context, sidebarConstraints) {
+          return ScrollConfiguration(
+            behavior: ScrollConfiguration.of(
+              context,
+            ).copyWith(scrollbars: false),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: sidebarConstraints.maxHeight - 28,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 4,
+                      ),
+                      child: Row(
+                        children: [
+                          IconButton(
+                            iconSize: 21,
+                            onPressed: () {
+                              setState(() {
+                                _miniCalendarVisibleMonth = DateTime(
+                                  _miniCalendarVisibleMonth.year,
+                                  _miniCalendarVisibleMonth.month - 1,
+                                );
+                              });
+                            },
+                            icon: const Icon(Icons.chevron_left),
+                            visualDensity: VisualDensity.compact,
+                            color: AppColors.timeTextColor,
+                          ),
+                          Expanded(
+                            child: Text(
+                              monthLabel,
+                              textAlign: TextAlign.center,
+                              style: sidebarTitleStyle,
+                            ),
+                          ),
+                          IconButton(
+                            iconSize: 21,
+                            onPressed: () {
+                              setState(() {
+                                _miniCalendarVisibleMonth = DateTime(
+                                  _miniCalendarVisibleMonth.year,
+                                  _miniCalendarVisibleMonth.month + 1,
+                                );
+                              });
+                            },
+                            icon: const Icon(Icons.chevron_right),
+                            visualDensity: VisualDensity.compact,
+                            color: AppColors.timeTextColor,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Row(
+                      children: weekLabels.map((label) {
+                        return Expanded(
+                          child: Center(
+                            child: Text(
+                              label,
+                              style: TextStyle(
+                                color: AppColors.primary,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 0.2,
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 9),
+                    Listener(
+                      key: _miniCalendarGridKey,
+                      behavior: HitTestBehavior.translucent,
+                      onPointerDown: (event) {
+                        _handleMiniCalendarPointerDown(event, monthDays);
+                      },
+                      onPointerMove: (event) {
+                        _handleMiniCalendarPointerMove(event, monthDays);
+                      },
+                      onPointerUp: (event) {
+                        _handleMiniCalendarPointerUp(event);
+                      },
+                      onPointerCancel: (_) {
+                        _handleMiniCalendarPointerCancel();
+                      },
+                      child: GridView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: monthDays.length,
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 7,
+                              childAspectRatio: 1.14,
+                            ),
+                        itemBuilder: (context, index) {
+                          final day = monthDays[index];
+                          final isInVisibleMonth =
+                              day.month == _miniCalendarVisibleMonth.month &&
+                              day.year == _miniCalendarVisibleMonth.year;
+
+                          final rangeStart =
+                              _miniCalendarPreviewStartDate ??
+                              _selectedRangeStartDate;
+                          final rangeEnd =
+                              _miniCalendarPreviewEndDate ??
+                              _selectedRangeEndDate;
+                          final normalizedDay = _normalizeDate(day);
+                          final isInRange =
+                              !normalizedDay.isBefore(rangeStart) &&
+                              !normalizedDay.isAfter(rangeEnd);
+                          final isRangeEdge =
+                              normalizedDay == rangeStart ||
+                              normalizedDay == rangeEnd;
+
+                          final now = DateTime.now();
+                          final isToday =
+                              day.year == now.year &&
+                              day.month == now.month &&
+                              day.day == now.day;
+
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 2.4,
+                              vertical: 3.2,
+                            ),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: isInRange && !isRangeEdge
+                                    ? AppColors.selectedColor
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(999),
+                                  onTap: () {
+                                    _handleDateChange(day);
+                                  },
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: isRangeEdge
+                                          ? AppColors.primary
+                                          : Colors.transparent,
+                                      borderRadius: BorderRadius.circular(999),
+                                      border: isToday && !isRangeEdge
+                                          ? Border.all(
+                                              color: AppColors.primary,
+                                              width: 1,
+                                            )
+                                          : null,
+                                    ),
+                                    alignment: Alignment.center,
+                                    child: Text(
+                                      '${day.day}',
+                                      style: TextStyle(
+                                        color: isRangeEdge
+                                            ? AppColors.onPrimary
+                                            : isInVisibleMonth
+                                            ? AppColors.onBackground
+                                            : AppColors.timeTextColor,
+                                        fontSize: 16,
+                                        fontWeight: isRangeEdge
+                                            ? FontWeight.w700
+                                            : FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 30),
+                    _buildSidebarQuickActions(),
+                    const SizedBox(height: 30),
+                    _buildTodayOverviewSection(),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildSidebarQuickActions() {
+    final isSyncing = ref
+        .watch(syncStatusProvider)
+        .maybeWhen(
+          data: (status) => status.state == SyncState.syncing,
+          loading: () => true,
+          orElse: () => false,
+        );
+
+    final buttons =
+        <
+          ({
+            IconData icon,
+            String label,
+            Future<void> Function() onTap,
+            bool syncButton,
+          })
+        >[
+          (
+            icon: Icons.add,
+            label: 'Create',
+            onTap: _handleSidebarAddEvent,
+            syncButton: false,
+          ),
+          (
+            icon: Icons.today_rounded,
+            label: 'Today',
+            onTap: _handleSidebarJumpToToday,
+            syncButton: false,
+          ),
+          (
+            icon: Icons.search,
+            label: 'Search',
+            onTap: _handleSidebarSearchEvent,
+            syncButton: false,
+          ),
+          (
+            icon: Icons.sync_rounded,
+            label: 'Sync',
+            onTap: _handleSidebarSyncNow,
+            syncButton: true,
+          ),
+        ];
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 2, bottom: 14),
+            child: Text(
+              'Quick Actions',
+              style: TextStyle(
+                color: AppColors.onBackground,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.2,
+              ),
+            ),
+          ),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: buttons.length,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              mainAxisSpacing: 10,
+              crossAxisSpacing: 10,
+              childAspectRatio: 2.1,
+            ),
+            itemBuilder: (context, index) {
+              final item = buttons[index];
+              final labelText = item.syncButton && isSyncing
+                  ? 'Syncing'
+                  : item.label;
+              return InkWell(
+                onTap: () {
+                  unawaited(item.onTap());
+                },
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF26211D),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(
+                    children: [
+                      item.syncButton && isSyncing
+                          ? RotationTransition(
+                              turns: _syncRotationController,
+                              child: Icon(
+                                item.icon,
+                                size: 23,
+                                color: AppColors.primary,
+                              ),
+                            )
+                          : Icon(item.icon, size: 23, color: AppColors.primary),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 180),
+                          transitionBuilder: (child, animation) {
+                            return FadeTransition(
+                              opacity: animation,
+                              child: child,
+                            );
+                          },
+                          child: Text(
+                            labelText,
+                            key: ValueKey(labelText),
+                            style: const TextStyle(
+                              color: AppColors.onBackground,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _handleSidebarAddEvent() async {
+    await _showCreateEventModal();
+  }
+
+  Future<void> _handleSidebarJumpToToday() async {
+    await _handleDateChange(DateTime.now());
+  }
+
+  Future<void> _handleSidebarSyncNow() async {
+    await _syncService.incrementalSync();
+    await _syncService.pushLocalChanges();
+  }
+
+  Future<void> _handleSidebarSearchEvent() async {
+    final allEvents = _eventsMap.values.toList()
+      ..sort((a, b) => a.startDateTime.compareTo(b.startDateTime));
+    if (allEvents.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('No events to search')));
+      return;
+    }
+
+    final selected = await showDialog<CalendarEvent>(
+      context: context,
+      builder: (dialogContext) {
+        final controller = TextEditingController();
+        var query = '';
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            final filtered = allEvents.where((event) {
+              if (query.isEmpty) return true;
+              final q = query.toLowerCase();
+              return event.title.toLowerCase().contains(q) ||
+                  event.description.toLowerCase().contains(q) ||
+                  event.location.toLowerCase().contains(q);
+            }).toList();
+
+            return AlertDialog(
+              backgroundColor: AppColors.surface,
+              title: const Text(
+                'Search Events',
+                style: TextStyle(color: AppColors.onBackground),
+              ),
+              content: SizedBox(
+                width: 440,
+                height: 420,
+                child: Column(
+                  children: [
+                    TextField(
+                      controller: controller,
+                      style: const TextStyle(color: AppColors.onBackground),
+                      decoration: InputDecoration(
+                        hintText: 'Type title, location, description',
+                        hintStyle: TextStyle(color: AppColors.timeTextColor),
+                        filled: true,
+                        fillColor: AppColors.background,
+                        border: OutlineInputBorder(
+                          borderSide: BorderSide(color: AppColors.borderColor),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderSide: BorderSide(color: AppColors.borderColor),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        prefixIcon: Icon(
+                          Icons.search,
+                          color: AppColors.timeTextColor,
+                        ),
+                      ),
+                      onChanged: (value) {
+                        setStateDialog(() {
+                          query = value.trim();
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: filtered.isEmpty
+                          ? Center(
+                              child: Text(
+                                'No matching events',
+                                style: TextStyle(
+                                  color: AppColors.timeTextColor,
+                                ),
+                              ),
+                            )
+                          : ListView.builder(
+                              itemCount: filtered.length,
+                              itemBuilder: (context, index) {
+                                final event = filtered[index];
+                                return ListTile(
+                                  dense: true,
+                                  onTap: () {
+                                    Navigator.of(dialogContext).pop(event);
+                                  },
+                                  title: Text(
+                                    event.title,
+                                    style: const TextStyle(
+                                      color: AppColors.onBackground,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  subtitle: Text(
+                                    '${DateFormat('d MMM, h:mm a').format(event.startDateTime)} - ${DateFormat('h:mm a').format(event.endDateTime)}',
+                                    style: TextStyle(
+                                      color: AppColors.timeTextColor,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Close'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (selected == null) return;
+    _keyboardActiveEventId = selected.id;
+    await _handleDateChange(selected.startDateTime);
+    _scrollToTime(selected.startDateTime);
+  }
+
+  void _scrollToTime(DateTime dateTime) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_dayGridScrollController.hasClients) return;
+      const hourHeight = 60.0;
+      final pos = ((dateTime.hour * 60 + dateTime.minute) / 60) * hourHeight;
+      final viewport = _dayGridScrollController.position.viewportDimension;
+      final target = (pos - (viewport * 0.25)).clamp(
+        0.0,
+        _dayGridScrollController.position.maxScrollExtent,
+      );
+      _dayGridScrollController.animateTo(
+        target,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  void _handleMiniCalendarPointerDown(
+    PointerDownEvent event,
+    List<DateTime> monthDays,
+  ) {
+    if (event.kind == PointerDeviceKind.mouse &&
+        event.buttons != kPrimaryMouseButton) {
+      return;
+    }
+    final day = _miniCalendarDateFromPointer(event.position, monthDays);
+    if (day == null) return;
+    final normalized = _normalizeDate(day);
+    setState(() {
+      _isMiniCalendarRangeSelecting = true;
+      _miniCalendarDragAnchorDate = normalized;
+      _miniCalendarPreviewStartDate = normalized;
+      _miniCalendarPreviewEndDate = normalized;
+    });
+  }
+
+  void _handleMiniCalendarPointerMove(
+    PointerMoveEvent event,
+    List<DateTime> monthDays,
+  ) {
+    if (!_isMiniCalendarRangeSelecting) return;
+    final anchor = _miniCalendarDragAnchorDate;
+    if (anchor == null) return;
+    final day = _miniCalendarDateFromPointer(event.position, monthDays);
+    if (day == null) return;
+    final normalized = _normalizeDate(day);
+    final start = anchor.isBefore(normalized) ? anchor : normalized;
+    final end = anchor.isBefore(normalized) ? normalized : anchor;
+    if (_miniCalendarPreviewStartDate == start &&
+        _miniCalendarPreviewEndDate == end) {
+      return;
+    }
+    setState(() {
+      _miniCalendarPreviewStartDate = start;
+      _miniCalendarPreviewEndDate = end;
+    });
+  }
+
+  void _handleMiniCalendarPointerUp(PointerUpEvent event) {
+    if (!_isMiniCalendarRangeSelecting) return;
+    final previewStart = _miniCalendarPreviewStartDate;
+    final previewEnd = _miniCalendarPreviewEndDate;
+    setState(() {
+      _isMiniCalendarRangeSelecting = false;
+      _miniCalendarDragAnchorDate = null;
+      _miniCalendarPreviewStartDate = null;
+      _miniCalendarPreviewEndDate = null;
+    });
+    if (previewStart == null || previewEnd == null) return;
+    unawaited(_handleDateRangeChange(previewStart, previewEnd));
+  }
+
+  void _handleMiniCalendarPointerCancel() {
+    if (!_isMiniCalendarRangeSelecting) return;
+    setState(() {
+      _isMiniCalendarRangeSelecting = false;
+      _miniCalendarDragAnchorDate = null;
+      _miniCalendarPreviewStartDate = null;
+      _miniCalendarPreviewEndDate = null;
+    });
+  }
+
+  DateTime? _miniCalendarDateFromPointer(
+    Offset globalPosition,
+    List<DateTime> monthDays,
+  ) {
+    final context = _miniCalendarGridKey.currentContext;
+    if (context == null) return null;
+    final renderBox = context.findRenderObject();
+    if (renderBox is! RenderBox) return null;
+
+    final local = renderBox.globalToLocal(globalPosition);
+    final size = renderBox.size;
+    if (local.dx < 0 ||
+        local.dy < 0 ||
+        local.dx > size.width ||
+        local.dy > size.height) {
+      return null;
+    }
+
+    final cellWidth = size.width / 7;
+    final cellHeight = cellWidth / 1.16;
+    final maxGridHeight = cellHeight * 6;
+    if (local.dy > maxGridHeight) return null;
+
+    final column = (local.dx / cellWidth).floor();
+    final row = (local.dy / cellHeight).floor();
+    final index = row * 7 + column;
+    if (index < 0 || index >= monthDays.length) return null;
+    return monthDays[index];
+  }
+
+  List<DateTime> _miniCalendarDays(DateTime month) {
+    final firstDay = DateTime(month.year, month.month, 1);
+    final leadingSlots = firstDay.weekday - DateTime.monday;
+    final startDate = firstDay.subtract(Duration(days: leadingSlots));
+    return List<DateTime>.generate(42, (index) {
+      return DateTime(startDate.year, startDate.month, startDate.day + index);
+    });
   }
 
   Widget _buildTimeColumn() {
@@ -828,6 +1995,11 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
               _eventActionsPopoverEventId != null,
           child: _buildClickableGrid(constraints),
         ),
+        if ((_isDraggingToCreate &&
+                _gridDragStartTime != null &&
+                _gridDragEndTime != null) ||
+            (_pendingCreateStartTime != null && _pendingCreateEndTime != null))
+          _buildDragCreateSelection(),
         // Events (top-most)
         ..._buildEventWidgets(constraints),
         // Keep current-time indicator above event blocks.
@@ -873,6 +2045,24 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
         ],
       ),
     );
+  }
+
+  LinearGradient _eventBlockGradient(Color baseColor) {
+    return LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: [baseColor, _darkenColor(baseColor, 0.16)],
+    );
+  }
+
+  Color _eventBlockBorderColor(Color baseColor) {
+    return _darkenColor(baseColor, 0.24);
+  }
+
+  Color _darkenColor(Color color, double amount) {
+    final hsl = HSLColor.fromColor(color);
+    final lightness = (hsl.lightness - amount).clamp(0.0, 1.0).toDouble();
+    return hsl.withLightness(lightness).toColor();
   }
 
   List<Widget> _buildEventWidgets(BoxConstraints constraints) {
@@ -940,9 +2130,13 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
           opacity: isPastEvent ? _pastEventOpacity : 1,
           child: Container(
             decoration: BoxDecoration(
-              // Keep color inside BoxDecoration to avoid color+decoration assert.
-              color: event.color,
-              border: Border(left: BorderSide(color: event.color, width: 3)),
+              gradient: _eventBlockGradient(event.color),
+              border: Border(
+                left: BorderSide(
+                  color: _eventBlockBorderColor(event.color),
+                  width: 3,
+                ),
+              ),
               borderRadius: BorderRadius.circular(2),
             ),
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
@@ -968,7 +2162,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                     vertical: 1,
                   ),
                   decoration: BoxDecoration(
-                    color: event.color,
+                    gradient: _eventBlockGradient(event.color),
                     borderRadius: BorderRadius.circular(2),
                   ),
                   child: const Text(
@@ -1107,7 +2301,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
           ? SystemMouseCursors.resizeUpDown
           : isDraggingOriginal
           ? SystemMouseCursors.grabbing
-          : SystemMouseCursors.grab,
+          : SystemMouseCursors.click,
       child: Listener(
         behavior: HitTestBehavior.opaque,
         onPointerDown: (pointerEvent) {
@@ -1126,20 +2320,29 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
             _dragStartGlobalPosition = null;
             _dragStartTime = null;
             _draggedEventOriginal = null;
+            _clearEventTouchPressState();
 
-            setState(() {
-              _resizingEventId = event.id;
-              _resizingFromTop = false;
-              _resizingEventOriginal = event;
-              _resizeHoverEventId = event.id;
-              _resizeHoverFromTop = false;
-              _resizeStartGlobalY = pointerEvent.position.dy;
-              _resizeAnchorStart = event.startDateTime;
-              _resizeAnchorEnd = event.endDateTime;
-            });
             if (pointerEvent.kind == PointerDeviceKind.touch) {
-              HapticFeedback.selectionClick();
+              _clearPendingResizeTouch();
+              _touchPendingResizeEventId = event.id;
+              _resizeTouchDownGlobalPosition = pointerEvent.position;
+              _resizeLongPressTimer = Timer(_touchLongPressDuration, () {
+                if (!mounted) return;
+                if (!_isPointerDownOnEvent) return;
+                if (_touchPendingResizeEventId != event.id) return;
+                final currentEvent = _eventsMap[event.id];
+                if (currentEvent == null) return;
+                _startEventResizeInteraction(
+                  currentEvent,
+                  pointerEvent.position.dy,
+                );
+                _clearPendingResizeTouch();
+                HapticFeedback.selectionClick();
+              });
+              return;
             }
+
+            _startEventResizeInteraction(event, pointerEvent.position.dy);
             return;
           }
 
@@ -1332,10 +2535,12 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                   opacity: effectiveOpacity,
                   child: Container(
                     decoration: BoxDecoration(
-                      // Use exact event color for the block fill.
-                      color: event.color,
+                      gradient: _eventBlockGradient(event.color),
                       border: Border(
-                        left: BorderSide(color: event.color, width: 3),
+                        left: BorderSide(
+                          color: _eventBlockBorderColor(event.color),
+                          width: 3,
+                        ),
                       ),
                       borderRadius: BorderRadius.circular(6),
                     ),
@@ -1360,7 +2565,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                                 ),
                                 TextSpan(
                                   text:
-                                      ', ${DateFormat('h:mma').format(event.startDateTime).toLowerCase()}',
+                                      ', ${DateFormat('h:mma').format(event.startDateTime).toLowerCase()} - ${DateFormat('h:mma').format(event.endDateTime).toLowerCase()}',
                                   style: const TextStyle(
                                     color: _eventBlockTextColor,
                                     fontSize: 13,
@@ -1686,17 +2891,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     });
   }
 
-  bool _isWithinDayRange(CalendarEvent event) {
-    final dayStart = DateTime(
-      _currentDate.year,
-      _currentDate.month,
-      _currentDate.day,
-    );
-    final dayEnd = dayStart.add(const Duration(days: 1));
-    return !event.startDateTime.isBefore(dayStart) &&
-        !event.endDateTime.isAfter(dayEnd);
-  }
-
   void _clearDragState() {
     _draggedEventId = null;
     _dragStartTime = null;
@@ -1717,7 +2911,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     final originalEvent = _draggedEventOriginal;
     final updatedEvent = _dragPreviewEvent!;
 
-    if (originalEvent == null || !_isWithinDayRange(updatedEvent)) {
+    if (originalEvent == null) {
       setState(() {
         _clearDragState();
       });
@@ -1725,6 +2919,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     }
 
     setState(() {
+      _pinOptimisticEventOverride(updatedEvent);
       _eventsMap[updatedEvent.id] = updatedEvent;
       _updateEventLists();
       _clearDragState();
@@ -1739,8 +2934,12 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       );
     } catch (e) {
       debugPrint('Error updating event: $e');
-      _eventsMap[originalEvent.id] = originalEvent;
-      _updateEventLists();
+      if (!mounted) return;
+      setState(() {
+        _clearOptimisticEventOverride(originalEvent.id);
+        _eventsMap[originalEvent.id] = originalEvent;
+        _updateEventLists();
+      });
     }
   }
 
@@ -1806,6 +3005,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     });
 
     try {
+      _pinOptimisticEventOverride(event);
       await _repository.updateEvent(event);
       unawaited(
         _syncService.pushLocalChanges().catchError((e) {
@@ -1816,8 +3016,12 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       debugPrint('Error resizing event: $e');
       // Revert on error
       if (resizingOriginal != null) {
-        _eventsMap[resizingEventId!] = resizingOriginal;
-        _updateEventLists();
+        if (!mounted) return;
+        setState(() {
+          _clearOptimisticEventOverride(resizingEventId!);
+          _eventsMap[resizingEventId] = resizingOriginal;
+          _updateEventLists();
+        });
       }
     }
   }
@@ -1989,11 +3193,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       return const SizedBox.shrink();
     }
 
-    final allDayRowHeight = _allDayEvents.isNotEmpty ? 40.0 : 0.0;
-    final scrollOffset = _dayGridScrollController.hasClients
-        ? _dayGridScrollController.offset
-        : 0.0;
-
     final calendarColorValue =
         _calendarColors[_selectedCalendarId ?? 'primary'];
     final selectionColor = calendarColorValue != null
@@ -2006,15 +3205,14 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     const hourHeight = 60.0;
     final startMinutes = startTime.hour * 60 + startTime.minute;
     final endMinutes = endTime.hour * 60 + endTime.minute;
-    final startPosition =
-        (startMinutes / 60) * hourHeight - scrollOffset + allDayRowHeight;
+    final startPosition = (startMinutes / 60) * hourHeight;
     final height = ((endMinutes - startMinutes) / 60) * hourHeight;
 
     final isTiny = height < 22;
     final isCompact = height < 48;
 
     return Positioned(
-      left: _timeColumnWidthFor(context),
+      left: 0,
       top: startPosition,
       right: 0,
       height: height,
@@ -2150,6 +3348,246 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     _resizeTouchDownGlobalPosition = null;
   }
 
+  Widget _buildTodayOverviewSection() {
+    final today = DateTime.now();
+    final summary = _todayOverviewSummary(today);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(left: 2, bottom: 14),
+            child: Text(
+              'Today Overview',
+              style: TextStyle(
+                color: AppColors.onBackground,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.2,
+              ),
+            ),
+          ),
+          _buildOverviewMetricTile(
+            icon: Icons.event_note_rounded,
+            title: 'Scheduled Events',
+            value: '${summary.eventCount}',
+          ),
+          const SizedBox(height: 8),
+          _buildOverviewMetricTile(
+            icon: Icons.schedule_rounded,
+            title: 'Free Time',
+            value: _formatDurationMinutes(summary.freeMinutes),
+          ),
+          const SizedBox(height: 8),
+          _buildOverviewMetricTile(
+            icon: Icons.call_merge_rounded,
+            title: 'Overlap Conflicts',
+            value: '${summary.overlapCount}',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOverviewMetricTile({
+    required IconData icon,
+    required String title,
+    required String value,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF26211D),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 23, color: AppColors.primary),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              title,
+              style: const TextStyle(
+                color: AppColors.onBackground,
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          Text(
+            value,
+            style: const TextStyle(
+              color: AppColors.primary,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  ({int eventCount, int freeMinutes, int overlapCount}) _todayOverviewSummary(
+    DateTime day,
+  ) {
+    final dayStart = DateTime(day.year, day.month, day.day);
+    final dayEnd = dayStart.add(const Duration(days: 1));
+
+    final todaysEvents = _eventsMap.values.where((event) {
+      if (event.allDay) {
+        final allDayStart = DateTime(
+          event.startDateTime.year,
+          event.startDateTime.month,
+          event.startDateTime.day,
+        );
+        var allDayEndExclusive = DateTime(
+          event.endDateTime.year,
+          event.endDateTime.month,
+          event.endDateTime.day,
+        );
+        if (!allDayEndExclusive.isAfter(allDayStart)) {
+          allDayEndExclusive = allDayStart.add(const Duration(days: 1));
+        }
+        return allDayStart.isBefore(dayEnd) &&
+            allDayEndExclusive.isAfter(dayStart);
+      }
+      return event.startDateTime.isBefore(dayEnd) &&
+          event.endDateTime.isAfter(dayStart);
+    }).toList();
+
+    final timedToday = todaysEvents.where((e) => !e.allDay).toList()
+      ..sort((a, b) => a.startDateTime.compareTo(b.startDateTime));
+    final allDayCount = todaysEvents.where((e) => e.allDay).length;
+
+    final overlapCount = _countTimedOverlapPairsForDay(
+      timedToday,
+      dayStart,
+      dayEnd,
+    );
+
+    final busyMinutes = allDayCount > 0
+        ? 24 * 60
+        : _busyMinutesForTimedDay(timedToday, dayStart, dayEnd);
+    final freeMinutes = (24 * 60 - busyMinutes).clamp(0, 24 * 60);
+
+    return (
+      eventCount: todaysEvents.length,
+      freeMinutes: freeMinutes,
+      overlapCount: overlapCount,
+    );
+  }
+
+  int _busyMinutesForTimedDay(
+    List<CalendarEvent> timedEvents,
+    DateTime dayStart,
+    DateTime dayEnd,
+  ) {
+    if (timedEvents.isEmpty) return 0;
+
+    final intervals =
+        timedEvents
+            .map((event) {
+              final start = event.startDateTime.isBefore(dayStart)
+                  ? dayStart
+                  : event.startDateTime;
+              final end = event.endDateTime.isAfter(dayEnd)
+                  ? dayEnd
+                  : event.endDateTime;
+              if (!end.isAfter(start)) return null;
+              return DateTimeRange(start: start, end: end);
+            })
+            .whereType<DateTimeRange>()
+            .toList()
+          ..sort((a, b) => a.start.compareTo(b.start));
+
+    if (intervals.isEmpty) return 0;
+
+    var busyMinutes = 0;
+    var currentStart = intervals.first.start;
+    var currentEnd = intervals.first.end;
+
+    for (var i = 1; i < intervals.length; i++) {
+      final segment = intervals[i];
+      if (!segment.start.isAfter(currentEnd)) {
+        if (segment.end.isAfter(currentEnd)) {
+          currentEnd = segment.end;
+        }
+        continue;
+      }
+
+      busyMinutes += currentEnd.difference(currentStart).inMinutes;
+      currentStart = segment.start;
+      currentEnd = segment.end;
+    }
+
+    busyMinutes += currentEnd.difference(currentStart).inMinutes;
+    return busyMinutes.clamp(0, 24 * 60);
+  }
+
+  int _countTimedOverlapPairsForDay(
+    List<CalendarEvent> timedEvents,
+    DateTime dayStart,
+    DateTime dayEnd,
+  ) {
+    if (timedEvents.length < 2) return 0;
+
+    final ranges =
+        timedEvents
+            .map((event) {
+              final start = event.startDateTime.isBefore(dayStart)
+                  ? dayStart
+                  : event.startDateTime;
+              final end = event.endDateTime.isAfter(dayEnd)
+                  ? dayEnd
+                  : event.endDateTime;
+              if (!end.isAfter(start)) return null;
+              return DateTimeRange(start: start, end: end);
+            })
+            .whereType<DateTimeRange>()
+            .toList()
+          ..sort((a, b) => a.start.compareTo(b.start));
+
+    var overlapPairs = 0;
+    for (var i = 0; i < ranges.length; i++) {
+      for (var j = i + 1; j < ranges.length; j++) {
+        if (!ranges[j].start.isBefore(ranges[i].end)) {
+          break;
+        }
+        overlapPairs++;
+      }
+    }
+    return overlapPairs;
+  }
+
+  String _formatDurationMinutes(int minutes) {
+    final safeMinutes = minutes.clamp(0, 24 * 60);
+    final hours = safeMinutes ~/ 60;
+    final mins = safeMinutes % 60;
+    if (hours == 0) return '${mins}m';
+    if (mins == 0) return '${hours}h';
+    return '${hours}h ${mins}m';
+  }
+
+  void _startEventResizeInteraction(CalendarEvent event, double startGlobalY) {
+    setState(() {
+      _resizingEventId = event.id;
+      _resizingFromTop = false;
+      _resizingEventOriginal = event;
+      _resizeHoverEventId = event.id;
+      _resizeHoverFromTop = false;
+      _resizeStartGlobalY = startGlobalY;
+      _resizeAnchorStart = event.startDateTime;
+      _resizeAnchorEnd = event.endDateTime;
+    });
+  }
+
   void _cancelPendingEventTouchInteraction(String eventId) {
     if (_touchPendingEventId != eventId) return;
     _pendingPointerEventId = null;
@@ -2201,9 +3639,8 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       endDateTime: event.endDateTime.add(Duration(minutes: deltaMinutes)),
     );
 
-    if (!_isWithinDayRange(updated)) return;
-
     setState(() {
+      _pinOptimisticEventOverride(updated);
       _eventsMap[event.id] = updated;
       _updateEventLists();
     });
@@ -2219,6 +3656,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       debugPrint('Error moving event with keyboard: $e');
       if (!mounted) return;
       setState(() {
+        _clearOptimisticEventOverride(event.id);
         _eventsMap[event.id] = event;
         _updateEventLists();
       });

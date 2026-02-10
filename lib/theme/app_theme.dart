@@ -10,12 +10,14 @@ class AppMotion {
   static const short = Duration(milliseconds: 150);
   static const medium = Duration(milliseconds: 250);
   static const long = Duration(milliseconds: 400);
+  static const emphasizedCurve = Curves.easeOutCubic;
 }
 
 class AppTheme {
   static ThemeData build() {
     final base = ThemeData(
       useMaterial3: true,
+      visualDensity: VisualDensity.adaptivePlatformDensity,
       colorScheme: ColorScheme.fromSeed(
         seedColor: AppColors.primary,
         primary: AppColors.primary,
@@ -30,6 +32,16 @@ class AppTheme {
         brightness: Brightness.dark,
       ),
       scaffoldBackgroundColor: AppColors.background,
+      splashFactory: InkRipple.splashFactory,
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: <TargetPlatform, PageTransitionsBuilder>{
+          TargetPlatform.android: FadeForwardsPageTransitionsBuilder(),
+          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.windows: FadeUpwardsPageTransitionsBuilder(),
+          TargetPlatform.linux: FadeUpwardsPageTransitionsBuilder(),
+        },
+      ),
       fontFamily: 'Montserrat',
       textTheme: TextTheme(
         displayLarge: AppTextStyles.headline1,
@@ -69,6 +81,7 @@ class AppTheme {
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.primary,
           foregroundColor: AppColors.onPrimary,
+          animationDuration: AppMotion.short,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppRadius.control),
           ),
@@ -78,6 +91,7 @@ class AppTheme {
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: AppColors.onBackground,
+          animationDuration: AppMotion.short,
           side: const BorderSide(color: AppColors.borderColor),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppRadius.control),
@@ -85,7 +99,15 @@ class AppTheme {
         ),
       ),
       textButtonTheme: TextButtonThemeData(
-        style: TextButton.styleFrom(foregroundColor: AppColors.primary),
+        style: TextButton.styleFrom(
+          foregroundColor: AppColors.primary,
+          animationDuration: AppMotion.short,
+        ),
+      ),
+      iconButtonTheme: IconButtonThemeData(
+        style: IconButton.styleFrom(
+          animationDuration: AppMotion.short,
+        ),
       ),
       dividerColor: AppColors.dividerColor,
       appBarTheme: AppBarTheme(

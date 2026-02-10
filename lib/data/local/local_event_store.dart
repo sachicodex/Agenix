@@ -126,6 +126,17 @@ CREATE TABLE IF NOT EXISTS user_profile (
     return rows.map(_fromRow).toList();
   }
 
+  Future<List<CalendarEvent>> getAllActiveEvents({int limit = 500}) async {
+    final db = _requireDb();
+    final rows = await db.query(
+      'events',
+      where: 'deleted = 0',
+      orderBy: 'start_utc ASC',
+      limit: limit,
+    );
+    return rows.map(_fromRow).toList();
+  }
+
   Future<List<CalendarEvent>> getSyncedEventsForCalendarInRange({
     required String calendarId,
     required DateTimeRange range,
