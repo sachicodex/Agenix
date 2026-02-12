@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/google_calendar_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_animations.dart';
+import '../widgets/primary_action_button.dart';
 
 class SignInScreen extends StatefulWidget {
   final VoidCallback? onSignInSuccess;
@@ -80,7 +81,7 @@ class _SignInScreenState extends State<SignInScreen> {
                 delay: const Duration(milliseconds: 140),
                 child: AppPressFeedback(
                   enabled: !_loading,
-                  child: ElevatedButton.icon(
+                  child: PrimaryActionButton.icon(
                     onPressed: _loading ? null : _signIn,
                     icon: const Icon(Icons.login),
                     label: _loading
@@ -89,10 +90,6 @@ class _SignInScreenState extends State<SignInScreen> {
                             'Sign in with Google',
                             style: AppTextStyles.button,
                           ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: AppColors.onPrimary,
-                    ),
                   ),
                 ),
               ),

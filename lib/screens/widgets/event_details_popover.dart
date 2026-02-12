@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../../models/calendar_event.dart';
 import '../../theme/app_colors.dart';
 import '../../providers/event_providers.dart';
+import '../../widgets/primary_action_button.dart';
 import 'event_creation_modal.dart';
 
 class EventDetailsPopover extends ConsumerWidget {
@@ -466,9 +467,9 @@ class _EventEditModalState extends ConsumerState<EventEditModal> {
                     child: const Text('Cancel'),
                   ),
                   const SizedBox(width: 8),
-                  ElevatedButton(
+                  PrimaryActionButton(
                     onPressed: _saveEvent,
-                    child: const Text('Save'),
+                    label: const Text('Save'),
                   ),
                 ],
               ),

@@ -105,9 +105,7 @@ class AppTheme {
         ),
       ),
       iconButtonTheme: IconButtonThemeData(
-        style: IconButton.styleFrom(
-          animationDuration: AppMotion.short,
-        ),
+        style: IconButton.styleFrom(animationDuration: AppMotion.short),
       ),
       dividerColor: AppColors.dividerColor,
       appBarTheme: AppBarTheme(

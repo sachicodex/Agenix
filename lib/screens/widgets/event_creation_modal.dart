@@ -10,6 +10,7 @@ import '../../theme/app_colors.dart';
 import '../../widgets/form_fields.dart';
 import '../../widgets/date_time_field.dart';
 import '../../widgets/reminder_field.dart';
+import '../../widgets/primary_action_button.dart';
 import '../settings_screen.dart';
 import '../../providers/event_providers.dart';
 
@@ -106,8 +107,8 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
   Future<void> _fetchCalendars() async {
     String? defaultCalendarId;
     try {
-      defaultCalendarId =
-          await GoogleCalendarService.instance.storage.getDefaultCalendarId();
+      defaultCalendarId = await GoogleCalendarService.instance.storage
+          .getDefaultCalendarId();
     } catch (_) {}
 
     final applyCalendars = (List<Map<String, dynamic>> calendars) {
@@ -668,7 +669,10 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
               child: const Text('Cancel'),
             ),
             const SizedBox(width: 8),
-            ElevatedButton(onPressed: _saveEvent, child: const Text('Save')),
+            PrimaryActionButton(
+              onPressed: _saveEvent,
+              label: const Text('Save'),
+            ),
           ],
         ),
       ],

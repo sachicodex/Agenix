@@ -1615,7 +1615,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
               crossAxisCount: 2,
               mainAxisSpacing: 10,
               crossAxisSpacing: 10,
-              childAspectRatio: 2.1,
+              childAspectRatio: 2.5,
             ),
             itemBuilder: (context, index) {
               final item = buttons[index];
@@ -1629,7 +1629,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                 borderRadius: BorderRadius.circular(16),
                 child: Container(
                   decoration: BoxDecoration(
-                    color: const Color(0xFF26211D),
+                    color: AppColors.primary.withAlpha(26),
                     borderRadius: BorderRadius.circular(16),
                   ),
                   padding: const EdgeInsets.symmetric(horizontal: 16),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_animations.dart';
+import '../widgets/primary_action_button.dart';
 
 class SyncFeedbackScreen extends StatefulWidget {
   static const routeName = '/sync';
@@ -96,9 +97,9 @@ class _SyncFeedbackScreenState extends State<SyncFeedbackScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           AppPressFeedback(
-            child: ElevatedButton(
+            child: PrimaryActionButton(
               onPressed: () => setState(() => state = 'syncing'),
-              child: Text('Retry', style: AppTextStyles.button),
+              label: Text('Retry', style: AppTextStyles.button),
             ),
           ),
         ],

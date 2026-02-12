@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/google_calendar_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_animations.dart';
+import '../widgets/primary_action_button.dart';
 
 /// Screen for selecting default calendar on first login
 class CalendarSelectionScreen extends StatefulWidget {
@@ -173,148 +174,141 @@ class _CalendarSelectionScreenState extends State<CalendarSelectionScreen> {
               : _error != null
               ? Center(
                   key: const ValueKey<String>('calendar-selection-error'),
-                child: Padding(
-                  padding: const EdgeInsets.all(24.0),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        _isPermissionError
-                            ? Icons.lock_outline
-                            : Icons.error_outline,
-                        size: 64,
-                        color: AppColors.error,
-                      ),
-                      const SizedBox(height: 24),
-                      Text(
-                        _isPermissionError
-                            ? 'Calendar Access Required'
-                            : 'Error loading calendars',
-                        style: AppTextStyles.headline2,
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        _isPermissionError
-                            ? 'You need to grant calendar permissions to use this app.\n\n'
-                                  'During sign-in, please make sure to check the box that allows '
-                                  'access to your Google Calendar data.\n\n'
-                                  'Click "Sign In Again" to restart the sign-in process and grant the required permissions.'
-                            : _error!,
-                        style: AppTextStyles.bodyText1,
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 32),
-                      if (_isPermissionError)
-                        AppPressFeedback(
-                          child: ElevatedButton.icon(
-                            onPressed: _reAuthenticate,
-                            icon: const Icon(Icons.login),
-                            label: Text(
-                              'Sign In Again',
-                              style: AppTextStyles.button,
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primary,
-                              foregroundColor: AppColors.onPrimary,
+                  child: Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          _isPermissionError
+                              ? Icons.lock_outline
+                              : Icons.error_outline,
+                          size: 64,
+                          color: AppColors.error,
+                        ),
+                        const SizedBox(height: 24),
+                        Text(
+                          _isPermissionError
+                              ? 'Calendar Access Required'
+                              : 'Error loading calendars',
+                          style: AppTextStyles.headline2,
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          _isPermissionError
+                              ? 'You need to grant calendar permissions to use this app.\n\n'
+                                    'During sign-in, please make sure to check the box that allows '
+                                    'access to your Google Calendar data.\n\n'
+                                    'Click "Sign In Again" to restart the sign-in process and grant the required permissions.'
+                              : _error!,
+                          style: AppTextStyles.bodyText1,
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 32),
+                        if (_isPermissionError)
+                          AppPressFeedback(
+                            child: PrimaryActionButton.icon(
+                              onPressed: _reAuthenticate,
+                              icon: const Icon(Icons.login),
+                              label: Text(
+                                'Sign In Again',
+                                style: AppTextStyles.button,
+                              ),
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 24,
                                 vertical: 16,
                               ),
                             ),
+                          )
+                        else
+                          AppPressFeedback(
+                            child: PrimaryActionButton(
+                              onPressed: _loadCalendars,
+                              label: Text('Retry', style: AppTextStyles.button),
+                            ),
                           ),
-                        )
-                      else
-                        AppPressFeedback(
-                          child: ElevatedButton(
-                            onPressed: _loadCalendars,
-                            child: Text('Retry', style: AppTextStyles.button),
-                          ),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              )
+                )
               : _calendars.isEmpty
               ? Center(
                   key: const ValueKey<String>('calendar-selection-empty'),
-                child: Text(
-                  'No calendars found',
-                  style: AppTextStyles.bodyText1,
-                ),
-              )
+                  child: Text(
+                    'No calendars found',
+                    style: AppTextStyles.bodyText1,
+                  ),
+                )
               : AppFadeSlideIn(
                   key: const ValueKey<String>('calendar-selection-list'),
                   child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Choose your default calendar for creating events:',
-                    style: AppTextStyles.bodyText1,
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 24),
-                  Expanded(
-                    child: ListView.builder(
-                      itemCount: _calendars.length,
-                      itemBuilder: (context, index) {
-                        final calendar = _calendars[index];
-                        final isSelected =
-                            (calendar['id'] as String?) == _selectedCalendarId;
-                        return Card(
-                          color: isSelected
-                              ? AppColors.primary.withOpacity(0.2)
-                              : AppColors.surface,
-                          child: ListTile(
-                            title: Text(
-                              (calendar['name'] as String?) ?? 'Unknown',
-                              style: AppTextStyles.bodyText1.copyWith(
-                                fontWeight: isSelected
-                                    ? FontWeight.bold
-                                    : FontWeight.normal,
-                              ),
-                            ),
-                            leading: Radio<String>(
-                              value: (calendar['id'] as String?) ?? '',
-                              groupValue: _selectedCalendarId,
-                              onChanged: (value) {
-                                if (value != null &&
-                                    value != _selectedCalendarId) {
-                                  setState(() {
-                                    _selectedCalendarId = value;
-                                  });
-                                }
-                              },
-                            ),
-                            onTap: () {
-                              final calId = calendar['id'] as String?;
-                              if (calId != null &&
-                                  calId != _selectedCalendarId) {
-                                setState(() {
-                                  _selectedCalendarId = calId;
-                                });
-                              }
-                            },
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  AppPressFeedback(
-                    child: ElevatedButton.icon(
-                      onPressed: _saveAndContinue,
-                      icon: const Icon(Icons.check),
-                      label: Text('Continue', style: AppTextStyles.button),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: AppColors.onPrimary,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Choose your default calendar for creating events:',
+                        style: AppTextStyles.bodyText1,
+                        textAlign: TextAlign.center,
                       ),
-                    ),
+                      const SizedBox(height: 24),
+                      Expanded(
+                        child: ListView.builder(
+                          itemCount: _calendars.length,
+                          itemBuilder: (context, index) {
+                            final calendar = _calendars[index];
+                            final isSelected =
+                                (calendar['id'] as String?) ==
+                                _selectedCalendarId;
+                            return Card(
+                              color: isSelected
+                                  ? AppColors.primary.withOpacity(0.2)
+                                  : AppColors.surface,
+                              child: ListTile(
+                                title: Text(
+                                  (calendar['name'] as String?) ?? 'Unknown',
+                                  style: AppTextStyles.bodyText1.copyWith(
+                                    fontWeight: isSelected
+                                        ? FontWeight.bold
+                                        : FontWeight.normal,
+                                  ),
+                                ),
+                                leading: Radio<String>(
+                                  value: (calendar['id'] as String?) ?? '',
+                                  groupValue: _selectedCalendarId,
+                                  onChanged: (value) {
+                                    if (value != null &&
+                                        value != _selectedCalendarId) {
+                                      setState(() {
+                                        _selectedCalendarId = value;
+                                      });
+                                    }
+                                  },
+                                ),
+                                onTap: () {
+                                  final calId = calendar['id'] as String?;
+                                  if (calId != null &&
+                                      calId != _selectedCalendarId) {
+                                    setState(() {
+                                      _selectedCalendarId = calId;
+                                    });
+                                  }
+                                },
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      AppPressFeedback(
+                        child: PrimaryActionButton.icon(
+                          onPressed: _saveAndContinue,
+                          icon: const Icon(Icons.check),
+                          label: Text('Continue', style: AppTextStyles.button),
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
                 ),
         ),
       ),

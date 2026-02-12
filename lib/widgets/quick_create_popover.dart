@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../theme/app_colors.dart';
+import 'primary_action_button.dart';
 
 /// Quick create popover that appears when clicking on empty time slot
 /// Matches Google Calendar's quick create behavior
@@ -120,17 +121,13 @@ class _QuickCreatePopoverState extends State<QuickCreatePopover> {
                           child: const Text('Cancel'),
                         ),
                         const SizedBox(width: 8),
-                        ElevatedButton(
+                        PrimaryActionButton(
                           onPressed: _handleCreate,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: AppColors.onPrimary,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 8,
-                            ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
                           ),
-                          child: const Text('Save'),
+                          label: const Text('Save'),
                         ),
                       ],
                     ),

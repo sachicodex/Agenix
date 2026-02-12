@@ -374,13 +374,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     if (_isLoading) {
       return Scaffold(
-        appBar: AppBar(title: Text('Settings', style: AppTextStyles.headline2)),
+        appBar: AppBar(
+          title: Text('Settings', style: AppTextStyles.headline2),
+          scrolledUnderElevation: 0,
+          surfaceTintColor: Colors.transparent,
+        ),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     return Scaffold(
-      appBar: AppBar(title: Text('Settings', style: AppTextStyles.headline2)),
+      appBar: AppBar(
+        title: Text('Settings', style: AppTextStyles.headline2),
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
+      ),
       body: LayoutBuilder(
         builder: (context, constraints) {
           final content = ListView(
@@ -469,92 +477,95 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _animatedSection(
                   1,
                   Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Default Calendar',
-                          style: AppTextStyles.headline2.copyWith(fontSize: 18),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Choose your default calendar for creating events',
-                          style: AppTextStyles.bodyText1.copyWith(
-                            color: AppColors.onSurface.withOpacity(0.7),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        if (_loadingCalendars)
-                          const Center(
-                            child: Padding(
-                              padding: EdgeInsets.all(16.0),
-                              child: CircularProgressIndicator(),
-                            ),
-                          )
-                        else if (_availableCalendars.isEmpty)
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                           Text(
-                            'No calendars available',
-                            style: AppTextStyles.bodyText1.copyWith(
-                              color: AppColors.onSurface.withOpacity(0.6),
+                            'Default Calendar',
+                            style: AppTextStyles.headline2.copyWith(
+                              fontSize: 18,
                             ),
-                          )
-                        else
-                          DropdownButtonFormField<String>(
-                            value: _selectedCalendarId,
-                            decoration: InputDecoration(
-                              labelText: 'Select Calendar',
-                              labelStyle: AppTextStyles.bodyText1.copyWith(
-                                color: AppColors.onSurface.withOpacity(0.7),
-                              ),
-                              filled: true,
-                              fillColor: AppColors.surface,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide: BorderSide.none,
-                              ),
-                            ),
-                            style: AppTextStyles.bodyText1,
-                            dropdownColor: AppColors.surface,
-                            isExpanded: true,
-                            items: _availableCalendars
-                                .map(
-                                  (cal) => DropdownMenuItem(
-                                    value: cal['id'] as String?,
-                                    child: Text(
-                                      (cal['name'] as String?) ?? '',
-                                      style: AppTextStyles.bodyText1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                )
-                                .toList(),
-                            onChanged: (value) {
-                              if (value != null &&
-                                  value != _selectedCalendarId) {
-                                setState(() {
-                                  _selectedCalendarId = value;
-                                });
-                                _saveDefaultCalendar();
-                              }
-                            },
                           ),
-                        if (_defaultCalendarName != null && !_loadingCalendars)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 8.0),
-                            child: Text(
-                              'Current: $_defaultCalendarName',
+                          const SizedBox(height: 8),
+                          Text(
+                            'Choose your default calendar for creating events',
+                            style: AppTextStyles.bodyText1.copyWith(
+                              color: AppColors.onSurface.withOpacity(0.7),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          if (_loadingCalendars)
+                            const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(16.0),
+                                child: CircularProgressIndicator(),
+                              ),
+                            )
+                          else if (_availableCalendars.isEmpty)
+                            Text(
+                              'No calendars available',
                               style: AppTextStyles.bodyText1.copyWith(
                                 color: AppColors.onSurface.withOpacity(0.6),
-                                fontSize: 12,
+                              ),
+                            )
+                          else
+                            DropdownButtonFormField<String>(
+                              value: _selectedCalendarId,
+                              decoration: InputDecoration(
+                                labelText: 'Select Calendar',
+                                labelStyle: AppTextStyles.bodyText1.copyWith(
+                                  color: AppColors.onSurface.withOpacity(0.7),
+                                ),
+                                filled: true,
+                                fillColor: AppColors.surface,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide.none,
+                                ),
+                              ),
+                              style: AppTextStyles.bodyText1,
+                              dropdownColor: AppColors.surface,
+                              isExpanded: true,
+                              items: _availableCalendars
+                                  .map(
+                                    (cal) => DropdownMenuItem(
+                                      value: cal['id'] as String?,
+                                      child: Text(
+                                        (cal['name'] as String?) ?? '',
+                                        style: AppTextStyles.bodyText1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: (value) {
+                                if (value != null &&
+                                    value != _selectedCalendarId) {
+                                  setState(() {
+                                    _selectedCalendarId = value;
+                                  });
+                                  _saveDefaultCalendar();
+                                }
+                              },
+                            ),
+                          if (_defaultCalendarName != null &&
+                              !_loadingCalendars)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8.0),
+                              child: Text(
+                                'Current: $_defaultCalendarName',
+                                style: AppTextStyles.bodyText1.copyWith(
+                                  color: AppColors.onSurface.withOpacity(0.6),
+                                  fontSize: 12,
+                                ),
                               ),
                             ),
-                          ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
-                ),
                 ),
               if (_signedIn) const SizedBox(height: 16),
 
@@ -562,32 +573,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _animatedSection(
                 2,
                 Card(
-                child: ListTile(
-                  leading: _userPhotoUrl != null
-                      ? CircleAvatar(
-                          backgroundImage: NetworkImage(
-                            _userPhotoUrl!,
-                            headers: const {'Cache-Control': 'max-age=3600'},
+                  child: ListTile(
+                    leading: _userPhotoUrl != null
+                        ? CircleAvatar(
+                            backgroundImage: NetworkImage(
+                              _userPhotoUrl!,
+                              headers: const {'Cache-Control': 'max-age=3600'},
+                            ),
+                          )
+                        : CircleAvatar(
+                            child: Icon(
+                              Icons.person,
+                              color: AppColors.onPrimary,
+                            ),
+                            backgroundColor: AppColors.primary,
                           ),
-                        )
-                      : CircleAvatar(
-                          child: Icon(Icons.person, color: AppColors.onPrimary),
-                          backgroundColor: AppColors.primary,
-                        ),
-                  title: Text(
-                    _signedIn ? 'Google Account' : 'Not connected',
-                    style: AppTextStyles.bodyText1,
+                    title: Text(
+                      _signedIn ? 'Google Account' : 'Not connected',
+                      style: AppTextStyles.bodyText1,
+                    ),
+                    subtitle: _signedIn && _userEmail != null
+                        ? Text(
+                            _userEmail!,
+                            style: AppTextStyles.bodyText1.copyWith(
+                              color: AppColors.onSurface.withOpacity(0.6),
+                            ),
+                          )
+                        : null,
                   ),
-                  subtitle: _signedIn && _userEmail != null
-                      ? Text(
-                          _userEmail!,
-                          style: AppTextStyles.bodyText1.copyWith(
-                            color: AppColors.onSurface.withOpacity(0.6),
-                          ),
-                        )
-                      : null,
                 ),
-              ),
               ),
               const SizedBox(height: 16),
 
@@ -595,18 +609,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _animatedSection(
                 3,
                 Card(
-                child: ListTile(
-                  leading: Icon(Icons.logout, color: AppColors.error),
-                  title: Text(
-                    'Logout',
-                    style: AppTextStyles.bodyText1.copyWith(
-                      color: AppColors.error,
+                  child: ListTile(
+                    leading: Icon(Icons.logout, color: AppColors.error),
+                    title: Text(
+                      'Logout',
+                      style: AppTextStyles.bodyText1.copyWith(
+                        color: AppColors.error,
+                      ),
                     ),
+                    onTap: _signedIn ? _handleLogout : null,
+                    enabled: _signedIn,
                   ),
-                  onTap: _signedIn ? _handleLogout : null,
-                  enabled: _signedIn,
                 ),
-              ),
               ),
               const SizedBox(height: 16),
 
@@ -614,16 +628,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _animatedSection(
                 4,
                 Card(
-                child: ListTile(
-                  title: Text('About', style: AppTextStyles.bodyText1),
-                  subtitle: Text(
-                    'Agenix • v1.0.17.4',
-                    style: AppTextStyles.bodyText1.copyWith(
-                      color: AppColors.onSurface.withOpacity(0.6),
+                  child: ListTile(
+                    title: Text('About', style: AppTextStyles.bodyText1),
+                    subtitle: Text(
+                      'Agenix • v1.0.17.4',
+                      style: AppTextStyles.bodyText1.copyWith(
+                        color: AppColors.onSurface.withOpacity(0.6),
+                      ),
                     ),
                   ),
                 ),
-              ),
               ),
             ],
           );

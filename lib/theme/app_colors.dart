@@ -3,9 +3,10 @@ import 'package:flutter/material.dart';
 class AppColors {
   // Brand dark-mode palette
   static const Color primary = Color(0xFFF97015); // Brand
-  static const Color secondary = Color(0xFFFFA04D); // Highlight
-  static const Color background = Color(0xFF1A1614); // Dark background
-  static const Color surface = Color(0xFF252220); // Dark surface
+  static const Color secondary = Color(0xFFFFA04D); // Highlight - still not use
+  static const Color background = Color(0XFF030303); // Dark background
+  static const Color surface = Color(0XFF161616); // Dark surface
+  static const Color gradientMix = Color(0xFFFF9500); // Border and divider
   static const Color error = Color(0xFFCB4B0B); // Emphasis
   static const Color onPrimary = Color(
     0xFF1A1614,
@@ -15,13 +16,26 @@ class AppColors {
   static const Color onError = Color(0xFFFFFFFF);
 
   // Supporting UI colors
-  static const Color borderColor = Color(0xFF3B322E);
-  static const Color dividerColor = Color(0xFF332C28);
+  static const Color borderColor = Color(0XFF2A2A2A);
+  static const Color dividerColor = Color(0XFF2A2A2A);
   static const Color hoverColor = Color(0x33252220); // Surface with low opacity
   static const Color selectedColor = Color(
     0x33F97015,
   ); // Brand with low opacity
   static const Color timeTextColor = Color(0xFFC2B8B1);
+
+  // Primary action button gradient (135deg-like diagonal)
+  static const LinearGradient primaryActionGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [primary, gradientMix],
+  );
+
+  static const LinearGradient primaryActionGradientDisabled = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [Color(0x99F97015), Color(0x99FF9500)],
+  );
 
   // Event colors (kept varied while aligned with warm dark UI)
   static const List<Color> eventColors = [

@@ -13,6 +13,7 @@ import 'settings_screen.dart';
 import '../models/calendar_event.dart';
 import '../providers/event_providers.dart';
 import '../widgets/app_animations.dart';
+import '../widgets/primary_action_button.dart';
 
 class CreateEventScreen extends ConsumerStatefulWidget {
   static const routeName = '/create';
@@ -78,8 +79,8 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
   Future<void> _fetchCalendars() async {
     String? defaultCalendarId;
     try {
-      defaultCalendarId =
-          await GoogleCalendarService.instance.storage.getDefaultCalendarId();
+      defaultCalendarId = await GoogleCalendarService.instance.storage
+          .getDefaultCalendarId();
     } catch (_) {}
 
     void applyCalendars(List<Map<String, dynamic>> calendars) {
@@ -424,7 +425,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
         const SizedBox(height: 24),
         AppPressFeedback(
           enabled: !_saving,
-          child: ElevatedButton.icon(
+          child: PrimaryActionButton.icon(
             onPressed: _saving ? null : _onSavePressed,
             icon: const Icon(Icons.event_available),
             label: _saving ? const Text('Saving...') : const Text('Save'),
@@ -438,8 +439,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
     return AppBar(
       leading: AppPressFeedback(
         child: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new),
-          tooltip: 'Back',
+          icon: const Icon(Icons.arrow_back),
           onPressed: () {
             Navigator.maybePop(context);
           },
