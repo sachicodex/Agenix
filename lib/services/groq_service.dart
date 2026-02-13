@@ -15,20 +15,31 @@ class GroqService {
 
     final prompt =
         '''
-You are a professional text optimizer. Your task is to optimize the following event title for a Google Calendar event.
+You are a Google Calendar event title rewriter.
 
-Rules:
-- Make it short, clear, and professional
-- Keep it under 60 characters
-- Remove unnecessary words
-- Return ONLY the optimized title text
-- Do NOT include any explanations, labels, or prefixes
-- Do NOT write "Optimized title:" or similar text
-- Return ONLY the title itself
+Goal: Improve the title to sound natural, simple, and human — WITHOUT changing meaning.
+
+Core Rules:
+- Preserve the exact context and intent from the original title.
+- Keep important keywords (project name, topic, person, task, deadline, location if present).
+- Remove unnecessary filler words.
+- Keep it short and clean (under 100 characters when possible).
+
+Meeting/Call Word Rule (VERY IMPORTANT):
+- If the original title contains words like "meeting", "call", "sync", "discussion", "session", or "interview",
+  you may keep or slightly refine them.
+- If the original title does NOT contain or clearly imply them, DO NOT add those words.
+
+Hard Don’ts:
+- Do NOT invent new context.
+- Do NOT add new people, platforms, time, or locations.
+- If unsure, return the original text unchanged.
+- Output ONLY the final title text. No quotes. No labels.
 
 Original title: "$title"
 
-Return only the optimized title:''';
+Return ONLY the improved title:
+''';
 
     try {
       final response = await _callGroqAPI(prompt);
@@ -50,23 +61,35 @@ Return only the optimized title:''';
 
     final prompt =
         '''
-You are a professional text optimizer. Your task is to optimize the following Google Calendar event description.
+You are a Google Calendar event description editor.
+
+Goal: Rewrite the description to be clearer, well-structured, and human-friendly — WITHOUT changing meaning.
 
 Rules:
-- Make it clear, professional, and well-formatted
-- Use both the original user title and the AI-generated title as context
-- Keep it concise but informative
-- Format it properly for Google Calendar
-- Return ONLY the optimized description text
-- Do NOT include any explanations, labels, or prefixes
-- Do NOT write "Here's a suitable description:" or "Optimized description:" or similar text
-- Return ONLY the description itself
+- Use the titles as context.
+- Preserve all important details from the current description (links, names, agenda, notes).
+- Improve readability using short lines or bullet points if helpful.
+- Keep it concise and professional.
+
+Meeting/Call Word Rule:
+- If the titles or description already contain words like "meeting", "call", "sync", or similar,
+  you may keep them.
+- If they are not present or clearly implied, DO NOT add them.
+
+Hard Don’ts:
+- Do NOT invent new details.
+- Do NOT change the purpose of the event.
+- If unsure, return the original description unchanged.
+- Output ONLY the final description text. No quotes. No labels.
 
 Original User Title: "$originalUserTitle"
 AI-Generated Title: "$aiGeneratedTitle"
-Current Description: "$description"
 
-Return only the optimized description:''';
+Current Description:
+"$description"
+
+Return ONLY the improved description:
+''';
 
     try {
       final response = await _callGroqAPI(prompt);
@@ -87,22 +110,28 @@ Return only the optimized description:''';
 
     final prompt =
         '''
-You are a professional content generator. Your task is to generate a description for a Google Calendar event based on the following titles.
+You generate short Google Calendar event descriptions.
+
+Goal: Create a natural, simple, human-sounding description based strictly on the titles.
 
 Rules:
-- Make it professional, concise, and informative
-- Use both the original user title and the AI-generated title as context
-- Keep it brief (2-3 sentences max)
-- Format it properly for Google Calendar
-- Return ONLY the description text
-- Do NOT include any explanations, labels, or prefixes
-- Do NOT write "Here's a suitable description:" or "Description:" or similar text
-- Return ONLY the description itself
+- 1–2 short sentences (maximum 3).
+- Match the exact meaning of the titles.
+- Do NOT invent new details (no time, date, platform, people, or location unless provided).
+- Keep it friendly and clear.
+
+Meeting/Call Word Rule:
+- Only use words like "meeting", "call", "session", or "discussion" if they already exist in the titles.
+
+Hard Rule:
+- If unsure about context, return a minimal neutral description that reflects only the given words.
+- Output ONLY the description text. No quotes. No labels.
 
 Original User Title: "$originalUserTitle"
 AI-Generated Title: "$aiGeneratedTitle"
 
-Return only the description:''';
+Return ONLY the description:
+''';
 
     try {
       final response = await _callGroqAPI(prompt);
