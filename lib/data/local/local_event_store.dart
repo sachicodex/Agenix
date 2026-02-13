@@ -16,6 +16,7 @@ class LocalEventStore {
   Database? _db;
   final StreamController<void> _changeController =
       StreamController<void>.broadcast();
+  final Map<String, String> _idAliases = <String, String>{};
 
   Future<void> initialize() async {
     if (_db != null) return;
@@ -176,12 +177,42 @@ CREATE TABLE IF NOT EXISTS user_profile (
     return _fromRow(rows.first);
   }
 
-  Future<CalendarEvent?> getById(String id) async {
+  Future<CalendarEvent?> getAnyByGoogleId(String gEventId) async {
     final db = _requireDb();
     final rows = await db.query(
       'events',
+      where: 'g_event_id = ?',
+      whereArgs: [gEventId],
+      orderBy: 'dirty DESC, updated_at_remote DESC',
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return _fromRow(rows.first);
+  }
+
+  Future<CalendarEvent?> getSyncedCopyByGoogleId({
+    required String gEventId,
+    required String excludeEventId,
+  }) async {
+    final db = _requireDb();
+    final rows = await db.query(
+      'events',
+      where:
+          'g_event_id = ? AND id != ? AND deleted = 0 AND dirty = 0 AND pending_action = ?',
+      whereArgs: [gEventId, excludeEventId, PendingAction.none.name],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return _fromRow(rows.first);
+  }
+
+  Future<CalendarEvent?> getById(String id) async {
+    final db = _requireDb();
+    final canonicalId = resolveCanonicalId(id);
+    final rows = await db.query(
+      'events',
       where: 'id = ?',
-      whereArgs: [id],
+      whereArgs: [canonicalId],
       limit: 1,
     );
     if (rows.isEmpty) return null;
@@ -190,9 +221,16 @@ CREATE TABLE IF NOT EXISTS user_profile (
 
   Future<void> upsertEvent(CalendarEvent event) async {
     final db = _requireDb();
+    final canonicalId = resolveCanonicalId(event.id);
+    final record = canonicalId == event.id
+        ? event
+        : event.copyWith(id: canonicalId);
+    if (canonicalId != event.id) {
+      _idAliases[event.id] = canonicalId;
+    }
     await db.insert(
       'events',
-      _toRow(event),
+      _toRow(record),
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
     _emitChange();
@@ -200,7 +238,8 @@ CREATE TABLE IF NOT EXISTS user_profile (
 
   Future<void> deleteEventById(String id) async {
     final db = _requireDb();
-    await db.delete('events', where: 'id = ?', whereArgs: [id]);
+    final canonicalId = resolveCanonicalId(id);
+    await db.delete('events', where: 'id = ?', whereArgs: [canonicalId]);
     _emitChange();
   }
 
@@ -209,28 +248,51 @@ CREATE TABLE IF NOT EXISTS user_profile (
     required CalendarEvent eventWithNewId,
   }) async {
     final db = _requireDb();
+    final canonicalOldId = resolveCanonicalId(oldId);
     await db.transaction((txn) async {
       await txn.insert(
         'events',
         _toRow(eventWithNewId),
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
-      if (oldId != eventWithNewId.id) {
-        await txn.delete('events', where: 'id = ?', whereArgs: [oldId]);
+      if (canonicalOldId != eventWithNewId.id) {
+        await txn.delete(
+          'events',
+          where: 'id = ?',
+          whereArgs: [canonicalOldId],
+        );
       }
     });
+    if (canonicalOldId != eventWithNewId.id) {
+      _idAliases[canonicalOldId] = eventWithNewId.id;
+      _idAliases[oldId] = eventWithNewId.id;
+    }
     _emitChange();
   }
 
   Future<void> markDeleted(String id) async {
     final db = _requireDb();
+    final canonicalId = resolveCanonicalId(id);
     await db.update(
       'events',
       {'deleted': 1, 'dirty': 0, 'pending_action': PendingAction.none.name},
       where: 'id = ?',
-      whereArgs: [id],
+      whereArgs: [canonicalId],
     );
     _emitChange();
+  }
+
+  String resolveCanonicalId(String id) {
+    var current = id;
+    final visited = <String>{};
+    while (true) {
+      final next = _idAliases[current];
+      if (next == null || next.isEmpty || visited.contains(current)) {
+        return current;
+      }
+      visited.add(current);
+      current = next;
+    }
   }
 
   Future<List<CalendarEvent>> getPendingEvents() async {
@@ -318,12 +380,19 @@ CREATE TABLE IF NOT EXISTS user_profile (
   Future<void> removeDuplicateGoogleEventCopies({
     required String gEventId,
     required String keepEventId,
+    bool preserveDirty = false,
   }) async {
     final db = _requireDb();
+    final where = preserveDirty
+        ? 'g_event_id = ? AND id != ? AND dirty = 0 AND pending_action = ?'
+        : 'g_event_id = ? AND id != ?';
+    final whereArgs = preserveDirty
+        ? <Object?>[gEventId, keepEventId, PendingAction.none.name]
+        : <Object?>[gEventId, keepEventId];
     final deleted = await db.delete(
       'events',
-      where: 'g_event_id = ? AND id != ?',
-      whereArgs: [gEventId, keepEventId],
+      where: where,
+      whereArgs: whereArgs,
     );
     if (deleted > 0) {
       _emitChange();

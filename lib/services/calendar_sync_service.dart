@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'google_calendar_service.dart';
 
 /// Service to manage real-time calendar sync with Google Calendar
@@ -13,9 +12,7 @@ class CalendarSyncService {
 
   CalendarSyncService._();
 
-  SharedPreferences? _prefs;
   Timer? _syncTimer;
-  String? _currentSyncToken; // Saved for potential future incremental sync optimization
   String? _currentChannelId;
   String? _currentResourceId;
   Function(List<Map<String, dynamic>>)? _onEventsUpdated;
@@ -23,35 +20,19 @@ class CalendarSyncService {
   DateTime? _currentTimeMin;
   DateTime? _currentTimeMax;
 
-  Future<void> _ensureInitialized() async {
-    _prefs ??= await SharedPreferences.getInstance();
-  }
-
   /// Start real-time sync for a calendar
   Future<void> startSync({
     required String calendarId,
     required DateTime timeMin,
     required DateTime timeMax,
     required Function(List<Map<String, dynamic>>) onEventsUpdated,
-    bool forceFullSync = false,
   }) async {
-    await _ensureInitialized();
-    
     _currentCalendarId = calendarId;
     _currentTimeMin = timeMin;
     _currentTimeMax = timeMax;
     _onEventsUpdated = onEventsUpdated;
 
-    // Load saved syncToken (unless forcing full sync)
-    if (forceFullSync) {
-      _currentSyncToken = null;
-      await _prefs!.remove('syncToken_$calendarId');
-    } else {
-      final savedToken = _prefs!.getString('syncToken_$calendarId');
-      _currentSyncToken = savedToken;
-    }
-
-    // Perform initial sync (will do full sync if no token)
+    // Perform initial sync
     await _performSync();
 
     // Set up periodic sync (every 10 seconds for real-time feel)
@@ -85,7 +66,7 @@ class CalendarSyncService {
     _onEventsUpdated = null;
   }
 
-  /// Perform incremental sync
+  /// Perform sync
   Future<void> _performSync() async {
     if (_currentCalendarId == null || _currentTimeMin == null || _currentTimeMax == null) {
       return;
@@ -105,14 +86,8 @@ class CalendarSyncService {
       );
 
       final events = result['events'] as List<Map<String, dynamic>>;
-      final newSyncToken = result['syncToken'] as String?;
 
       debugPrint('Sync returned ${events.length} events from Google Calendar');
-
-      if (newSyncToken != null && newSyncToken.isNotEmpty) {
-        _currentSyncToken = newSyncToken;
-        await _prefs!.setString('syncToken_$_currentCalendarId', newSyncToken);
-      }
       
       // Always return all events (full sync)
       if (_onEventsUpdated != null) {
@@ -120,10 +95,8 @@ class CalendarSyncService {
       }
     } catch (e) {
       debugPrint('Sync error: $e');
-      // On error, clear syncToken and retry
+      // Retry once on "sync state invalid" style errors
       if (e.toString().contains('410') || e.toString().contains('GONE')) {
-        _currentSyncToken = null;
-        await _prefs!.remove('syncToken_$_currentCalendarId');
         // Retry with full sync
         try {
           await _performSync();
@@ -172,11 +145,6 @@ class CalendarSyncService {
   }) async {
     _currentTimeMin = timeMin;
     _currentTimeMax = timeMax;
-    // Clear syncToken to force full sync with new range
-    _currentSyncToken = null;
-    if (_currentCalendarId != null) {
-      await _prefs!.remove('syncToken_$_currentCalendarId');
-    }
     // Perform immediate sync
     await _performSync();
   }

@@ -30,13 +30,18 @@ class EventRepository {
   }
 
   Future<CalendarEvent> updateEvent(CalendarEvent event) async {
-    final nextPending = _mergePendingAction(event.pendingAction);
+    final canonicalEvent = await _resolveCanonicalIdentity(event);
+    final existing = await _localStore.getById(canonicalEvent.id);
+    final currentPending =
+        existing?.pendingAction ?? canonicalEvent.pendingAction;
+    final nextPending = _mergePendingAction(currentPending);
 
-    final record = event.copyWith(
+    final record = canonicalEvent.copyWith(
+      gEventId: canonicalEvent.gEventId ?? existing?.gEventId,
       dirty: true,
       pendingAction: nextPending,
     );
-    await _localStore.upsertEvent(record);
+    await _upsertWithIdentityTransition(oldId: event.id, event: record);
     return record;
   }
 
@@ -68,5 +73,30 @@ class EventRepository {
       return PendingAction.delete;
     }
     return PendingAction.update;
+  }
+
+  Future<CalendarEvent> _resolveCanonicalIdentity(CalendarEvent event) async {
+    final gEventId = event.gEventId;
+    if (gEventId == null || gEventId.isEmpty) {
+      return event;
+    }
+
+    final canonical = await _localStore.getAnyByGoogleId(gEventId);
+    if (canonical == null || canonical.id == event.id) {
+      return event;
+    }
+
+    return event.copyWith(id: canonical.id);
+  }
+
+  Future<void> _upsertWithIdentityTransition({
+    required String oldId,
+    required CalendarEvent event,
+  }) async {
+    if (oldId != event.id) {
+      await _localStore.replaceEventId(oldId: oldId, eventWithNewId: event);
+      return;
+    }
+    await _localStore.upsertEvent(event);
   }
 }
