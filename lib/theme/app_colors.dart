@@ -4,25 +4,25 @@ class AppColors {
   // Brand dark-mode palette
   static const Color primary = Color(0xFFF97015); // Brand
   static const Color secondary = Color(0xFFFFA04D); // Highlight - still not use
-  static const Color background = Color(0XFF030303); // Dark background
-  static const Color surface = Color(0XFF161616); // Dark surface
+  static const Color background = Color(0XFF0B0C0F); // Dark background
+  static const Color surface = Color(0XFF12141A); // Dark surface
   static const Color gradientMix = Color(0xFFFF9500); // Border and divider
   static const Color error = Color(0xFFCB4B0B); // Emphasis
   static const Color onPrimary = Color(
     0xFF1A1614,
   ); // Dark text on orange button
-  static const Color onBackground = Color(0xFFFAF9F7); // Light text on dark
-  static const Color onSurface = Color(0xFFE7E1DC); // Secondary light text
+  static const Color onBackground = Color(0xFFE6E8EB); // Light text on dark
+  static const Color onSurface = Color(0xFFA7ADB5); // Secondary light text
   static const Color onError = Color(0xFFFFFFFF);
 
   // Supporting UI colors
-  static const Color borderColor = Color(0XFF2A2A2A);
-  static const Color dividerColor = Color(0XFF2A2A2A);
-  static const Color hoverColor = Color(0x33252220); // Surface with low opacity
+  static const Color borderColor = Color(0XFF262B33);
+  static const Color borderFocusColor = Color(0XFF323844);
+  static const Color dividerColor = Color(0xFF1F242C);
   static const Color selectedColor = Color(
     0x33F97015,
   ); // Brand with low opacity
-  static const Color timeTextColor = Color(0xFFC2B8B1);
+  static const Color timeTextColor = Color(0xFF7B818A);
 
   // Primary action button gradient (135deg-like diagonal)
   static const LinearGradient primaryActionGradient = LinearGradient(

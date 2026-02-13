@@ -73,7 +73,10 @@ class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadius.control),
-          borderSide: const BorderSide(color: AppColors.primary, width: 1.2),
+          borderSide: const BorderSide(
+            color: AppColors.borderFocusColor,
+            width: 1.2,
+          ),
         ),
         hintStyle: TextStyle(color: AppColors.onSurface.withOpacity(0.6)),
       ),
@@ -108,6 +111,15 @@ class AppTheme {
         style: IconButton.styleFrom(animationDuration: AppMotion.short),
       ),
       dividerColor: AppColors.dividerColor,
+      dialogTheme: DialogThemeData(
+        backgroundColor: AppColors.surface,
+        surfaceTintColor: Colors.transparent,
+      ),
+      popupMenuTheme: PopupMenuThemeData(
+        color: AppColors.surface,
+        surfaceTintColor: Colors.transparent,
+        textStyle: AppTextStyles.bodyText1,
+      ),
       appBarTheme: AppBarTheme(
         backgroundColor: AppColors.surface,
         foregroundColor: AppColors.onBackground,

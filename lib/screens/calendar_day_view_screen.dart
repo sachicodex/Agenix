@@ -931,7 +931,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                           style: TextStyle(
                             fontSize: 12,
                             color: AppColors.timeTextColor,
-                            fontWeight: FontWeight.w400,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
                       ),
@@ -2557,9 +2557,10 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                                 TextSpan(
                                   text: event.title,
                                   style: const TextStyle(
+                                    fontFamily: 'Montserrat',
                                     color: _eventBlockTextColor,
                                     fontSize: 14,
-                                    fontWeight: FontWeight.w500,
+                                    fontWeight: FontWeight.w600,
                                     height: 1.2,
                                   ),
                                 ),
@@ -2567,9 +2568,10 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                                   text:
                                       ', ${DateFormat('h:mma').format(event.startDateTime).toLowerCase()} - ${DateFormat('h:mma').format(event.endDateTime).toLowerCase()}',
                                   style: const TextStyle(
+                                    fontFamily: 'Montserrat',
                                     color: _eventBlockTextColor,
                                     fontSize: 13,
-                                    fontWeight: FontWeight.w400,
+                                    fontWeight: FontWeight.w500,
                                     height: 1.2,
                                   ),
                                 ),
