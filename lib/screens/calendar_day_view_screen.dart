@@ -58,6 +58,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   late final ProviderSubscription<AsyncValue<SyncStatus>> _syncStatusSub;
   late final AnimationController _syncRotationController;
   late final FocusNode _keyboardListenerFocusNode;
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   // Use Map to prevent duplicates - key is event ID
   final Map<String, CalendarEvent> _eventsMap = {};
@@ -69,6 +70,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   bool _keyboardShortcutsEnabled = true;
   bool _isLoading = true;
   bool _hasLoadedEventsOnce = false;
+  bool _isSyncing = false;
   DateTime? _loadingStartedAt;
   bool _didReportInitialReady = false;
   String? _selectedCalendarId;
@@ -176,16 +178,16 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     _syncStatusSub = ref.listenManual<AsyncValue<SyncStatus>>(
       syncStatusProvider,
       (previous, next) {
+        _handleSyncStatusChanged(next);
         _updateSyncRotation(next);
         final status = next.valueOrNull;
         if (status?.state == SyncState.error && mounted) {
           final message = status?.error ?? 'Sync error';
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text(message)));
+          _showCompactSnackBar(message);
         }
       },
     );
+    _handleSyncStatusChanged(ref.read(syncStatusProvider));
     _updateSyncRotation(ref.read(syncStatusProvider));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -273,6 +275,49 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       _syncRotationController.stop();
     }
     _syncRotationController.value = 0;
+  }
+
+  void _showCompactSnackBar(String message) {
+    if (!mounted) return;
+    final scaffoldContext = _scaffoldKey.currentContext;
+    if (scaffoldContext == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _showCompactSnackBar(message);
+      });
+      return;
+    }
+    final messenger = ScaffoldMessenger.of(scaffoldContext);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.only(left: 12, right: 12, bottom: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        content: Text(
+          message,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          softWrap: false,
+        ),
+      ),
+    );
+  }
+
+  bool _syncingFromState(AsyncValue<SyncStatus> syncState) {
+    return syncState.maybeWhen(
+      data: (status) => status.state == SyncState.syncing,
+      loading: () => true,
+      orElse: () => false,
+    );
+  }
+
+  void _handleSyncStatusChanged(AsyncValue<SyncStatus> syncState) {
+    final nextSyncing = _syncingFromState(syncState);
+    if (!mounted || _isSyncing == nextSyncing) return;
+    setState(() {
+      _isSyncing = nextSyncing;
+    });
   }
 
   bool _isMobileLayout(BuildContext context) {
@@ -1154,7 +1199,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
 
   @override
   Widget build(BuildContext context) {
-    final syncStatusAsync = ref.watch(syncStatusProvider);
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
         statusBarColor: AppColors.surface,
@@ -1167,15 +1211,16 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
         child: Stack(
           children: [
             Scaffold(
+              key: _scaffoldKey,
               backgroundColor: AppColors.background,
               floatingActionButton: SizedBox(
-                width: 70,
-                height: 70,
+                width: 55,
+                height: 55,
                 child: FloatingActionButton(
                   backgroundColor: AppColors.primary,
                   elevation: 0,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(15),
                   ),
                   onPressed: () {
                     Navigator.pushNamed(context, CreateEventScreen.routeName);
@@ -1183,19 +1228,19 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                   child: const Icon(
                     Icons.add_rounded,
                     color: AppColors.onPrimary,
-                    size: 34,
+                    size: 30,
                   ),
                 ),
               ),
               body: SafeArea(
                 child: Column(
                   children: [
-                    _buildTopBar(syncStatusAsync),
+                    _buildTopBar(),
                     Expanded(
                       child: AppFadeSlideIn(
                         child: Stack(
                           children: [
-                            _buildCalendarContent(),
+                            RepaintBoundary(child: _buildCalendarContent()),
                             // Context menu overlay
                             if (_contextMenuPosition != null &&
                                 _contextMenuEvent != null)
@@ -1230,7 +1275,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     );
   }
 
-  Widget _buildTopBar(AsyncValue<SyncStatus> syncStatusAsync) {
+  Widget _buildTopBar() {
     final isMobile = _isMobileLayout(context);
     final dateString = DateFormat('d MMM y').format(_currentDate);
     Future<void> handlePickDate() async {
@@ -1481,14 +1526,17 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                                               gradient: _eventBlockGradient(
                                                 event.color,
                                               ),
-                                              border: Border(
-                                                left: BorderSide(
-                                                  color: _eventBlockBorderColor(
-                                                    event.color,
-                                                  ),
-                                                  width: 3,
-                                                ),
-                                              ),
+                                              border: isPastEvent
+                                                  ? null
+                                                  : Border(
+                                                      left: BorderSide(
+                                                        color:
+                                                            _eventBlockBorderColor(
+                                                              event.color,
+                                                            ),
+                                                        width: 3,
+                                                      ),
+                                                    ),
                                               borderRadius:
                                                   BorderRadius.circular(2),
                                             ),
@@ -1786,15 +1834,18 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   }
 
   Widget _buildReadOnlyEventCard(CalendarEvent event) {
+    final isPastEvent = _isPastEvent(event);
     return Container(
       decoration: BoxDecoration(
         gradient: _eventBlockGradient(event.color),
-        border: Border(
-          left: BorderSide(
-            color: _eventBlockBorderColor(event.color),
-            width: 3,
-          ),
-        ),
+        border: isPastEvent
+            ? null
+            : Border(
+                left: BorderSide(
+                  color: _eventBlockBorderColor(event.color),
+                  width: 3,
+                ),
+              ),
         borderRadius: BorderRadius.circular(6),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -2087,13 +2138,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   }
 
   Widget _buildSidebarQuickActions() {
-    final isSyncing = ref
-        .watch(syncStatusProvider)
-        .maybeWhen(
-          data: (status) => status.state == SyncState.syncing,
-          loading: () => true,
-          orElse: () => false,
-        );
+    final isSyncing = _isSyncing;
 
     final buttons =
         <
@@ -2159,7 +2204,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
               crossAxisCount: 2,
               mainAxisSpacing: 10,
               crossAxisSpacing: 10,
-              childAspectRatio: 2.5,
+              childAspectRatio: 2.6,
             ),
             itemBuilder: (context, index) {
               final item = buttons[index];
@@ -2241,9 +2286,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       ..sort((a, b) => a.startDateTime.compareTo(b.startDateTime));
     if (allEvents.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('No events to search')));
+      _showCompactSnackBar('No events to search');
       return;
     }
 
@@ -2995,12 +3038,14 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                   child: Container(
                     decoration: BoxDecoration(
                       gradient: _eventBlockGradient(event.color),
-                      border: Border(
-                        left: BorderSide(
-                          color: _eventBlockBorderColor(event.color),
-                          width: 3,
-                        ),
-                      ),
+                      border: isPastEvent
+                          ? null
+                          : Border(
+                              left: BorderSide(
+                                color: _eventBlockBorderColor(event.color),
+                                width: 3,
+                              ),
+                            ),
                       borderRadius: BorderRadius.circular(6),
                     ),
                     padding: const EdgeInsets.symmetric(
@@ -3585,9 +3630,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error deleting event: $e')));
+        _showCompactSnackBar('Error deleting event: $e');
       }
     }
   }
@@ -3807,8 +3850,12 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   }
 
   Widget _buildTodayOverviewSection() {
-    final today = DateTime.now();
-    final summary = _todayOverviewSummary(today);
+    final viewedDay = DateTime(
+      _currentDate.year,
+      _currentDate.month,
+      _currentDate.day,
+    );
+    final summary = _todayOverviewSummary(viewedDay);
 
     return Container(
       decoration: BoxDecoration(
@@ -3822,7 +3869,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
           const Padding(
             padding: EdgeInsets.only(left: 2, bottom: 14),
             child: Text(
-              'Today Overview',
+              'Day Overview',
               style: TextStyle(
                 color: AppColors.onBackground,
                 fontSize: 16,
@@ -3920,8 +3967,11 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
           event.endDateTime.isAfter(dayStart);
     }).toList();
 
-    final timedToday = todaysEvents.where((e) => !e.allDay).toList()
-      ..sort((a, b) => a.startDateTime.compareTo(b.startDateTime));
+    final timedToday =
+        todaysEvents
+            .where((e) => !_treatAsAllDayForMetrics(e, dayStart, dayEnd))
+            .toList()
+          ..sort((a, b) => a.startDateTime.compareTo(b.startDateTime));
     final overlapCount = _countTimedOverlapPairsForDay(
       timedToday,
       dayStart,
@@ -3936,6 +3986,24 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       freeMinutes: freeMinutes,
       overlapCount: overlapCount,
     );
+  }
+
+  bool _treatAsAllDayForMetrics(
+    CalendarEvent event,
+    DateTime dayStart,
+    DateTime dayEnd,
+  ) {
+    if (event.allDay) return true;
+
+    // Some calendar providers can represent all-day entries as timed events
+    // from 00:00 to 00:00 next day. Treat those as all-day for free-time math.
+    final startsAtDayStart = !event.startDateTime.isAfter(dayStart);
+    final endsAtDayEndOrAfter = !event.endDateTime.isBefore(dayEnd);
+    final spansNearlyWholeDay =
+        event.endDateTime.difference(event.startDateTime).inMinutes >=
+        (24 * 60 - 1);
+
+    return startsAtDayStart && endsAtDayEndOrAfter && spansNearlyWholeDay;
   }
 
   int _busyMinutesForTimedDay(
