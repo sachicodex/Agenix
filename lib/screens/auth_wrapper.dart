@@ -1,7 +1,8 @@
 import 'dart:async';
-import 'dart:io' show Platform;
+import 'dart:io' show Platform, InternetAddress;
 
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
 import '../services/google_calendar_service.dart';
 import '../widgets/modern_splash_screen.dart';
@@ -24,11 +25,20 @@ class _AuthWrapperState extends State<AuthWrapper> {
   bool _isLoading = true;
   bool _isSignedIn = false;
   bool _hasDefaultCalendar = false;
+  bool _offlineDialogActive = false;
+  bool _watchingReconnect = false;
+  Timer? _reconnectTimer;
 
   @override
   void initState() {
     super.initState();
     _checkAuthStatus();
+  }
+
+  @override
+  void dispose() {
+    _reconnectTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _checkAuthStatus() async {
@@ -64,6 +74,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
       _hasDefaultCalendar = hasDefault;
       _isLoading = false;
     });
+
+    unawaited(_showOfflineDialogIfNeeded());
   }
 
   Future<void> _warmUpDayViewData() async {
@@ -109,6 +121,108 @@ class _AuthWrapperState extends State<AuthWrapper> {
     setState(() {
       _isSignedIn = false;
       _hasDefaultCalendar = false;
+    });
+  }
+
+  Future<bool> _hasInternetConnection() async {
+    try {
+      final resp = await http
+          .get(Uri.parse('https://clients3.google.com/generate_204'))
+          .timeout(const Duration(seconds: 4));
+      if (resp.statusCode == 204 || resp.statusCode == 200) return true;
+    } catch (_) {
+      // Fallback below.
+    }
+
+    try {
+      final result = await InternetAddress.lookup(
+        'one.one.one.one',
+      ).timeout(const Duration(seconds: 4));
+      return result.isNotEmpty && result.first.rawAddress.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _showOfflineDialogIfNeeded() async {
+    if (!mounted || _isLoading || _offlineDialogActive) return;
+
+    final online = await _hasInternetConnection();
+    if (!mounted || online || _offlineDialogActive) return;
+
+    _offlineDialogActive = true;
+    final choice = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
+        contentPadding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+        actionsPadding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+        title: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: Colors.orange.withValues(alpha: 0.16),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(
+                Icons.wifi_off_rounded,
+                size: 20,
+                color: Colors.orange,
+              ),
+            ),
+            const SizedBox(width: 10),
+            const Text('No Internet'),
+          ],
+        ),
+        content: const Text(
+          'You are offline now.\n\n'
+          'Retry to check connection again.\n'
+          'Continue to use the app offline. It will auto sync when internet returns.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop('continue'),
+            child: const Text('Continue'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.of(ctx).pop('retry'),
+            icon: const Icon(Icons.refresh_rounded, size: 18),
+            label: const Text('Retry'),
+          ),
+        ],
+      ),
+    );
+    _offlineDialogActive = false;
+    if (!mounted) return;
+
+    if (choice == 'retry') {
+      await _showOfflineDialogIfNeeded();
+      return;
+    }
+
+    _startReconnectWatcher();
+  }
+
+  void _startReconnectWatcher() {
+    if (_watchingReconnect) return;
+    _watchingReconnect = true;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
+      if (!mounted) return;
+      final online = await _hasInternetConnection();
+      if (!mounted || !online) return;
+
+      _reconnectTimer?.cancel();
+      _watchingReconnect = false;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Internet is back. Auto sync is now running.'),
+        ),
+      );
     });
   }
 

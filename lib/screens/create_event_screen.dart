@@ -465,6 +465,18 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
       leading: AppPressFeedback(
         child: IconButton(
           icon: const Icon(Icons.arrow_back),
+          tooltip: '',
+          iconSize: 20,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+          splashRadius: 14,
+          visualDensity: VisualDensity.compact,
+          style: ButtonStyle(
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            splashFactory: NoSplash.splashFactory,
+            overlayColor: MaterialStateProperty.all(Colors.transparent),
+            backgroundColor: MaterialStateProperty.all(Colors.transparent),
+          ),
           onPressed: () {
             Navigator.maybePop(context);
           },
