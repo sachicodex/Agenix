@@ -1164,51 +1164,67 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       child: KeyboardListener(
         focusNode: _keyboardListenerFocusNode,
         onKeyEvent: _keyboardShortcutsEnabled ? _handleKeyboardShortcut : null,
-        child: Scaffold(
-          backgroundColor: AppColors.background,
-          floatingActionButton: FloatingActionButton(
-            backgroundColor: AppColors.primary,
-            onPressed: () {
-              Navigator.pushNamed(context, CreateEventScreen.routeName);
-            },
-            child: Icon(Icons.add, color: AppColors.onPrimary),
-          ),
-          body: SafeArea(
-            child: Column(
-              children: [
-                _buildTopBar(syncStatusAsync),
-                Expanded(
-                  child: AppFadeSlideIn(
-                    child: Stack(
-                      children: [
-                        _buildCalendarContent(),
-                        // Context menu overlay
-                        if (_contextMenuPosition != null &&
-                            _contextMenuEvent != null)
-                          _buildContextMenuOverlay(),
-                        Positioned.fill(
-                          child: IgnorePointer(
-                            child: AnimatedOpacity(
-                              opacity: _isLoading ? 1 : 0,
-                              duration: _isLoading
-                                  ? Duration.zero
-                                  : const Duration(milliseconds: 320),
-                              curve: Curves.easeOutCubic,
-                              child: const ModernSplashScreen(
-                                embedded: true,
-                                animateIntro: false,
-                                showLoading: true,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+        child: Stack(
+          children: [
+            Scaffold(
+              backgroundColor: AppColors.background,
+              floatingActionButton: SizedBox(
+                width: 70,
+                height: 70,
+                child: FloatingActionButton(
+                  backgroundColor: AppColors.primary,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  onPressed: () {
+                    Navigator.pushNamed(context, CreateEventScreen.routeName);
+                  },
+                  child: const Icon(
+                    Icons.add_rounded,
+                    color: AppColors.onPrimary,
+                    size: 34,
                   ),
                 ),
-              ],
+              ),
+              body: SafeArea(
+                child: Column(
+                  children: [
+                    _buildTopBar(syncStatusAsync),
+                    Expanded(
+                      child: AppFadeSlideIn(
+                        child: Stack(
+                          children: [
+                            _buildCalendarContent(),
+                            // Context menu overlay
+                            if (_contextMenuPosition != null &&
+                                _contextMenuEvent != null)
+                              _buildContextMenuOverlay(),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ),
+            Positioned.fill(
+              child: IgnorePointer(
+                child: AnimatedOpacity(
+                  opacity: _isLoading ? 1 : 0,
+                  duration: _isLoading
+                      ? Duration.zero
+                      : const Duration(milliseconds: 320),
+                  curve: Curves.easeOutCubic,
+                  child: const ModernSplashScreen(
+                    embedded: true,
+                    animateIntro: false,
+                    showLoading: true,
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

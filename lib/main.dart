@@ -49,6 +49,9 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Agenix',
       theme: AppTheme.build(),
+      scrollBehavior: const MaterialScrollBehavior().copyWith(
+        scrollbars: false,
+      ),
       home: const AuthWrapper(),
       navigatorObservers: [appRouteObserver],
       routes: {
