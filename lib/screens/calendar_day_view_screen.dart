@@ -72,6 +72,8 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   DateTime? _loadingStartedAt;
   bool _didReportInitialReady = false;
   String? _selectedCalendarId;
+  String? _userEmail;
+  String? _userDisplayName;
   String? _userPhotoUrl;
   Map<String, int> _calendarColors = {}; // Map of calendarId -> color
 
@@ -678,9 +680,15 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       final accountDetails = await GoogleCalendarService.instance
           .getAccountDetails();
       if (!mounted) return;
+      final newEmail = accountDetails['email'];
+      final newDisplayName = accountDetails['displayName'];
       final newPhotoUrl = accountDetails['photoUrl'];
-      if (_userPhotoUrl != newPhotoUrl) {
+      if (_userEmail != newEmail ||
+          _userDisplayName != newDisplayName ||
+          _userPhotoUrl != newPhotoUrl) {
         setState(() {
+          _userEmail = newEmail;
+          _userDisplayName = newDisplayName;
           _userPhotoUrl = newPhotoUrl;
         });
       }
@@ -769,6 +777,82 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     return visibleDuration >= fullDayThreshold;
   }
 
+  String _timeBasedGreeting() {
+    final hour = DateTime.now().hour;
+    if (hour >= 5 && hour < 12) return 'Good Morning';
+    if (hour >= 12 && hour < 21) return 'Good Evening';
+    return 'Good Night';
+  }
+
+  IconData _timeBasedGreetingIcon() {
+    final hour = DateTime.now().hour;
+    if (hour >= 5 && hour < 12) return Icons.sunny;
+    if (hour >= 12 && hour < 21) return Icons.sunny_snowing;
+    return Icons.nightlight;
+  }
+
+  String _firstNameForGreeting() {
+    final profileName = _userDisplayName?.trim();
+    if (profileName != null && profileName.isNotEmpty) {
+      final firstToken = profileName
+          .split(RegExp(r'\s+'))
+          .firstWhere(
+            (part) => part.trim().isNotEmpty,
+            orElse: () => profileName,
+          )
+          .trim();
+      if (firstToken.isNotEmpty) {
+        final lower = firstToken.toLowerCase();
+        return '${lower[0].toUpperCase()}${lower.substring(1)}';
+      }
+    }
+
+    final email = _userEmail;
+    if (email == null || email.trim().isEmpty) return 'there';
+    final localPart = email.split('@').first;
+    if (localPart.isEmpty) return 'there';
+    final tokens = localPart
+        .split(RegExp(r'[._\-]+'))
+        .where((part) => part.trim().isNotEmpty)
+        .toList();
+    const genericPrefixes = <String>{
+      'hello',
+      'hi',
+      'hey',
+      'mail',
+      'email',
+      'contact',
+      'info',
+      'support',
+      'admin',
+      'team',
+      'official',
+      'noreply',
+      'no-reply',
+    };
+
+    String candidate = '';
+    for (final token in tokens) {
+      final normalized = token.trim().toLowerCase();
+      if (normalized.isEmpty || genericPrefixes.contains(normalized)) {
+        continue;
+      }
+      candidate = token.trim();
+      break;
+    }
+
+    if (candidate.isEmpty) return 'there';
+
+    // Avoid showing low-confidence guesses from long concatenated email text.
+    if (RegExp(r'\d').hasMatch(candidate)) return 'there';
+    if (candidate.length > 12 && !RegExp(r'[A-Z]').hasMatch(candidate)) {
+      return 'there';
+    }
+
+    final lower = candidate.toLowerCase();
+    return '${lower[0].toUpperCase()}${lower.substring(1)}';
+  }
+
   Future<int?> _showYearPicker({required int initialYear}) async {
     const startYear = 1970;
     const endYear = 2100;
@@ -834,6 +918,30 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     );
   }
 
+  Widget _buildCalendarNavButton({
+    required IconData icon,
+    required VoidCallback onPressed,
+  }) {
+    return AppPressFeedback(
+      child: SizedBox(
+        width: 36,
+        height: 36,
+        child: IconButton(
+          padding: EdgeInsets.zero,
+          visualDensity: VisualDensity.compact,
+          style: IconButton.styleFrom(
+            foregroundColor: AppColors.onBackground,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(15),
+            ),
+          ),
+          onPressed: onPressed,
+          icon: Icon(icon, size: 20),
+        ),
+      ),
+    );
+  }
+
   DateTime _dateWithYearPreservingMonthDay(DateTime source, int targetYear) {
     final maxDayInTargetMonth = DateTime(targetYear, source.month + 1, 0).day;
     final clampedDay = source.day > maxDayInTargetMonth
@@ -879,18 +987,16 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                     children: [
                       Row(
                         children: [
-                          AppPressFeedback(
-                            child: IconButton(
-                              onPressed: () {
-                                setStateDialog(() {
-                                  visibleMonth = DateTime(
-                                    visibleMonth.year,
-                                    visibleMonth.month - 1,
-                                  );
-                                });
-                              },
-                              icon: const Icon(Icons.chevron_left_rounded),
-                            ),
+                          _buildCalendarNavButton(
+                            icon: Icons.chevron_left_rounded,
+                            onPressed: () {
+                              setStateDialog(() {
+                                visibleMonth = DateTime(
+                                  visibleMonth.year,
+                                  visibleMonth.month - 1,
+                                );
+                              });
+                            },
                           ),
                           Expanded(
                             child: AppPressFeedback(
@@ -910,34 +1016,42 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                                       );
                                   Navigator.of(dialogContext).pop(targetDate);
                                 },
-                                style: TextButton.styleFrom(
-                                  padding: EdgeInsets.zero,
-                                  minimumSize: const Size(0, 40),
-                                ),
+                                style:
+                                    TextButton.styleFrom(
+                                      padding: EdgeInsets.zero,
+                                      minimumSize: const Size(0, 40),
+                                      splashFactory: NoSplash.splashFactory,
+                                      backgroundColor: Colors.transparent,
+                                      shadowColor: Colors.transparent,
+                                      surfaceTintColor: Colors.transparent,
+                                    ).copyWith(
+                                      overlayColor:
+                                          WidgetStateProperty.resolveWith<
+                                            Color?
+                                          >((states) => Colors.transparent),
+                                    ),
                                 child: Text(
                                   '$monthLabel ${visibleMonth.year}',
                                   textAlign: TextAlign.center,
                                   style: const TextStyle(
                                     color: AppColors.onBackground,
-                                    fontSize: 26,
+                                    fontSize: 20,
                                     fontWeight: FontWeight.w700,
                                   ),
                                 ),
                               ),
                             ),
                           ),
-                          AppPressFeedback(
-                            child: IconButton(
-                              onPressed: () {
-                                setStateDialog(() {
-                                  visibleMonth = DateTime(
-                                    visibleMonth.year,
-                                    visibleMonth.month + 1,
-                                  );
-                                });
-                              },
-                              icon: const Icon(Icons.chevron_right_rounded),
-                            ),
+                          _buildCalendarNavButton(
+                            icon: Icons.chevron_right_rounded,
+                            onPressed: () {
+                              setStateDialog(() {
+                                visibleMonth = DateTime(
+                                  visibleMonth.year,
+                                  visibleMonth.month + 1,
+                                );
+                              });
+                            },
                           ),
                         ],
                       ),
@@ -1137,7 +1251,31 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                       onPressed: handleSync,
                     ),
                   )
-                : const SizedBox.shrink(),
+                : Padding(
+                    padding: const EdgeInsets.only(left: 6),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _timeBasedGreetingIcon(),
+                          size: 20,
+                          color: Colors.amber,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${_timeBasedGreeting()}, ${_firstNameForGreeting()}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppColors.onSurface,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
           ),
           Align(
             alignment: Alignment.center,
@@ -1726,8 +1864,8 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                       ),
                       child: Row(
                         children: [
-                          IconButton(
-                            iconSize: 21,
+                          _buildCalendarNavButton(
+                            icon: Icons.chevron_left,
                             onPressed: () {
                               setState(() {
                                 _miniCalendarVisibleMonth = DateTime(
@@ -1736,9 +1874,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                                 );
                               });
                             },
-                            icon: const Icon(Icons.chevron_left),
-                            visualDensity: VisualDensity.compact,
-                            color: AppColors.timeTextColor,
                           ),
                           Expanded(
                             child: AppPressFeedback(
@@ -1761,10 +1896,20 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                                   });
                                   await _handleDateChange(targetDate);
                                 },
-                                style: TextButton.styleFrom(
-                                  padding: EdgeInsets.zero,
-                                  minimumSize: const Size(0, 32),
-                                ),
+                                style:
+                                    TextButton.styleFrom(
+                                      padding: EdgeInsets.zero,
+                                      minimumSize: const Size(0, 32),
+                                      splashFactory: NoSplash.splashFactory,
+                                      backgroundColor: Colors.transparent,
+                                      shadowColor: Colors.transparent,
+                                      surfaceTintColor: Colors.transparent,
+                                    ).copyWith(
+                                      overlayColor:
+                                          WidgetStateProperty.resolveWith<
+                                            Color?
+                                          >((states) => Colors.transparent),
+                                    ),
                                 child: Text(
                                   '$monthLabel ${_miniCalendarVisibleMonth.year}',
                                   textAlign: TextAlign.center,
@@ -1773,8 +1918,8 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                               ),
                             ),
                           ),
-                          IconButton(
-                            iconSize: 21,
+                          _buildCalendarNavButton(
+                            icon: Icons.chevron_right,
                             onPressed: () {
                               setState(() {
                                 _miniCalendarVisibleMonth = DateTime(
@@ -1783,9 +1928,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                                 );
                               });
                             },
-                            icon: const Icon(Icons.chevron_right),
-                            visualDensity: VisualDensity.compact,
-                            color: AppColors.timeTextColor,
                           ),
                         ],
                       ),
@@ -3427,12 +3569,9 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error deleting event: $e'),
-            backgroundColor: AppColors.error,
-          ),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error deleting event: $e')));
       }
     }
   }
@@ -3767,17 +3906,13 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
 
     final timedToday = todaysEvents.where((e) => !e.allDay).toList()
       ..sort((a, b) => a.startDateTime.compareTo(b.startDateTime));
-    final allDayCount = todaysEvents.where((e) => e.allDay).length;
-
     final overlapCount = _countTimedOverlapPairsForDay(
       timedToday,
       dayStart,
       dayEnd,
     );
 
-    final busyMinutes = allDayCount > 0
-        ? 24 * 60
-        : _busyMinutesForTimedDay(timedToday, dayStart, dayEnd);
+    final busyMinutes = _busyMinutesForTimedDay(timedToday, dayStart, dayEnd);
     final freeMinutes = (24 * 60 - busyMinutes).clamp(0, 24 * 60);
 
     return (

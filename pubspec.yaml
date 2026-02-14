@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.17+4
+version: 1.0.17+5
 
 environment:
   sdk: ^3.10.3
@@ -99,8 +99,8 @@ msix_config:
   display_name: Agenix
   publisher_display_name: Sachicodex
   publisher: CN=Sachicodex
-  identity_name: com.agenix.agenix
-  msix_version: 1.0.17.4
+  identity_name: com.sachicodex.agenix
+  msix_version: 1.0.17.5
   logo_path: assets/logo/agenix-windows.png
   start_menu_icon_path: assets/logo/agenix-windows.png
   tile_icon_path: assets/logo/agenix-windows.png

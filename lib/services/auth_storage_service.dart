@@ -7,9 +7,7 @@ import 'dart:convert';
 class AuthStorageService {
   static const _storage = FlutterSecureStorage(
     // Android options
-    aOptions: AndroidOptions(
-      encryptedSharedPreferences: true,
-    ),
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
     // Windows options
     wOptions: WindowsOptions(),
     // iOS options (for future use)
@@ -24,6 +22,7 @@ class AuthStorageService {
   static const String _keyTokenExpiry = 'token_expiry';
   static const String _keyUserEmail = 'user_email';
   static const String _keyUserPhotoUrl = 'user_photo_url';
+  static const String _keyUserDisplayName = 'user_display_name';
   static const String _keyScopes = 'scopes';
   static const String _keyDefaultCalendarId = 'default_calendar_id';
   static const String _keyDefaultCalendarName = 'default_calendar_name';
@@ -36,6 +35,7 @@ class AuthStorageService {
     required List<String> scopes,
     String? userEmail,
     String? userPhotoUrl,
+    String? userDisplayName,
   }) async {
     try {
       if (refreshToken != null && refreshToken.isNotEmpty) {
@@ -51,16 +51,16 @@ class AuthStorageService {
         );
       }
       if (scopes.isNotEmpty) {
-        await _storage.write(
-          key: _keyScopes,
-          value: jsonEncode(scopes),
-        );
+        await _storage.write(key: _keyScopes, value: jsonEncode(scopes));
       }
       if (userEmail != null) {
         await _storage.write(key: _keyUserEmail, value: userEmail);
       }
       if (userPhotoUrl != null) {
         await _storage.write(key: _keyUserPhotoUrl, value: userPhotoUrl);
+      }
+      if (userDisplayName != null) {
+        await _storage.write(key: _keyUserDisplayName, value: userDisplayName);
       }
     } catch (e) {
       // Log error but don't throw - storage failures shouldn't break the app
@@ -137,6 +137,16 @@ class AuthStorageService {
     }
   }
 
+  /// Retrieve stored user display name
+  Future<String?> getUserDisplayName() async {
+    try {
+      return await _storage.read(key: _keyUserDisplayName);
+    } catch (e) {
+      print('Error reading user display name: $e');
+      return null;
+    }
+  }
+
   /// Check if access token is still valid (not expired)
   Future<bool> isAccessTokenValid() async {
     final expiry = await getTokenExpiry();
@@ -153,6 +163,7 @@ class AuthStorageService {
       await _storage.delete(key: _keyTokenExpiry);
       await _storage.delete(key: _keyUserEmail);
       await _storage.delete(key: _keyUserPhotoUrl);
+      await _storage.delete(key: _keyUserDisplayName);
       await _storage.delete(key: _keyScopes);
     } catch (e) {
       print('Error clearing credentials: $e');
@@ -166,7 +177,10 @@ class AuthStorageService {
   }
 
   /// Save default calendar selection
-  Future<void> saveDefaultCalendar(String calendarId, String calendarName) async {
+  Future<void> saveDefaultCalendar(
+    String calendarId,
+    String calendarName,
+  ) async {
     try {
       await _storage.write(key: _keyDefaultCalendarId, value: calendarId);
       await _storage.write(key: _keyDefaultCalendarName, value: calendarName);
@@ -211,4 +225,3 @@ class AuthStorageService {
     }
   }
 }
-

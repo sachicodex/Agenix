@@ -1,4 +1,4 @@
-import 'dart:io' show Platform, HttpServer, InternetAddress;
+import 'dart:io' show Platform, HttpServer, InternetAddress, File;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
@@ -46,7 +46,10 @@ class GoogleCalendarService {
     }
     // For desktop, return stored info if available
     if (_signedIn) {
-      final profile = {'email': _desktopUserEmail, 'photoUrl': _desktopUserPhotoUrl};
+      final profile = {
+        'email': _desktopUserEmail,
+        'photoUrl': _desktopUserPhotoUrl,
+      };
       await _persistUserProfileToLocalDb(
         email: profile['email'],
         photoUrl: profile['photoUrl'],
@@ -1591,6 +1594,8 @@ class GoogleCalendarService {
     // Escape HTML special characters in title and message
     final escapedTitle = _escapeHtml(title);
     final escapedMessage = _escapeHtml(message);
+    final logoDataUrl = _resolveAgenixLogoDataUrl();
+    final faviconDataUrl = logoDataUrl ?? '';
 
     return '''
 <!DOCTYPE html>
@@ -1598,7 +1603,8 @@ class GoogleCalendarService {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>$escapedTitle - Agenix</title>
+  <title>$escapedTitle</title>
+  <link rel="icon" type="image/png" href="$faviconDataUrl">
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap');
     * {
@@ -1689,6 +1695,28 @@ class GoogleCalendarService {
 </body>
 </html>
 ''';
+  }
+
+  String? _resolveAgenixLogoDataUrl() {
+    final candidates = <String>[
+      r'E:\02 Soft Dev\Flutter Development\Nuvex Flow\assets\logo\agenix-windows.png',
+      'assets/logo/agenix-windows.png',
+      '${File(Platform.resolvedExecutable).parent.path}\\data\\flutter_assets\\assets\\logo\\agenix-windows.png',
+    ];
+
+    for (final path in candidates) {
+      try {
+        final file = File(path);
+        if (!file.existsSync()) continue;
+        final bytes = file.readAsBytesSync();
+        if (bytes.isEmpty) continue;
+        return 'data:image/png;base64,${base64Encode(bytes)}';
+      } catch (_) {
+        // Try next path.
+      }
+    }
+
+    return null;
   }
 
   /// Escapes HTML special characters to prevent XSS and parsing errors

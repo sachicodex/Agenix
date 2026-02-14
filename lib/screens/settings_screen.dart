@@ -631,7 +631,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   child: ListTile(
                     title: Text('About', style: AppTextStyles.bodyText1),
                     subtitle: Text(
-                      'Agenix • v1.0.17.4',
+                      'Agenix • v1.0.17.5',
                       style: AppTextStyles.bodyText1.copyWith(
                         color: AppColors.onSurface.withOpacity(0.6),
                       ),

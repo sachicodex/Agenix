@@ -1,4 +1,4 @@
-package com.agenix.agenix
+package com.sachicodex.agenix
 
 import io.flutter.embedding.android.FlutterActivity
 
