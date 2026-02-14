@@ -74,11 +74,28 @@ class _SyncFeedbackScreenState extends State<SyncFeedbackScreen> {
       body = Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          CircularProgressIndicator(color: AppColors.secondary),
-          SizedBox(height: 12),
+          SizedBox(
+            width: 56,
+            height: 56,
+            child: Image.asset(
+              'assets/logo/Agenix.png',
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stackTrace) => const Icon(
+                Icons.sync_rounded,
+                size: 36,
+                color: AppColors.primary,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
           Text(
             'Syncing with Google Calendar...',
             style: AppTextStyles.bodyText1,
+          ),
+          const SizedBox(height: 12),
+          const SizedBox(
+            width: 160,
+            child: LinearProgressIndicator(minHeight: 2.2),
           ),
         ],
       );

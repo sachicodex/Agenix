@@ -13,6 +13,7 @@ import 'settings_screen.dart';
 import '../models/calendar_event.dart';
 import '../providers/event_providers.dart';
 import '../widgets/app_animations.dart';
+import '../widgets/modern_splash_screen.dart';
 import '../widgets/primary_action_button.dart';
 
 class CreateEventScreen extends ConsumerStatefulWidget {
@@ -26,6 +27,8 @@ class CreateEventScreen extends ConsumerStatefulWidget {
 }
 
 class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
+  bool _initializing = true;
+
   Future<void> _refreshUserInfo() async {
     final acc = await GoogleCalendarService.instance.getAccountDetails();
     if (mounted) {
@@ -178,22 +181,34 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       // User is already signed in (AuthWrapper handles routing)
       // Just load user info and calendars
-      final signedIn = await GoogleCalendarService.instance.isSignedIn();
-      if (mounted && _signedIn != signedIn) {
-        setState(() => _signedIn = signedIn);
-      }
-      await _refreshUserInfo();
-      if (signedIn) {
-        await _fetchCalendars();
-        // Load default calendar if set
-        await _loadDefaultCalendar();
-      } else if (mounted) {
-        setState(() {
-          _availableCalendars = [
-            {'id': 'primary', 'name': 'Primary Calendar', 'color': 0xFF039BE5},
-          ];
-          _selectedCalendarId ??= 'primary';
-        });
+      try {
+        final signedIn = await GoogleCalendarService.instance.isSignedIn();
+        if (mounted && _signedIn != signedIn) {
+          setState(() => _signedIn = signedIn);
+        }
+        await _refreshUserInfo();
+        if (signedIn) {
+          await _fetchCalendars();
+          // Load default calendar if set
+          await _loadDefaultCalendar();
+        } else if (mounted) {
+          setState(() {
+            _availableCalendars = [
+              {
+                'id': 'primary',
+                'name': 'Primary Calendar',
+                'color': 0xFF039BE5,
+              },
+            ];
+            _selectedCalendarId ??= 'primary';
+          });
+        }
+      } finally {
+        if (mounted) {
+          setState(() {
+            _initializing = false;
+          });
+        }
       }
     });
   }
@@ -249,6 +264,16 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_initializing) {
+      return const Scaffold(
+        body: ModernSplashScreen(
+          embedded: true,
+          animateIntro: false,
+          showLoading: true,
+        ),
+      );
+    }
+
     final isWide = MediaQuery.of(context).size.width > 720;
     // Memoize form widget to prevent unnecessary rebuilds
     final form = _buildForm(isWide);

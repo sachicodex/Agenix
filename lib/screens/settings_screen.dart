@@ -5,6 +5,7 @@ import '../services/google_calendar_service.dart';
 import '../services/groq_service.dart';
 import 'auth_wrapper.dart';
 import '../widgets/app_animations.dart';
+import '../widgets/modern_splash_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   static const routeName = '/settings';
@@ -373,13 +374,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final isWide = MediaQuery.of(context).size.width > 720;
 
     if (_isLoading) {
-      return Scaffold(
-        appBar: AppBar(
-          title: Text('Settings', style: AppTextStyles.headline2),
-          scrolledUnderElevation: 0,
-          surfaceTintColor: Colors.transparent,
+      return const Scaffold(
+        body: ModernSplashScreen(
+          embedded: true,
+          animateIntro: false,
+          showLoading: true,
         ),
-        body: const Center(child: CircularProgressIndicator()),
       );
     }
 

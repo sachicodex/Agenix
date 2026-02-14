@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/google_calendar_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_animations.dart';
+import '../widgets/modern_splash_screen.dart';
 import '../widgets/primary_action_button.dart';
 
 /// Screen for selecting default calendar on first login
@@ -155,6 +156,10 @@ class _CalendarSelectionScreenState extends State<CalendarSelectionScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_loading) {
+      return const ModernSplashScreen();
+    }
+
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: false, // Remove back button
@@ -166,12 +171,7 @@ class _CalendarSelectionScreenState extends State<CalendarSelectionScreen> {
           duration: AppAnimationDurations.normal,
           switchInCurve: AppAnimationCurves.emphasized,
           switchOutCurve: Curves.easeInCubic,
-          child: _loading
-              ? const Center(
-                  key: ValueKey<String>('calendar-selection-loading'),
-                  child: CircularProgressIndicator(),
-                )
-              : _error != null
+          child: _error != null
               ? Center(
                   key: const ValueKey<String>('calendar-selection-error'),
                   child: Padding(

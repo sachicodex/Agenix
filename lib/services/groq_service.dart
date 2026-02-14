@@ -17,7 +17,7 @@ class GroqService {
         '''
 You are a Google Calendar event title rewriter.
 
-Goal: Improve the title to sound natural, simple, and human — WITHOUT changing meaning.
+Goal: Improve the title to sound natural, simple, and humanize — WITHOUT changing meaning.
 
 Core Rules:
 - Preserve the exact context and intent from the original title.

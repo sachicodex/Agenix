@@ -16,11 +16,13 @@ import 'settings_screen.dart';
 import '../widgets/context_menu.dart';
 import '../navigation/app_route_observer.dart';
 import '../widgets/app_animations.dart';
+import '../widgets/modern_splash_screen.dart';
 
 class CalendarDayViewScreen extends ConsumerStatefulWidget {
   final VoidCallback? onSignOut;
+  final VoidCallback? onInitialReady;
 
-  const CalendarDayViewScreen({super.key, this.onSignOut});
+  const CalendarDayViewScreen({super.key, this.onSignOut, this.onInitialReady});
 
   @override
   ConsumerState<CalendarDayViewScreen> createState() =>
@@ -44,6 +46,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   static const double _horizontalSwipeDominanceRatio = 1.2;
   static const int _horizontalSwipeMaxDurationMs = 700;
   static const Duration _optimisticEventOverrideTtl = Duration(seconds: 6);
+  static const Duration _daySwitchMinLoader = Duration(milliseconds: 600);
 
   DateTime _currentDate = DateTime.now();
   late DateTime _selectedRangeStartDate;
@@ -65,6 +68,9 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
 
   bool _keyboardShortcutsEnabled = true;
   bool _isLoading = true;
+  bool _hasLoadedEventsOnce = false;
+  DateTime? _loadingStartedAt;
+  bool _didReportInitialReady = false;
   String? _selectedCalendarId;
   String? _userPhotoUrl;
   Map<String, int> _calendarColors = {}; // Map of calendarId -> color
@@ -187,11 +193,11 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
 
   Future<void> _initialize() async {
     await _loadCalendarId();
-    await _loadCalendarColors();
-    await _refreshUserInfo();
     _subscribeToEvents();
     _screenInitialized = true;
-    await _resumeSyncLoopIfNeeded();
+    unawaited(_resumeSyncLoopIfNeeded());
+    unawaited(_loadCalendarColors());
+    unawaited(_refreshUserInfo());
   }
 
   @override
@@ -305,7 +311,10 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     return DateTime(date.year, date.month, date.day);
   }
 
-  Future<void> _handleDateRangeChange(DateTime start, DateTime end) async {
+  ({DateTime start, DateTime end}) _normalizedRangeForSelection(
+    DateTime start,
+    DateTime end,
+  ) {
     final normalizedStart = _normalizeDate(start);
     final normalizedEnd = _normalizeDate(end);
     var rangeStart = normalizedStart.isBefore(normalizedEnd)
@@ -315,11 +324,17 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
         ? normalizedEnd
         : normalizedStart;
 
-    // Keep range compact and readable in the day timeline area.
     const maxDays = 7;
     if (rangeEnd.difference(rangeStart).inDays + 1 > maxDays) {
       rangeEnd = rangeStart.add(const Duration(days: maxDays - 1));
     }
+    return (start: rangeStart, end: rangeEnd);
+  }
+
+  Future<void> _handleDateRangeChange(DateTime start, DateTime end) async {
+    final normalized = _normalizedRangeForSelection(start, end);
+    final rangeStart = normalized.start;
+    final rangeEnd = normalized.end;
 
     final currentStart = _normalizeDate(_selectedRangeStartDate);
     final currentEnd = _normalizeDate(_selectedRangeEndDate);
@@ -330,6 +345,8 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       _selectedRangeStartDate = rangeStart;
       _selectedRangeEndDate = rangeEnd;
       _miniCalendarVisibleMonth = DateTime(rangeStart.year, rangeStart.month);
+      _isLoading = true;
+      _loadingStartedAt = DateTime.now();
       _optimisticEventOverrides.clear();
       _optimisticEventOverrideExpiresAt.clear();
       _didInitialNowScroll = false;
@@ -345,21 +362,46 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
 
   void _subscribeToEvents() {
     _eventsSubscription?.cancel();
-    setState(() {
-      _isLoading = true;
-    });
+    final startedAt = DateTime.now();
+    if (_isLoading) {
+      _loadingStartedAt ??= startedAt;
+    } else {
+      setState(() {
+        _isLoading = true;
+        _loadingStartedAt = startedAt;
+      });
+    }
 
     _eventsSubscription = _repository.watchEvents(_currentRange).listen((
       events,
-    ) {
+    ) async {
       final resolvedEvents = _resolveOptimisticEvents(events);
       _eventsMap
         ..clear()
         ..addEntries(resolvedEvents.map((e) => MapEntry(e.id, e)));
+
+      final startedAt = _loadingStartedAt;
+      if (_hasLoadedEventsOnce && startedAt != null) {
+        final elapsed = DateTime.now().difference(startedAt);
+        final remaining = _daySwitchMinLoader - elapsed;
+        if (remaining > Duration.zero) {
+          await Future.delayed(remaining);
+        }
+      }
+      if (!mounted) return;
+
       setState(() {
         _updateEventLists();
         _isLoading = false;
+        _hasLoadedEventsOnce = true;
       });
+      if (!_didReportInitialReady) {
+        _didReportInitialReady = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          widget.onInitialReady?.call();
+        });
+      }
       _scrollToNowOnInitialOpen();
     });
   }
@@ -651,13 +693,20 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     try {
       final cached = await GoogleCalendarService.instance.getCachedCalendars();
       if (cached.isNotEmpty) {
-        _calendarColors.clear();
+        final cachedColors = <String, int>{};
         for (final cal in cached) {
           final calendarId = cal['id'] as String?;
           final calendarColor = cal['color'] as int?;
           if (calendarId != null && calendarColor != null) {
-            _calendarColors[calendarId] = calendarColor;
+            cachedColors[calendarId] = calendarColor;
           }
+        }
+        if (mounted) {
+          setState(() {
+            _calendarColors = cachedColors;
+          });
+        } else {
+          _calendarColors = cachedColors;
         }
       }
 
@@ -665,15 +714,24 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       if (!signedIn) return;
 
       final calendars = await GoogleCalendarService.instance.getUserCalendars();
-      _calendarColors.clear();
+      final remoteColors = <String, int>{};
 
       for (final cal in calendars) {
         final calendarId = cal['id'] as String;
         final calendarColor = cal['color'] as int;
-        _calendarColors[calendarId] = calendarColor;
+        remoteColors[calendarId] = calendarColor;
         debugPrint(
           'Loaded color for calendar ${cal['name']}: ${calendarColor.toRadixString(16)}',
         );
+      }
+      if (remoteColors.isNotEmpty) {
+        if (mounted) {
+          setState(() {
+            _calendarColors = remoteColors;
+          });
+        } else {
+          _calendarColors = remoteColors;
+        }
       }
     } catch (e) {
       debugPrint('Error loading calendar colors: $e');
@@ -682,10 +740,302 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
 
   void _updateEventLists() {
     final allEvents = _eventsMap.values.toList();
-    _allDayEvents = allEvents.where((e) => e.allDay).toList()
+    _allDayEvents = allEvents.where(_isAllDayForCurrentDay).toList()
       ..sort((a, b) => a.startDateTime.compareTo(b.startDateTime));
-    _timedEvents = allEvents.where((e) => !e.allDay).toList()
+    _timedEvents = allEvents.where((e) => !_isAllDayForCurrentDay(e)).toList()
       ..sort((a, b) => a.startDateTime.compareTo(b.startDateTime));
+  }
+
+  bool _isAllDayForCurrentDay(CalendarEvent event) {
+    if (event.allDay) return true;
+
+    final visibleSegment = _eventVisibleSegmentForCurrentDay(event);
+    if (visibleSegment == null) return false;
+
+    final dayStart = DateTime(
+      _currentDate.year,
+      _currentDate.month,
+      _currentDate.day,
+    );
+    final dayEnd = dayStart.add(const Duration(days: 1));
+
+    final coversEntireDay =
+        visibleSegment.start == dayStart && visibleSegment.end == dayEnd;
+    if (coversEntireDay) return true;
+
+    // Treat near-24h spans in the current day as all-day for display.
+    const fullDayThreshold = Duration(hours: 23, minutes: 59);
+    final visibleDuration = visibleSegment.end.difference(visibleSegment.start);
+    return visibleDuration >= fullDayThreshold;
+  }
+
+  Future<int?> _showYearPicker({required int initialYear}) async {
+    const startYear = 1970;
+    const endYear = 2100;
+    const itemExtent = 44.0;
+    const dialogListHeight = 360.0;
+    final years = List<int>.generate(
+      endYear - startYear + 1,
+      (index) => endYear - index,
+    );
+    final initialIndex = years.indexOf(initialYear);
+    final safeIndex = initialIndex < 0 ? 0 : initialIndex;
+    final maxOffset = (years.length * itemExtent) - dialogListHeight;
+    final rawOffset = (safeIndex * itemExtent) - (dialogListHeight / 2);
+    final initialOffset = rawOffset.clamp(0.0, maxOffset < 0 ? 0.0 : maxOffset);
+    final scrollController = ScrollController(
+      initialScrollOffset: initialOffset,
+    );
+
+    return showDialog<int>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Select year'),
+          content: SizedBox(
+            width: 220,
+            height: dialogListHeight,
+            child: ListView.builder(
+              controller: scrollController,
+              itemExtent: itemExtent,
+              itemCount: years.length,
+              itemBuilder: (context, index) {
+                final year = years[index];
+                final isSelected = year == initialYear;
+                return ListTile(
+                  dense: true,
+                  selected: isSelected,
+                  selectedTileColor: AppColors.selectedColor,
+                  title: Text(
+                    '$year',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: isSelected
+                          ? AppColors.primary
+                          : AppColors.onBackground,
+                      fontWeight: isSelected
+                          ? FontWeight.w700
+                          : FontWeight.w500,
+                    ),
+                  ),
+                  onTap: () => Navigator.of(dialogContext).pop(year),
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  DateTime _dateWithYearPreservingMonthDay(DateTime source, int targetYear) {
+    final maxDayInTargetMonth = DateTime(targetYear, source.month + 1, 0).day;
+    final clampedDay = source.day > maxDayInTargetMonth
+        ? maxDayInTargetMonth
+        : source.day;
+    return DateTime(targetYear, source.month, clampedDay);
+  }
+
+  Future<void> _showMobileCalendarPicker() async {
+    var visibleMonth = DateTime(_currentDate.year, _currentDate.month);
+    var selectedDay = DateTime(
+      _currentDate.year,
+      _currentDate.month,
+      _currentDate.day,
+    );
+    final picked = await showDialog<DateTime>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            final monthDays = _miniCalendarDays(visibleMonth);
+            final monthLabel = DateFormat('MMMM').format(visibleMonth);
+            const weekLabels = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
+            final today = DateTime.now();
+            final normalizedToday = DateTime(
+              today.year,
+              today.month,
+              today.day,
+            );
+
+            return Dialog(
+              backgroundColor: AppColors.surface,
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 24,
+              ),
+              child: SizedBox(
+                width: 360,
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        children: [
+                          AppPressFeedback(
+                            child: IconButton(
+                              onPressed: () {
+                                setStateDialog(() {
+                                  visibleMonth = DateTime(
+                                    visibleMonth.year,
+                                    visibleMonth.month - 1,
+                                  );
+                                });
+                              },
+                              icon: const Icon(Icons.chevron_left_rounded),
+                            ),
+                          ),
+                          Expanded(
+                            child: AppPressFeedback(
+                              child: TextButton(
+                                onPressed: () async {
+                                  final selectedYear = await _showYearPicker(
+                                    initialYear: visibleMonth.year,
+                                  );
+                                  if (selectedYear == null ||
+                                      !context.mounted) {
+                                    return;
+                                  }
+                                  final targetDate =
+                                      _dateWithYearPreservingMonthDay(
+                                        selectedDay,
+                                        selectedYear,
+                                      );
+                                  Navigator.of(dialogContext).pop(targetDate);
+                                },
+                                style: TextButton.styleFrom(
+                                  padding: EdgeInsets.zero,
+                                  minimumSize: const Size(0, 40),
+                                ),
+                                child: Text(
+                                  '$monthLabel ${visibleMonth.year}',
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: AppColors.onBackground,
+                                    fontSize: 26,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          AppPressFeedback(
+                            child: IconButton(
+                              onPressed: () {
+                                setStateDialog(() {
+                                  visibleMonth = DateTime(
+                                    visibleMonth.year,
+                                    visibleMonth.month + 1,
+                                  );
+                                });
+                              },
+                              icon: const Icon(Icons.chevron_right_rounded),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: weekLabels
+                            .map(
+                              (label) => Expanded(
+                                child: Text(
+                                  label,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: AppColors.primary,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            )
+                            .toList(),
+                      ),
+                      const SizedBox(height: 10),
+                      GridView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: monthDays.length,
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 7,
+                              childAspectRatio: 1.15,
+                            ),
+                        itemBuilder: (context, index) {
+                          final day = monthDays[index];
+                          final normalizedDay = DateTime(
+                            day.year,
+                            day.month,
+                            day.day,
+                          );
+                          final isCurrentMonth =
+                              day.month == visibleMonth.month &&
+                              day.year == visibleMonth.year;
+                          final isSelected = normalizedDay == selectedDay;
+                          final isToday = normalizedDay == normalizedToday;
+
+                          return AppPressFeedback(
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(18),
+                              onTap: () => Navigator.of(dialogContext).pop(day),
+                              child: Center(
+                                child: Container(
+                                  width: 36,
+                                  height: 36,
+                                  alignment: Alignment.center,
+                                  decoration: BoxDecoration(
+                                    color: isSelected
+                                        ? AppColors.primary
+                                        : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(18),
+                                    border: isToday && !isSelected
+                                        ? Border.all(
+                                            color: AppColors.primary,
+                                            width: 1.2,
+                                          )
+                                        : null,
+                                  ),
+                                  child: Text(
+                                    '${day.day}',
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: isSelected
+                                          ? FontWeight.w700
+                                          : FontWeight.w500,
+                                      color: isSelected
+                                          ? AppColors.onPrimary
+                                          : isCurrentMonth
+                                          ? AppColors.onBackground
+                                          : AppColors.timeTextColor,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    if (picked == null) return;
+    final selectedDate = DateTime(picked.year, picked.month, picked.day);
+    _miniCalendarVisibleMonth = DateTime(selectedDate.year, selectedDate.month);
+    await _handleDateChange(selectedDate);
   }
 
   @override
@@ -715,17 +1065,31 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                 _buildTopBar(syncStatusAsync),
                 Expanded(
                   child: AppFadeSlideIn(
-                    child: _isLoading
-                        ? const Center(child: CircularProgressIndicator())
-                        : Stack(
-                            children: [
-                              _buildCalendarContent(),
-                              // Context menu overlay
-                              if (_contextMenuPosition != null &&
-                                  _contextMenuEvent != null)
-                                _buildContextMenuOverlay(),
-                            ],
+                    child: Stack(
+                      children: [
+                        _buildCalendarContent(),
+                        // Context menu overlay
+                        if (_contextMenuPosition != null &&
+                            _contextMenuEvent != null)
+                          _buildContextMenuOverlay(),
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: AnimatedOpacity(
+                              opacity: _isLoading ? 1 : 0,
+                              duration: _isLoading
+                                  ? Duration.zero
+                                  : const Duration(milliseconds: 320),
+                              curve: Curves.easeOutCubic,
+                              child: const ModernSplashScreen(
+                                embedded: true,
+                                animateIntro: false,
+                                showLoading: true,
+                              ),
+                            ),
                           ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -740,16 +1104,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     final isMobile = _isMobileLayout(context);
     final dateString = DateFormat('d MMM y').format(_currentDate);
     Future<void> handlePickDate() async {
-      final picked = await showDatePicker(
-        context: context,
-        initialDate: _currentDate,
-        firstDate: DateTime(2000),
-        lastDate: DateTime(2100),
-        helpText: 'Move to date',
-      );
-      if (picked == null) return;
-      final selectedDate = DateTime(picked.year, picked.month, picked.day);
-      await _handleDateChange(selectedDate);
+      await _showMobileCalendarPicker();
     }
 
     Future<void> handleSync() async {
@@ -917,7 +1272,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: AppColors.surface,
+                    color: AppColors.background,
                     border: Border(
                       bottom: BorderSide(color: AppColors.dividerColor),
                     ),
@@ -926,12 +1281,17 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                     children: [
                       SizedBox(
                         width: timeColumnWidth,
-                        child: Text(
-                          'All day',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: AppColors.timeTextColor,
-                            fontWeight: FontWeight.w500,
+                        child: Container(
+                          padding: const EdgeInsets.only(right: 8),
+                          alignment: Alignment.centerRight,
+                          child: Text(
+                            'All day',
+                            textAlign: TextAlign.right,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppColors.timeTextColor,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                         ),
                       ),
@@ -999,7 +1359,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                                                   style: const TextStyle(
                                                     color: _eventBlockTextColor,
                                                     fontSize: 12,
-                                                    fontWeight: FontWeight.w500,
+                                                    fontWeight: FontWeight.w600,
                                                   ),
                                                 ),
                                               ),
@@ -1139,7 +1499,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     return Container(
       height: 58,
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: AppColors.background,
         border: Border(bottom: BorderSide(color: AppColors.dividerColor)),
       ),
       child: Row(
@@ -1381,10 +1741,36 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                             color: AppColors.timeTextColor,
                           ),
                           Expanded(
-                            child: Text(
-                              monthLabel,
-                              textAlign: TextAlign.center,
-                              style: sidebarTitleStyle,
+                            child: AppPressFeedback(
+                              child: TextButton(
+                                onPressed: () async {
+                                  final selectedYear = await _showYearPicker(
+                                    initialYear: _miniCalendarVisibleMonth.year,
+                                  );
+                                  if (selectedYear == null || !mounted) return;
+                                  final targetDate =
+                                      _dateWithYearPreservingMonthDay(
+                                        _currentDate,
+                                        selectedYear,
+                                      );
+                                  setState(() {
+                                    _miniCalendarVisibleMonth = DateTime(
+                                      targetDate.year,
+                                      targetDate.month,
+                                    );
+                                  });
+                                  await _handleDateChange(targetDate);
+                                },
+                                style: TextButton.styleFrom(
+                                  padding: EdgeInsets.zero,
+                                  minimumSize: const Size(0, 32),
+                                ),
+                                child: Text(
+                                  '$monthLabel ${_miniCalendarVisibleMonth.year}',
+                                  textAlign: TextAlign.center,
+                                  style: sidebarTitleStyle,
+                                ),
+                              ),
                             ),
                           ),
                           IconButton(
@@ -2068,11 +2454,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   List<Widget> _buildEventWidgets(BoxConstraints constraints) {
     final widgets = <Widget>[];
 
-    // Build all-day event widgets (spanning full width at top)
-    for (final event in _allDayEvents) {
-      widgets.add(_buildAllDayEventWidget(event, constraints));
-    }
-
     for (final event in _timedEvents) {
       final isDraggingOriginal =
           _isDraggingEvent && _draggedEventId == event.id;
@@ -2100,86 +2481,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     }
 
     return widgets;
-  }
-
-  Widget _buildAllDayEventWidget(
-    CalendarEvent event,
-    BoxConstraints constraints,
-  ) {
-    final now = DateTime.now();
-    final isPastEvent =
-        event.endDateTime.isBefore(now) ||
-        event.endDateTime.isAtSameMomentAs(now);
-
-    // All-day events appear at the very top (position 0) and span the full day height
-    // We'll make them about 30 pixels tall, positioned at the top
-    return Positioned(
-      left: 2,
-      top: 0,
-      right: 2,
-      height: 30,
-      child: GestureDetector(
-        onTap: () {
-          _keyboardActiveEventId = event.id;
-        },
-        onDoubleTap: () {
-          _keyboardActiveEventId = event.id;
-          _showEditEventModal(event);
-        },
-        child: Opacity(
-          opacity: isPastEvent ? _pastEventOpacity : 1,
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: _eventBlockGradient(event.color),
-              border: Border(
-                left: BorderSide(
-                  color: _eventBlockBorderColor(event.color),
-                  width: 3,
-                ),
-              ),
-              borderRadius: BorderRadius.circular(2),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    event.title,
-                    style: const TextStyle(
-                      color: _eventBlockTextColor,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                // All-day indicator
-                Container(
-                  margin: const EdgeInsets.only(left: 4),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 4,
-                    vertical: 1,
-                  ),
-                  decoration: BoxDecoration(
-                    gradient: _eventBlockGradient(event.color),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                  child: const Text(
-                    'All day',
-                    style: TextStyle(
-                      color: _eventBlockTextColor,
-                      fontSize: 9,
-                      fontWeight: FontWeight.w400,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
   }
 
   Widget _buildEventWidget(
