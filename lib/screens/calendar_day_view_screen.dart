@@ -16,6 +16,7 @@ import 'settings_screen.dart';
 import '../widgets/context_menu.dart';
 import '../navigation/app_route_observer.dart';
 import '../widgets/app_animations.dart';
+import '../widgets/app_snackbar.dart';
 import '../widgets/modern_splash_screen.dart';
 
 class CalendarDayViewScreen extends ConsumerStatefulWidget {
@@ -146,6 +147,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   bool _syncLoopActive = false;
   bool _screenInitialized = false;
   ModalRoute<dynamic>? _subscribedRoute;
+  bool _isOfflineSnackBarVisible = false;
 
   // Mini calendar range-selection state
   bool _isMiniCalendarRangeSelecting = false;
@@ -181,9 +183,8 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
         _handleSyncStatusChanged(next);
         _updateSyncRotation(next);
         final status = next.valueOrNull;
-        if (status?.state == SyncState.error && mounted) {
-          final message = status?.error ?? 'Sync error';
-          _showCompactSnackBar(message);
+        if (status != null && mounted) {
+          _handleSyncStatusSnackBar(status);
         }
       },
     );
@@ -277,31 +278,59 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     _syncRotationController.value = 0;
   }
 
-  void _showCompactSnackBar(String message) {
+  void _showCompactSnackBar(
+    String message, {
+    Duration? duration,
+    AppSnackBarType? type,
+  }) {
     if (!mounted) return;
     final scaffoldContext = _scaffoldKey.currentContext;
     if (scaffoldContext == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        _showCompactSnackBar(message);
+        _showCompactSnackBar(message, duration: duration, type: type);
       });
       return;
     }
-    final messenger = ScaffoldMessenger.of(scaffoldContext);
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(
-      SnackBar(
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.only(left: 12, right: 12, bottom: 12),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        content: Text(
-          message,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          softWrap: false,
-        ),
-      ),
-    );
+    showAppSnackBar(scaffoldContext, message, duration: duration, type: type);
+  }
+
+  bool _isLikelyOfflineError(String message) {
+    final text = message.toLowerCase();
+    return text.contains('failed host lookup') ||
+        text.contains('socketexception') ||
+        text.contains('network is unreachable') ||
+        text.contains('name or service not known') ||
+        text.contains('no address associated with hostname') ||
+        text.contains('nodename nor servname provided');
+  }
+
+  void _handleSyncStatusSnackBar(SyncStatus status) {
+    if (status.state == SyncState.error) {
+      final message = status.error ?? 'Sync error';
+      if (_isLikelyOfflineError(message)) {
+        if (_isOfflineSnackBarVisible) return;
+        _isOfflineSnackBarVisible = true;
+        _showCompactSnackBar(
+          'No internet connection',
+          type: AppSnackBarType.offline,
+          duration: const Duration(days: 1),
+        );
+        return;
+      }
+      _isOfflineSnackBarVisible = false;
+      _showCompactSnackBar(message, type: AppSnackBarType.error);
+      return;
+    }
+
+    if (_isOfflineSnackBarVisible) {
+      _isOfflineSnackBarVisible = false;
+      _showCompactSnackBar(
+        'Back online',
+        type: AppSnackBarType.success,
+        duration: const Duration(seconds: 2),
+      );
+    }
   }
 
   bool _syncingFromState(AsyncValue<SyncStatus> syncState) {
@@ -1406,7 +1435,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                           )
                         : const Icon(Icons.account_circle, size: 32),
                     visualDensity: isMobile ? VisualDensity.compact : null,
-                    tooltip: 'Settings',
+                    tooltip: '',
                     onPressed: () {
                       Navigator.pushNamed(context, SettingsScreen.routeName);
                     },

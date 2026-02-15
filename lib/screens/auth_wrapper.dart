@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import '../services/google_calendar_service.dart';
+import '../widgets/app_snackbar.dart';
 import '../widgets/modern_splash_screen.dart';
 import 'calendar_day_view_screen.dart';
 import 'calendar_selection_screen.dart';
@@ -218,10 +219,10 @@ class _AuthWrapperState extends State<AuthWrapper> {
       _reconnectTimer?.cancel();
       _watchingReconnect = false;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Internet is back. Auto sync is now running.'),
-        ),
+      showAppSnackBar(
+        context,
+        'Internet is back. Auto sync is now running.',
+        type: AppSnackBarType.success,
       );
     });
   }

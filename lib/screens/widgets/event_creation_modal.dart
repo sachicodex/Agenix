@@ -7,6 +7,7 @@ import '../../services/google_calendar_service.dart';
 import '../../services/groq_service.dart';
 import '../../services/api_key_storage_service.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/app_snackbar.dart';
 import '../../widgets/form_fields.dart';
 import '../../widgets/date_time_field.dart';
 import '../../widgets/reminder_field.dart';
@@ -450,9 +451,11 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
+        showAppSnackBar(
           context,
-        ).showSnackBar(SnackBar(content: Text('Error saving event: $e')));
+          'Error saving event: $e',
+          type: AppSnackBarType.error,
+        );
       }
     }
   }
@@ -500,9 +503,11 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      showAppSnackBar(
         context,
-      ).showSnackBar(SnackBar(content: Text('Error deleting event: $e')));
+        'Error deleting event: $e',
+        type: AppSnackBarType.error,
+      );
     } finally {
       if (mounted) {
         setState(() {

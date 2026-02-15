@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../../models/calendar_event.dart';
 import '../../theme/app_colors.dart';
 import '../../providers/event_providers.dart';
+import '../../widgets/app_snackbar.dart';
 import '../../widgets/primary_action_button.dart';
 import 'event_creation_modal.dart';
 
@@ -52,9 +53,11 @@ class EventDetailsPopover extends ConsumerWidget {
         }
       } catch (e) {
         if (context.mounted) {
-          ScaffoldMessenger.of(
+          showAppSnackBar(
             context,
-          ).showSnackBar(SnackBar(content: Text('Error deleting event: $e')));
+            'Error deleting event: $e',
+            type: AppSnackBarType.error,
+          );
         }
       }
     }
@@ -333,9 +336,11 @@ class _EventEditModalState extends ConsumerState<EventEditModal> {
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
+        showAppSnackBar(
           context,
-        ).showSnackBar(SnackBar(content: Text('Error updating event: $e')));
+          'Error updating event: $e',
+          type: AppSnackBarType.error,
+        );
       }
     }
   }

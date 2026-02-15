@@ -121,18 +121,14 @@ class AppTheme {
         textStyle: AppTextStyles.bodyText1,
       ),
       snackBarTheme: SnackBarThemeData(
-        behavior: SnackBarBehavior.floating,
+        behavior: SnackBarBehavior.fixed,
         backgroundColor: AppColors.surface,
         contentTextStyle: AppTextStyles.bodyText1.copyWith(
           color: AppColors.onBackground,
         ),
+
         actionTextColor: AppColors.primary,
         elevation: 6,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadius.control),
-          side: const BorderSide(color: AppColors.borderColor),
-        ),
-        insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
       ),
       appBarTheme: AppBarTheme(
         backgroundColor: AppColors.surface,
