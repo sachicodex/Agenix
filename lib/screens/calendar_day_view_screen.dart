@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
@@ -36,7 +37,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   static const double _pastEventOpacity = 0.55;
   static const double _desktopTimeColumnWidth = 72.0;
   static const double _mobileTimeColumnWidth = 56.0;
-  static const Duration _touchLongPressDuration = Duration(milliseconds: 320);
+  static const Duration _touchLongPressDuration = Duration(milliseconds: 100);
   static const double _touchCancelDistance = 10.0;
   static const Duration _mobileDoubleTapWindow = Duration(milliseconds: 280);
   static const double _mobileDoubleTapDistance = 28.0;
@@ -581,6 +582,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
 
   void _handleSwipePointerDown(PointerDownEvent event) {
     if (!_isMobileLayout(context)) return;
+    _recoverFromStaleMobileInteractionState();
     _swipeStartGlobalPosition = event.position;
     _swipeStartTime = DateTime.now();
   }
@@ -709,6 +711,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && _isRouteVisible) {
+      unawaited(_refreshDefaultCalendarSelection());
       _syncService.incrementalSync();
       _syncService.pushLocalChanges();
       _refreshUserInfo();
@@ -718,13 +721,13 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   @override
   void didPush() {
     _isRouteVisible = true;
-    unawaited(_resumeSyncLoopIfNeeded());
+    unawaited(_onRouteBecameVisible());
   }
 
   @override
   void didPopNext() {
     _isRouteVisible = true;
-    unawaited(_resumeSyncLoopIfNeeded());
+    unawaited(_onRouteBecameVisible());
   }
 
   @override
@@ -746,6 +749,43 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       _selectedCalendarId = calendarId ?? 'primary';
     } catch (e) {
       _selectedCalendarId = 'primary';
+    }
+  }
+
+  Future<void> _onRouteBecameVisible() async {
+    await _refreshDefaultCalendarSelection();
+    await _resumeSyncLoopIfNeeded();
+    unawaited(_loadCalendarColors());
+    // Settings can still be finishing async storage writes as we return.
+    unawaited(
+      Future<void>.delayed(
+        const Duration(milliseconds: 350),
+        _refreshDefaultCalendarSelection,
+      ),
+    );
+  }
+
+  Future<void> _refreshDefaultCalendarSelection() async {
+    String resolvedCalendarId = 'primary';
+    try {
+      final calendarId = await GoogleCalendarService.instance.storage
+          .getDefaultCalendarId();
+      if (calendarId != null && calendarId.isNotEmpty) {
+        resolvedCalendarId = calendarId;
+      }
+    } catch (_) {}
+
+    if (!mounted) {
+      _selectedCalendarId = resolvedCalendarId;
+      return;
+    }
+
+    if (_selectedCalendarId != resolvedCalendarId) {
+      setState(() {
+        _selectedCalendarId = resolvedCalendarId;
+      });
+    } else {
+      _selectedCalendarId = resolvedCalendarId;
     }
   }
 
@@ -1436,8 +1476,14 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                         : const Icon(Icons.account_circle, size: 32),
                     visualDensity: isMobile ? VisualDensity.compact : null,
                     tooltip: '',
-                    onPressed: () {
-                      Navigator.pushNamed(context, SettingsScreen.routeName);
+                    onPressed: () async {
+                      await Navigator.pushNamed(
+                        context,
+                        SettingsScreen.routeName,
+                      );
+                      if (!mounted) return;
+                      await _refreshDefaultCalendarSelection();
+                      unawaited(_loadCalendarColors());
                     },
                   ),
                 ),
@@ -2681,6 +2727,28 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     return hsl.withLightness(lightness).toColor();
   }
 
+  void _updateResizeHoverState({
+    required String? eventId,
+    required bool? fromTop,
+  }) {
+    if (!mounted) return;
+    if (_resizeHoverEventId == eventId && _resizeHoverFromTop == fromTop) {
+      return;
+    }
+
+    // Avoid mutating hover state during MouseTracker device updates.
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_resizeHoverEventId == eventId && _resizeHoverFromTop == fromTop) {
+        return;
+      }
+      setState(() {
+        _resizeHoverEventId = eventId;
+        _resizeHoverFromTop = fromTop;
+      });
+    });
+  }
+
   List<Widget> _buildEventWidgets(BoxConstraints constraints) {
     final widgets = <Widget>[];
 
@@ -2807,25 +2875,14 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
         if (isPreview || _resizingEventId != null) return;
         final zone = resizeZoneForLocal(pointerEvent.localPosition);
         if (zone != null) {
-          if (_resizeHoverEventId != event.id || _resizeHoverFromTop != zone) {
-            setState(() {
-              _resizeHoverEventId = event.id;
-              _resizeHoverFromTop = zone;
-            });
-          }
+          _updateResizeHoverState(eventId: event.id, fromTop: zone);
         } else if (_resizeHoverEventId == event.id) {
-          setState(() {
-            _resizeHoverEventId = null;
-            _resizeHoverFromTop = null;
-          });
+          _updateResizeHoverState(eventId: null, fromTop: null);
         }
       },
       onExit: (_) {
         if (_resizeHoverEventId == event.id) {
-          setState(() {
-            _resizeHoverEventId = null;
-            _resizeHoverFromTop = null;
-          });
+          _updateResizeHoverState(eventId: null, fromTop: null);
         }
       },
       cursor: isResizeHoverHere
@@ -2836,6 +2893,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       child: Listener(
         behavior: HitTestBehavior.opaque,
         onPointerDown: (pointerEvent) {
+          _recoverFromStaleMobileInteractionState();
           if (isPreview || _eventActionsPopoverEventId != null) return;
           if (event.allDay) return;
           _keyboardActiveEventId = event.id;
@@ -3256,6 +3314,11 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   }
 
   void _handleGridPointerDownEvent(PointerDownEvent event) {
+    _recoverFromStaleMobileInteractionState();
+
+    // Pull latest default calendar before drag-create preview starts.
+    unawaited(_refreshDefaultCalendarSelection());
+
     final localPosition = event.localPosition;
     if (_contextMenuPosition != null ||
         _eventActionsPopoverEventId != null ||
@@ -3876,6 +3939,56 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     _resizeLongPressTimer?.cancel();
     _touchPendingResizeEventId = null;
     _resizeTouchDownGlobalPosition = null;
+  }
+
+  void _recoverFromStaleMobileInteractionState() {
+    if (!mounted || !_isMobileLayout(context)) return;
+
+    final hasStaleState =
+        _isDraggingEvent ||
+        _resizingEventId != null ||
+        _isDraggingToCreate ||
+        _isPointerDownOnEvent ||
+        _isPointerDownOnGrid ||
+        _pendingPointerEventId != null ||
+        _touchPendingEventId != null ||
+        _touchPendingResizeEventId != null ||
+        _eventLongPressArmed ||
+        _gridLongPressArmed ||
+        _gridDragStartTime != null ||
+        _gridDragEndTime != null;
+    if (!hasStaleState) return;
+
+    _eventLongPressTimer?.cancel();
+    _resizeLongPressTimer?.cancel();
+    _gridLongPressTimer?.cancel();
+
+    setState(() {
+      _clearDragState();
+      _resizingEventId = null;
+      _resizingFromTop = null;
+      _resizingEventOriginal = null;
+      _resizeHoverEventId = null;
+      _resizeHoverFromTop = null;
+      _resizeStartGlobalY = null;
+      _resizeAnchorStart = null;
+      _resizeAnchorEnd = null;
+      _isDraggingToCreate = false;
+      _isPointerDownOnEvent = false;
+      _isPointerDownOnGrid = false;
+      _pendingPointerEventId = null;
+      _pointerDownGlobalPosition = null;
+      _dragThresholdExceeded = false;
+      _gridLongPressArmed = false;
+      _gridPointerDownPosition = null;
+      _lastGridPointerPosition = null;
+      _gridDragStartTime = null;
+      _gridDragEndTime = null;
+      _pendingCreateStartTime = null;
+      _pendingCreateEndTime = null;
+    });
+    _clearEventTouchPressState();
+    _clearPendingResizeTouch();
   }
 
   Widget _buildTodayOverviewSection() {
