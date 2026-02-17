@@ -93,6 +93,31 @@ class NotificationService {
     );
   }
 
+  Future<void> showPushNotification({
+    required int notificationId,
+    required String title,
+    required String body,
+    String? payload,
+  }) async {
+    await initialize();
+    await _plugin.show(
+      id: notificationId,
+      title: title,
+      body: body,
+      notificationDetails: const NotificationDetails(
+        android: AndroidNotificationDetails(
+          NotificationChannels.pushId,
+          NotificationChannels.pushName,
+          channelDescription: NotificationChannels.pushDescription,
+          importance: Importance.high,
+          priority: Priority.high,
+        ),
+        windows: WindowsNotificationDetails(),
+      ),
+      payload: payload,
+    );
+  }
+
   Future<void> cancel(int id) {
     _windowsTimers.remove(id)?.cancel();
     return _plugin.cancel(id: id);
@@ -285,6 +310,15 @@ class NotificationService {
         NotificationChannels.remindersId,
         NotificationChannels.remindersName,
         description: NotificationChannels.remindersDescription,
+        importance: Importance.high,
+      ),
+    );
+
+    await androidImplementation.createNotificationChannel(
+      const AndroidNotificationChannel(
+        NotificationChannels.pushId,
+        NotificationChannels.pushName,
+        description: NotificationChannels.pushDescription,
         importance: Importance.high,
       ),
     );

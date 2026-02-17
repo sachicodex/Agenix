@@ -1,19 +1,22 @@
 import 'dart:io';
 
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
-import 'screens/auth_wrapper.dart';
-import 'screens/create_event_screen.dart';
-import 'screens/sync_feedback_screen.dart';
-import 'screens/settings_screen.dart';
-import 'screens/calendar_day_view_screen.dart';
+import 'notifications/firebase_push_service.dart';
 import 'navigation/app_route_observer.dart';
-import 'theme/app_theme.dart';
-import 'services/google_calendar_service.dart';
 import 'data/local/local_event_store.dart';
 import 'providers/notification_providers.dart';
+import 'screens/auth_wrapper.dart';
+import 'screens/calendar_day_view_screen.dart';
+import 'screens/create_event_screen.dart';
+import 'screens/settings_screen.dart';
+import 'screens/sync_feedback_screen.dart';
+import 'services/google_calendar_service.dart';
+import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -21,6 +24,11 @@ Future<void> main() async {
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
+  }
+
+  if (isFirebaseMessagingSupportedPlatform()) {
+    await Firebase.initializeApp();
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
   }
 
   await LocalEventStore.instance.initialize();
@@ -54,6 +62,12 @@ class _MyAppState extends ConsumerState<MyApp> {
     super.initState();
     Future.microtask(() async {
       await ref.read(notificationRescheduleCoordinatorProvider).start();
+      try {
+        await ref.read(firebasePushServiceProvider).initialize();
+      } catch (e, st) {
+        debugPrint('FCM initialize error: $e');
+        debugPrint('$st');
+      }
     });
   }
 

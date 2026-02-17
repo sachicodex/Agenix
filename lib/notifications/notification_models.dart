@@ -34,4 +34,8 @@ class NotificationChannels {
   static const String remindersName = 'Event reminders';
   static const String remindersDescription =
       'High-priority reminders before events.';
+
+  static const String pushId = 'push';
+  static const String pushName = 'Push notifications';
+  static const String pushDescription = 'Firebase Cloud Messaging alerts.';
 }

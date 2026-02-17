@@ -1,8 +1,12 @@
+import 'dart:async';
+
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../notifications/agenda_builder.dart';
+import '../notifications/firebase_push_service.dart';
 import '../notifications/local_event_notification_source.dart';
 import '../notifications/local_notification_id_store.dart';
 import '../notifications/notification_event_source.dart';
@@ -19,6 +23,21 @@ final flutterLocalNotificationsPluginProvider =
 
 final notificationServiceProvider = Provider<NotificationService>((ref) {
   return NotificationService(ref.read(flutterLocalNotificationsPluginProvider));
+});
+
+final firebaseMessagingProvider = Provider<FirebaseMessaging>((ref) {
+  return FirebaseMessaging.instance;
+});
+
+final firebasePushServiceProvider = Provider<FirebasePushService>((ref) {
+  final service = FirebasePushService(
+    messaging: ref.read(firebaseMessagingProvider),
+    notificationService: ref.read(notificationServiceProvider),
+  );
+  ref.onDispose(() {
+    unawaited(service.dispose());
+  });
+  return service;
 });
 
 final notificationSettingsRepositoryProvider =
@@ -38,7 +57,9 @@ final localNotificationIdStoreProvider = Provider<LocalNotificationIdStore>((
   return LocalNotificationIdStore(SharedPreferences.getInstance);
 });
 
-final notificationEventSourceProvider = Provider<NotificationEventSource>((ref) {
+final notificationEventSourceProvider = Provider<NotificationEventSource>((
+  ref,
+) {
   return LocalEventNotificationSource(ref.read(localEventStoreProvider));
 });
 
