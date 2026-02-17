@@ -46,12 +46,12 @@ Agenix helps you manage Google Calendar faster:
 
 | Icon | Feature | What you get |
 |---|---|---|
-| :calendar: | Google Calendar integration | Sign in, read calendars, create/update/delete events, and sync. |
-| :spiral_calendar_pad: | Day-view planner | Drag, resize, and create events directly on the timeline. |
-| :floppy_disk: | Offline-first behavior | Events are saved locally first, then synced in background. |
-| :bust_in_silhouette: | Account + defaults | Keep your default calendar and account profile in settings. |
-| :bell: | Smart reminders | Daily agenda (6:00 AM) + event reminder scheduling. |
-| :sparkles: | AI writing help | Optimize event title/description using Groq API key in Settings. |
+| &#127760; | Google Calendar integration | Sign in, read calendars, create/update/delete events, and sync. |
+| &#128198; | Day-view planner | Drag, resize, and create events directly on the timeline. |
+| &#128190; | Offline-first behavior | Events are saved locally first, then synced in background. |
+| &#128100; | Account + defaults | Keep your default calendar and account profile in settings. |
+| &#128276; | Smart reminders | Daily agenda (6:00 AM) + event reminder scheduling. |
+| &#10024; | AI writing help | Optimize event title/description using Groq API key in Settings. |
 
 ## Mobile Gestures (Day View)
 
