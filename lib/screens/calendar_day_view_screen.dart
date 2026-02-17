@@ -20,6 +20,19 @@ import '../widgets/app_animations.dart';
 import '../widgets/app_snackbar.dart';
 import '../widgets/modern_splash_screen.dart';
 
+class _NoStretchScrollBehavior extends MaterialScrollBehavior {
+  const _NoStretchScrollBehavior();
+
+  @override
+  Widget buildOverscrollIndicator(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) {
+    return child;
+  }
+}
+
 class CalendarDayViewScreen extends ConsumerStatefulWidget {
   final VoidCallback? onSignOut;
   final VoidCallback? onInitialReady;
@@ -37,13 +50,19 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   static const double _pastEventOpacity = 0.55;
   static const double _desktopTimeColumnWidth = 72.0;
   static const double _mobileTimeColumnWidth = 56.0;
-  static const Duration _touchLongPressDuration = Duration(milliseconds: 100);
+  static const Duration _touchLongPressDuration = Duration(milliseconds: 280);
   static const double _touchCancelDistance = 10.0;
+  static const double _touchHoldCancelDistance = 20.0;
+  static const bool _requireTouchHoldForMoveOnMobile = true;
+  static const bool _requireTouchHoldForGridCreateOnMobile = true;
+  static const bool _requireTouchHoldForResizeOnMobile = true;
   static const Duration _mobileDoubleTapWindow = Duration(milliseconds: 280);
   static const double _mobileDoubleTapDistance = 28.0;
   static const Duration _desktopDoubleClickWindow = Duration(milliseconds: 260);
   static const double _desktopDoubleClickDistance = 18.0;
   static const double _mobileMinEventInteractionHeight = 52.0;
+  static const double _mobileResizeHandleHeight = 14.0;
+  static const double _mobileResizeHandleWidth = 28.0;
   static const double _horizontalSwipeMinDistance = 56.0;
   static const double _horizontalSwipeDominanceRatio = 1.2;
   static const int _horizontalSwipeMaxDurationMs = 700;
@@ -139,6 +158,14 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   DateTime? _lastDesktopClickTime;
   Offset? _lastDesktopClickPosition;
   Timer? _resizeLongPressTimer;
+  Timer? _resizeSyncDebounceTimer;
+  Timer? _dragSyncDebounceTimer;
+  Timer? _mobileInteractionWatchdogTimer;
+  int _mobileWatchdogDeferralCount = 0;
+  bool _isResizeCommitInFlight = false;
+  bool _isDragCommitInFlight = false;
+  CalendarEvent? _queuedMobileDragEvent;
+  CalendarEvent? _queuedMobileDragOriginal;
   String? _touchPendingResizeEventId;
   Offset? _resizeTouchDownGlobalPosition;
   Timer? _gridLongPressTimer;
@@ -240,6 +267,9 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     }
     _eventLongPressTimer?.cancel();
     _resizeLongPressTimer?.cancel();
+    _resizeSyncDebounceTimer?.cancel();
+    _dragSyncDebounceTimer?.cancel();
+    _mobileInteractionWatchdogTimer?.cancel();
     _gridLongPressTimer?.cancel();
     super.dispose();
   }
@@ -467,11 +497,23 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       }
       if (!mounted) return;
 
-      setState(() {
-        _updateEventLists();
-        _isLoading = false;
-        _hasLoadedEventsOnce = true;
-      });
+      void applyStreamUpdate() {
+        if (!mounted) return;
+        setState(() {
+          _updateEventLists();
+          _isLoading = false;
+          _hasLoadedEventsOnce = true;
+        });
+      }
+
+      if (SchedulerBinding.instance.schedulerPhase ==
+          SchedulerPhase.persistentCallbacks) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          applyStreamUpdate();
+        });
+      } else {
+        applyStreamUpdate();
+      }
       if (!_didReportInitialReady) {
         _didReportInitialReady = true;
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -582,7 +624,19 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
 
   void _handleSwipePointerDown(PointerDownEvent event) {
     if (!_isMobileLayout(context)) return;
-    _recoverFromStaleMobileInteractionState();
+    // Do not eagerly recover here. This parent listener also receives the same
+    // down event as child event/grid listeners, and eager recovery can clear
+    // state initialized by the child in the same pointer sequence.
+    if (!_isPointerDownOnEvent &&
+        !_isPointerDownOnGrid &&
+        !_isDraggingEvent &&
+        !_isDraggingToCreate &&
+        _resizingEventId == null &&
+        _pendingPointerEventId == null &&
+        _touchPendingEventId == null &&
+        _touchPendingResizeEventId == null) {
+      _recoverFromStaleMobileInteractionState();
+    }
     _swipeStartGlobalPosition = event.position;
     _swipeStartTime = DateTime.now();
   }
@@ -842,9 +896,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
         final calendarId = cal['id'] as String;
         final calendarColor = cal['color'] as int;
         remoteColors[calendarId] = calendarColor;
-        debugPrint(
-          'Loaded color for calendar ${cal['name']}: ${calendarColor.toRadixString(16)}',
-        );
       }
       if (remoteColors.isNotEmpty) {
         if (mounted) {
@@ -1274,71 +1325,76 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
         statusBarIconBrightness: Brightness.light,
         statusBarBrightness: Brightness.dark,
       ),
-      child: KeyboardListener(
-        focusNode: _keyboardListenerFocusNode,
-        onKeyEvent: _keyboardShortcutsEnabled ? _handleKeyboardShortcut : null,
-        child: Stack(
-          children: [
-            Scaffold(
-              key: _scaffoldKey,
-              backgroundColor: AppColors.background,
-              floatingActionButton: SizedBox(
-                width: 55,
-                height: 55,
-                child: FloatingActionButton(
-                  backgroundColor: AppColors.primary,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(15),
-                  ),
-                  onPressed: () {
-                    Navigator.pushNamed(context, CreateEventScreen.routeName);
-                  },
-                  child: const Icon(
-                    Icons.add_rounded,
-                    color: AppColors.onPrimary,
-                    size: 30,
+      child: ScrollConfiguration(
+        behavior: const _NoStretchScrollBehavior(),
+        child: KeyboardListener(
+          focusNode: _keyboardListenerFocusNode,
+          onKeyEvent: _keyboardShortcutsEnabled
+              ? _handleKeyboardShortcut
+              : null,
+          child: Stack(
+            children: [
+              Scaffold(
+                key: _scaffoldKey,
+                backgroundColor: AppColors.background,
+                floatingActionButton: SizedBox(
+                  width: 55,
+                  height: 55,
+                  child: FloatingActionButton(
+                    backgroundColor: AppColors.primary,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    onPressed: () {
+                      Navigator.pushNamed(context, CreateEventScreen.routeName);
+                    },
+                    child: const Icon(
+                      Icons.add_rounded,
+                      color: AppColors.onPrimary,
+                      size: 30,
+                    ),
                   ),
                 ),
-              ),
-              body: SafeArea(
-                child: Column(
-                  children: [
-                    _buildTopBar(),
-                    Expanded(
-                      child: AppFadeSlideIn(
-                        child: Stack(
-                          children: [
-                            RepaintBoundary(child: _buildCalendarContent()),
-                            // Context menu overlay
-                            if (_contextMenuPosition != null &&
-                                _contextMenuEvent != null)
-                              _buildContextMenuOverlay(),
-                          ],
+                body: SafeArea(
+                  child: Column(
+                    children: [
+                      _buildTopBar(),
+                      Expanded(
+                        child: AppFadeSlideIn(
+                          child: Stack(
+                            children: [
+                              RepaintBoundary(child: _buildCalendarContent()),
+                              // Context menu overlay
+                              if (_contextMenuPosition != null &&
+                                  _contextMenuEvent != null)
+                                _buildContextMenuOverlay(),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            Positioned.fill(
-              child: IgnorePointer(
-                child: AnimatedOpacity(
-                  opacity: _isLoading ? 1 : 0,
-                  duration: _isLoading
-                      ? Duration.zero
-                      : const Duration(milliseconds: 320),
-                  curve: Curves.easeOutCubic,
-                  child: const ModernSplashScreen(
-                    embedded: true,
-                    animateIntro: false,
-                    showLoading: true,
+                    ],
                   ),
                 ),
               ),
-            ),
-          ],
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: AnimatedOpacity(
+                    opacity: _isLoading ? 1 : 0,
+                    duration: _isLoading
+                        ? Duration.zero
+                        : const Duration(milliseconds: 320),
+                    curve: Curves.easeOutCubic,
+                    child: const ModernSplashScreen(
+                      embedded: true,
+                      animateIntro: false,
+                      showLoading: true,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1529,11 +1585,17 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
           onPointerDown: _handleSwipePointerDown,
           onPointerUp: (event) {
             _handleSwipePointerUp(event);
-            _handleGlobalPointerUp(event);
+            scheduleMicrotask(() {
+              if (!mounted) return;
+              _handleGlobalPointerUp(event);
+            });
           },
           onPointerCancel: (_) {
             _resetSwipeTracking();
-            _handleGlobalPointerCancel();
+            scheduleMicrotask(() {
+              if (!mounted) return;
+              _handleGlobalPointerCancel();
+            });
           },
           child: Column(
             children: [
@@ -2826,6 +2888,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       height: interactionHeight,
       child: _buildEventCard(
         event,
+        cardWidth: width - 4,
         cardHeight: interactionHeight,
         visualHeight: visualHeight,
         visualTopInset: visualTopInset,
@@ -2837,13 +2900,15 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
 
   Widget _buildEventCard(
     CalendarEvent event, {
+    required double cardWidth,
     required double cardHeight,
     required double visualHeight,
     required double visualTopInset,
     bool isPreview = false,
     bool isDraggingOriginal = false,
   }) {
-    final edgeHitHeight = _isMobileLayout(context) ? 24.0 : 14.0;
+    final isMobile = _isMobileLayout(context);
+    final edgeHitHeight = isMobile ? _mobileResizeHandleHeight : 14.0;
     final eventDurationMinutes = event.endDateTime
         .difference(event.startDateTime)
         .inMinutes;
@@ -2862,6 +2927,18 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     bool? resizeZoneForLocal(Offset localPosition) {
       final visualBottom = visualTopInset + visualHeight;
       final isBottom = localPosition.dy >= (visualBottom - edgeHitHeight);
+      if (!isBottom) {
+        return null;
+      }
+      if (isMobile && !_requireTouchHoldForResizeOnMobile) {
+        // Mobile resize affordance is a bottom-right handle to avoid
+        // accidental resize when user intends to tap/double-tap/drag an event.
+        final isRightHandle =
+            localPosition.dx >= (cardWidth - _mobileResizeHandleWidth);
+        if (!isRightHandle) {
+          return null;
+        }
+      }
       // Top-edge resize is intentionally disabled.
       if (isBottom) return false;
       return null;
@@ -2902,7 +2979,16 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
           final isBottomResize = zone == false;
 
           if (isBottomResize) {
+            if (pointerEvent.kind == PointerDeviceKind.touch &&
+                _isMobileLayout(context) &&
+                _isResizeCommitInFlight) {
+              _isPointerDownOnEvent = false;
+              _clearPendingResizeTouch();
+              return;
+            }
+
             _isPointerDownOnEvent = true;
+            _armMobileInteractionWatchdog();
             _pendingPointerEventId = null;
             _pointerDownGlobalPosition = null;
             _dragThresholdExceeded = false;
@@ -2911,7 +2997,9 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
             _draggedEventOriginal = null;
             _clearEventTouchPressState();
 
-            if (pointerEvent.kind == PointerDeviceKind.touch) {
+            if (pointerEvent.kind == PointerDeviceKind.touch &&
+                _isMobileLayout(context) &&
+                _requireTouchHoldForResizeOnMobile) {
               _clearPendingResizeTouch();
               _touchPendingResizeEventId = event.id;
               _resizeTouchDownGlobalPosition = pointerEvent.position;
@@ -2932,6 +3020,9 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
             }
 
             _startEventResizeInteraction(event, pointerEvent.position.dy);
+            if (pointerEvent.kind == PointerDeviceKind.touch) {
+              HapticFeedback.selectionClick();
+            }
             return;
           }
 
@@ -2942,18 +3033,25 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
           }
 
           _isPointerDownOnEvent = true;
+          _armMobileInteractionWatchdog();
           _touchPendingEventId = event.id;
-          _eventLongPressArmed = false;
+          final requiresHoldForMove =
+              pointerEvent.kind == PointerDeviceKind.touch &&
+              _isMobileLayout(context) &&
+              _requireTouchHoldForMoveOnMobile;
+          _eventLongPressArmed = !requiresHoldForMove;
           _eventLongPressTimer?.cancel();
-          _eventLongPressTimer = Timer(_touchLongPressDuration, () {
-            if (!mounted) return;
-            if (_touchPendingEventId != event.id) return;
-            if (_isDraggingEvent) return;
-            _eventLongPressArmed = true;
-            if (pointerEvent.kind == PointerDeviceKind.touch) {
+          if (requiresHoldForMove) {
+            _eventLongPressTimer = Timer(_touchLongPressDuration, () {
+              if (!mounted) return;
+              if (_touchPendingEventId != event.id) return;
+              if (_isDraggingEvent) return;
+              _eventLongPressArmed = true;
               HapticFeedback.selectionClick();
-            }
-          });
+            });
+          } else if (pointerEvent.kind == PointerDeviceKind.touch) {
+            HapticFeedback.selectionClick();
+          }
 
           _pendingPointerEventId = event.id;
           _pointerDownGlobalPosition = pointerEvent.position;
@@ -2971,7 +3069,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
             final start = _resizeTouchDownGlobalPosition;
             if (start != null &&
                 (pointerEvent.position - start).distance >
-                    _touchCancelDistance) {
+                    _touchHoldCancelDistance) {
               _clearPendingResizeTouch();
               _isPointerDownOnEvent = false;
             }
@@ -3015,6 +3113,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
               _isDraggingEvent = true;
               _dragPreviewEvent = event;
             });
+            _armMobileInteractionWatchdog();
           }
 
           if (_draggedEventId == event.id) {
@@ -3340,21 +3439,37 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       _gridDragStartTime = null;
       _gridDragEndTime = null;
     });
+    _armMobileInteractionWatchdog();
 
-    _gridLongPressTimer = Timer(_touchLongPressDuration, () {
-      if (!mounted || !_isPointerDownOnGrid) return;
-      final anchor = _lastGridPointerPosition ?? _gridPointerDownPosition;
-      if (anchor == null) return;
-      setState(() {
-        _gridLongPressArmed = true;
-        _isDraggingToCreate = true;
-        _gridDragStartTime = _timeFromPosition(anchor);
-        _gridDragEndTime = _gridDragStartTime;
-      });
-      if (isTouch) {
+    if (_requireTouchHoldForGridCreateOnMobile &&
+        isTouch &&
+        _isMobileLayout(context)) {
+      _gridLongPressTimer = Timer(_touchLongPressDuration, () {
+        if (!mounted || !_isPointerDownOnGrid) return;
+        final anchor = _lastGridPointerPosition ?? _gridPointerDownPosition;
+        if (anchor == null) return;
+        setState(() {
+          _gridLongPressArmed = true;
+          _isDraggingToCreate = true;
+          _gridDragStartTime = _timeFromPosition(anchor);
+          _gridDragEndTime = _gridDragStartTime;
+        });
         HapticFeedback.selectionClick();
-      }
+      });
+      return;
+    }
+
+    final anchor = _lastGridPointerPosition ?? _gridPointerDownPosition;
+    if (anchor == null) return;
+    setState(() {
+      _gridLongPressArmed = true;
+      _isDraggingToCreate = true;
+      _gridDragStartTime = _timeFromPosition(anchor);
+      _gridDragEndTime = _gridDragStartTime;
     });
+    if (isTouch) {
+      HapticFeedback.selectionClick();
+    }
   }
 
   void _handleGridPointerMove(PointerMoveEvent event) {
@@ -3367,7 +3482,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
 
     final distance = (localPosition - start).distance;
     if (!_gridLongPressArmed) {
-      if (distance > _touchCancelDistance) {
+      if (distance > _touchHoldCancelDistance) {
         _handleGridPointerCancel();
       }
       return;
@@ -3429,6 +3544,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       _gridPointerDownPosition = null;
       _lastGridPointerPosition = null;
     });
+    _clearMobileInteractionWatchdog();
   }
 
   void _handleGridPointerCancel() {
@@ -3444,6 +3560,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       _pendingCreateStartTime = null;
       _pendingCreateEndTime = null;
     });
+    _clearMobileInteractionWatchdog();
   }
 
   void _handleGridDragEnd() {
@@ -3496,6 +3613,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     _draggedEventOriginal = null;
     _isDraggingEvent = false;
     _dragPreviewEvent = null;
+    _clearMobileInteractionWatchdog();
   }
 
   void _finalizeEventDrag() async {
@@ -3523,6 +3641,15 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       _clearDragState();
     });
 
+    final isMobile = _isMobileLayout(context);
+    if (isMobile) {
+      _enqueueMobileDragCommit(
+        updatedEvent: updatedEvent,
+        originalEvent: originalEvent,
+      );
+      return;
+    }
+
     try {
       await _repository.updateEvent(updatedEvent);
       unawaited(
@@ -3539,6 +3666,63 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
         _updateEventLists();
       });
     }
+  }
+
+  void _enqueueMobileDragCommit({
+    required CalendarEvent updatedEvent,
+    required CalendarEvent originalEvent,
+  }) {
+    _queuedMobileDragEvent = updatedEvent;
+    _queuedMobileDragOriginal = originalEvent;
+    if (_isDragCommitInFlight) {
+      return;
+    }
+    unawaited(_drainMobileDragCommitQueue());
+  }
+
+  Future<void> _drainMobileDragCommitQueue() async {
+    if (_isDragCommitInFlight) {
+      return;
+    }
+    _isDragCommitInFlight = true;
+    try {
+      while (_queuedMobileDragEvent != null) {
+        final event = _queuedMobileDragEvent!;
+        final original = _queuedMobileDragOriginal!;
+        _queuedMobileDragEvent = null;
+        _queuedMobileDragOriginal = null;
+
+        try {
+          await _repository.updateEvent(event);
+        } catch (e) {
+          debugPrint('Error updating event (mobile drag queue): $e');
+          final hasNewerQueuedForSameEvent =
+              _queuedMobileDragEvent != null &&
+              _queuedMobileDragEvent!.id == event.id;
+          if (!hasNewerQueuedForSameEvent && mounted) {
+            setState(() {
+              _clearOptimisticEventOverride(original.id);
+              _eventsMap[original.id] = original;
+              _updateEventLists();
+            });
+          }
+        }
+      }
+    } finally {
+      _isDragCommitInFlight = false;
+      _scheduleMobileDragSyncPush();
+    }
+  }
+
+  void _scheduleMobileDragSyncPush() {
+    _dragSyncDebounceTimer?.cancel();
+    _dragSyncDebounceTimer = Timer(const Duration(milliseconds: 700), () {
+      unawaited(
+        _syncService.pushLocalChanges().catchError((e) {
+          debugPrint('Background sync failed after mobile drag update: $e');
+        }),
+      );
+    });
   }
 
   void _handleEventResizeByDelta(
@@ -3583,14 +3767,14 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   }
 
   void _finalizeEventResize() async {
-    if (_resizingEventId == null) return;
-
-    final event = _eventsMap[_resizingEventId];
-    if (event == null) return;
-
-    // Optimistic update
     final resizingEventId = _resizingEventId;
     final resizingOriginal = _resizingEventOriginal;
+    if (resizingEventId == null) return;
+    final event = _eventsMap[resizingEventId];
+    final isMobile = _isMobileLayout(context);
+
+    // Always clear transient resize state first, even if the backing event
+    // vanished due to a concurrent refresh.
     setState(() {
       _resizingEventId = null;
       _resizingFromTop = null;
@@ -3601,27 +3785,53 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       _resizeAnchorStart = null;
       _resizeAnchorEnd = null;
     });
+    _clearPendingResizeTouch();
+    _clearMobileInteractionWatchdog();
+    if (event == null) {
+      return;
+    }
 
     try {
+      if (isMobile && _isResizeCommitInFlight) {
+        return;
+      }
+      _isResizeCommitInFlight = true;
       _pinOptimisticEventOverride(event);
       await _repository.updateEvent(event);
-      unawaited(
-        _syncService.pushLocalChanges().catchError((e) {
-          debugPrint('Background sync failed after resize update: $e');
-        }),
-      );
+      if (isMobile) {
+        _scheduleMobileResizeSyncPush();
+      } else {
+        unawaited(
+          _syncService.pushLocalChanges().catchError((e) {
+            debugPrint('Background sync failed after resize update: $e');
+          }),
+        );
+      }
     } catch (e) {
       debugPrint('Error resizing event: $e');
       // Revert on error
       if (resizingOriginal != null) {
         if (!mounted) return;
         setState(() {
-          _clearOptimisticEventOverride(resizingEventId!);
+          _clearOptimisticEventOverride(resizingEventId);
           _eventsMap[resizingEventId] = resizingOriginal;
           _updateEventLists();
         });
       }
+    } finally {
+      _isResizeCommitInFlight = false;
     }
+  }
+
+  void _scheduleMobileResizeSyncPush() {
+    _resizeSyncDebounceTimer?.cancel();
+    _resizeSyncDebounceTimer = Timer(const Duration(milliseconds: 700), () {
+      unawaited(
+        _syncService.pushLocalChanges().catchError((e) {
+          debugPrint('Background sync failed after mobile resize update: $e');
+        }),
+      );
+    });
   }
 
   Future<void> _showCreateEventModal({
@@ -3989,6 +4199,51 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     });
     _clearEventTouchPressState();
     _clearPendingResizeTouch();
+    _clearMobileInteractionWatchdog();
+  }
+
+  void _armMobileInteractionWatchdog({bool preserveDeferral = false}) {
+    if (!mounted || !_isMobileLayout(context)) return;
+    if (!preserveDeferral) {
+      _mobileWatchdogDeferralCount = 0;
+    }
+    _mobileInteractionWatchdogTimer?.cancel();
+    _mobileInteractionWatchdogTimer = Timer(const Duration(seconds: 2), () {
+      if (!mounted || !_isMobileLayout(context)) return;
+
+      final hasTransientState =
+          _isDraggingEvent ||
+          _resizingEventId != null ||
+          _isDraggingToCreate ||
+          _pendingPointerEventId != null ||
+          _touchPendingEventId != null ||
+          _touchPendingResizeEventId != null ||
+          _gridDragStartTime != null ||
+          _gridDragEndTime != null;
+      if (!hasTransientState) {
+        return;
+      }
+
+      // If user still has active touch down, defer recovery.
+      if (_isPointerDownOnEvent || _isPointerDownOnGrid) {
+        if (_mobileWatchdogDeferralCount < 2) {
+          _mobileWatchdogDeferralCount++;
+          _armMobileInteractionWatchdog(preserveDeferral: true);
+          return;
+        }
+        debugPrint('Force recovering stale touch-down state.');
+        _recoverFromStaleMobileInteractionState();
+        return;
+      }
+
+      debugPrint('Recovered stale mobile interaction state.');
+      _recoverFromStaleMobileInteractionState();
+    });
+  }
+
+  void _clearMobileInteractionWatchdog() {
+    _mobileInteractionWatchdogTimer?.cancel();
+    _mobileWatchdogDeferralCount = 0;
   }
 
   Widget _buildTodayOverviewSection() {
@@ -4240,6 +4495,9 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   }
 
   void _startEventResizeInteraction(CalendarEvent event, double startGlobalY) {
+    if (_isMobileLayout(context) && _isResizeCommitInFlight) {
+      return;
+    }
     setState(() {
       _resizingEventId = event.id;
       _resizingFromTop = false;
@@ -4250,6 +4508,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       _resizeAnchorStart = event.startDateTime;
       _resizeAnchorEnd = event.endDateTime;
     });
+    _armMobileInteractionWatchdog();
   }
 
   void _cancelPendingEventTouchInteraction(String eventId) {

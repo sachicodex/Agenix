@@ -25,6 +25,7 @@ import '../data/local/local_event_store.dart';
 /// For production you should persist refresh credentials securely (e.g., in
 /// flutter_secure_storage) and handle token refresh logic.
 class GoogleCalendarService {
+  static const bool _verboseEventFetchLogs = false;
   String? _desktopUserEmail;
   String? _desktopUserPhotoUrl;
 
@@ -684,9 +685,11 @@ class GoogleCalendarService {
     // End should be start of next day in UTC to include all events of the selected day
     final timeMax = DateTime(end.year, end.month, end.day, 23, 59, 59).toUtc();
 
-    debugPrint(
-      'Fetching events: timeMin=$timeMin (${start.toLocal()}), timeMax=$timeMax (${end.toLocal()}), timezone=$localTimeZone',
-    );
+    if (_verboseEventFetchLogs) {
+      debugPrint(
+        'Fetching events: timeMin=$timeMin (${start.toLocal()}), timeMax=$timeMax (${end.toLocal()}), timezone=$localTimeZone',
+      );
+    }
 
     try {
       final allParsedEvents = <Map<String, dynamic>>[];
@@ -719,9 +722,11 @@ class GoogleCalendarService {
         }
 
         final items = events.items ?? [];
-        debugPrint(
-          'Page returned ${items.length} events (pageToken: ${currentPageToken ?? 'none'})',
-        );
+        if (_verboseEventFetchLogs) {
+          debugPrint(
+            'Page returned ${items.length} events (pageToken: ${currentPageToken ?? 'none'})',
+          );
+        }
 
         // Parse all events from this page
         final parsedEvents = items
@@ -747,14 +752,16 @@ class GoogleCalendarService {
         // Check if there are more pages
         currentPageToken = events.nextPageToken;
 
-        if (currentPageToken != null) {
+        if (_verboseEventFetchLogs && currentPageToken != null) {
           debugPrint('More pages available, fetching next page...');
         }
       } while (currentPageToken != null);
 
-      debugPrint(
-        'Total events fetched after pagination: ${allParsedEvents.length}',
-      );
+      if (_verboseEventFetchLogs) {
+        debugPrint(
+          'Total events fetched after pagination: ${allParsedEvents.length}',
+        );
+      }
 
       return {
         'events': allParsedEvents,
