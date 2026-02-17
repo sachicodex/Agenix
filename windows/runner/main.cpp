@@ -5,6 +5,25 @@
 #include "flutter_window.h"
 #include "utils.h"
 
+namespace {
+void SetAppUserModelIdIfAvailable() {
+  HMODULE shell32 = ::GetModuleHandleW(L"shell32.dll");
+  if (!shell32) {
+    shell32 = ::LoadLibraryW(L"shell32.dll");
+    if (!shell32) {
+      return;
+    }
+  }
+
+  using SetAppIdFn = HRESULT(WINAPI*)(PCWSTR);
+  auto set_app_id = reinterpret_cast<SetAppIdFn>(
+      ::GetProcAddress(shell32, "SetCurrentProcessExplicitAppUserModelID"));
+  if (set_app_id) {
+    set_app_id(L"com.sachicodex.agenix");
+  }
+}
+}  // namespace
+
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
                       _In_ wchar_t *command_line, _In_ int show_command) {
   // Attach to console when present (e.g., 'flutter run') or create a
@@ -16,6 +35,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // Initialize COM, so that it is available for use in the library and/or
   // plugins.
   ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+  SetAppUserModelIdIfAvailable();
 
   flutter::DartProject project(L"data");
 

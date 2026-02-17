@@ -13,6 +13,7 @@ import 'navigation/app_route_observer.dart';
 import 'theme/app_theme.dart';
 import 'services/google_calendar_service.dart';
 import 'data/local/local_event_store.dart';
+import 'providers/notification_providers.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -40,8 +41,21 @@ Future<void> main() async {
   runApp(const ProviderScope(child: MyApp()));
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends ConsumerStatefulWidget {
   const MyApp({super.key});
+
+  @override
+  ConsumerState<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends ConsumerState<MyApp> {
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(() async {
+      await ref.read(notificationRescheduleCoordinatorProvider).start();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {

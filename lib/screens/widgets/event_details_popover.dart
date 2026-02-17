@@ -224,18 +224,6 @@ class _EventEditModalState extends ConsumerState<EventEditModal> {
     super.dispose();
   }
 
-  DateTime _snapToQuarterHour(DateTime dateTime) {
-    final minute = dateTime.minute;
-    final snappedMinute = (minute / 15).floor() * 15;
-    return DateTime(
-      dateTime.year,
-      dateTime.month,
-      dateTime.day,
-      dateTime.hour,
-      snappedMinute,
-    );
-  }
-
   Future<void> _selectStartTime() async {
     final picked = await showTimePicker(
       context: context,
@@ -250,7 +238,6 @@ class _EventEditModalState extends ConsumerState<EventEditModal> {
           picked.hour,
           picked.minute,
         );
-        _startTime = _snapToQuarterHour(_startTime);
         if (_endTime.isBefore(_startTime) ||
             _endTime.isAtSameMomentAs(_startTime)) {
           _endTime = _startTime.add(const Duration(hours: 1));
@@ -273,7 +260,6 @@ class _EventEditModalState extends ConsumerState<EventEditModal> {
           picked.hour,
           picked.minute,
         );
-        _endTime = _snapToQuarterHour(_endTime);
         if (_endTime.isBefore(_startTime) ||
             _endTime.isAtSameMomentAs(_startTime)) {
           _endTime = _startTime.add(const Duration(hours: 1));

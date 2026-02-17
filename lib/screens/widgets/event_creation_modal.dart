@@ -63,9 +63,6 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
         existing?.endDateTime ??
         widget.endTime ??
         _startTime.add(const Duration(hours: 1));
-    // Snap to 15 minutes
-    _startTime = _snapToQuarterHour(_startTime);
-    _endTime = _snapToQuarterHour(_endTime);
     if (existing != null) {
       _titleController.text = existing.title;
       _descriptionController.text = existing.description;
@@ -84,18 +81,6 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
         await _loadDefaultCalendar();
       }
     });
-  }
-
-  DateTime _snapToQuarterHour(DateTime dateTime) {
-    final minute = dateTime.minute;
-    final snappedMinute = (minute / 15).floor() * 15;
-    return DateTime(
-      dateTime.year,
-      dateTime.month,
-      dateTime.day,
-      dateTime.hour,
-      snappedMinute,
-    );
   }
 
   @override
@@ -379,12 +364,12 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
 
     setState(() {
       if (isStart) {
-        _startTime = _snapToQuarterHour(combined);
+        _startTime = combined;
         if (!_endTime.isAfter(_startTime)) {
           _endTime = _startTime.add(const Duration(hours: 1));
         }
       } else {
-        _endTime = _snapToQuarterHour(combined);
+        _endTime = combined;
         if (!_endTime.isAfter(_startTime)) {
           _startTime = _endTime.subtract(const Duration(hours: 1));
         }

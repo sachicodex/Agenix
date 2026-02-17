@@ -1,21 +1,28 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../theme/app_colors.dart';
 import '../services/api_key_storage_service.dart';
 import '../services/google_calendar_service.dart';
 import '../services/groq_service.dart';
+import '../notifications/notification_models.dart';
+import '../notifications/notification_settings_repository.dart';
+import '../providers/notification_providers.dart';
 import 'auth_wrapper.dart';
 import '../widgets/app_animations.dart';
 import '../widgets/modern_splash_screen.dart';
 
-class SettingsScreen extends StatefulWidget {
+class SettingsScreen extends ConsumerStatefulWidget {
   static const routeName = '/settings';
   const SettingsScreen({super.key});
 
   @override
-  State<SettingsScreen> createState() => _SettingsScreenState();
+  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
+class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final _apiKeyController = TextEditingController();
   final _apiKeyStorageService = ApiKeyStorageService();
   bool _isLoading = true;
@@ -30,11 +37,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String? _selectedCalendarId;
   String? _defaultCalendarName;
   bool _loadingCalendars = false;
+  late final NotificationSettingsRepository _notificationSettingsRepository;
+  bool _dailyAgendaEnabled = true;
+  bool _eventRemindersEnabled = true;
+  int _defaultReminderMinutes = 15;
+  bool _isSavingNotificationSettings = false;
+  bool _isSendingTestNotification = false;
+  bool _windowsHasPackageIdentity = true;
 
   @override
   void initState() {
     super.initState();
+    _windowsHasPackageIdentity = _detectWindowsPackageIdentity();
+    _notificationSettingsRepository = ref.read(
+      notificationSettingsRepositoryProvider,
+    );
     _loadSettings();
+  }
+
+  bool _detectWindowsPackageIdentity() {
+    if (!Platform.isWindows) {
+      return true;
+    }
+    try {
+      return MsixUtils.hasPackageIdentity();
+    } catch (_) {
+      return false;
+    }
   }
 
   @override
@@ -78,8 +107,75 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await _loadCalendars();
     }
 
+    await _loadNotificationSettings();
+
     if (mounted) {
       setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _loadNotificationSettings() async {
+    try {
+      final settings = await _notificationSettingsRepository.getSettings();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _dailyAgendaEnabled = settings.dailyAgendaEnabled;
+        _eventRemindersEnabled = settings.eventRemindersEnabled;
+        _defaultReminderMinutes = settings.defaultReminderMinutes;
+      });
+    } catch (e) {
+      debugPrint('Error loading notification settings: $e');
+    }
+  }
+
+  Future<void> _saveNotificationSettings() async {
+    setState(() => _isSavingNotificationSettings = true);
+    try {
+      await _notificationSettingsRepository.saveSettings(
+        NotificationUserSettings(
+          defaultReminderMinutes: _defaultReminderMinutes,
+          dailyAgendaEnabled: _dailyAgendaEnabled,
+          eventRemindersEnabled: _eventRemindersEnabled,
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        _showErrorPopup(
+          'Failed to save notification settings: ${e.toString()}',
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSavingNotificationSettings = false);
+      }
+    }
+  }
+
+  Future<void> _sendTestNotification() async {
+    setState(() => _isSendingTestNotification = true);
+    try {
+      await ref.read(notificationServiceProvider).scheduleTestNotification();
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Test notification scheduled for ~10 seconds from now.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      _showErrorPopup('Failed to schedule test notification: ${e.toString()}');
+    } finally {
+      if (mounted) {
+        setState(() => _isSendingTestNotification = false);
+      }
     }
   }
 
@@ -589,9 +685,143 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               if (_signedIn) const SizedBox(height: 16),
 
-              // Account Section
               _animatedSection(
                 2,
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Notifications',
+                          style: AppTextStyles.headline2.copyWith(fontSize: 18),
+                        ),
+                        const SizedBox(height: 12),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(
+                            'Daily agenda (6:00 AM)',
+                            style: AppTextStyles.bodyText1,
+                          ),
+                          value: _dailyAgendaEnabled,
+                          onChanged: _isSavingNotificationSettings
+                              ? null
+                              : (value) {
+                                  setState(() {
+                                    _dailyAgendaEnabled = value;
+                                  });
+                                  _saveNotificationSettings();
+                                },
+                        ),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(
+                            'Event reminders',
+                            style: AppTextStyles.bodyText1,
+                          ),
+                          value: _eventRemindersEnabled,
+                          onChanged: _isSavingNotificationSettings
+                              ? null
+                              : (value) {
+                                  setState(() {
+                                    _eventRemindersEnabled = value;
+                                  });
+                                  _saveNotificationSettings();
+                                },
+                        ),
+                        const SizedBox(height: 8),
+                        DropdownButtonFormField<int>(
+                          value: _defaultReminderMinutes,
+                          decoration: InputDecoration(
+                            labelText: 'Default reminder',
+                            labelStyle: AppTextStyles.bodyText1.copyWith(
+                              color: AppColors.onSurface.withOpacity(0.7),
+                            ),
+                            filled: true,
+                            fillColor: AppColors.surface,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
+                          style: AppTextStyles.bodyText1,
+                          dropdownColor: AppColors.surface,
+                          items: const [
+                            DropdownMenuItem(
+                              value: 5,
+                              child: Text('5 minutes'),
+                            ),
+                            DropdownMenuItem(
+                              value: 10,
+                              child: Text('10 minutes'),
+                            ),
+                            DropdownMenuItem(
+                              value: 15,
+                              child: Text('15 minutes'),
+                            ),
+                            DropdownMenuItem(
+                              value: 30,
+                              child: Text('30 minutes'),
+                            ),
+                            DropdownMenuItem(value: 60, child: Text('1 hour')),
+                          ],
+                          onChanged: _isSavingNotificationSettings
+                              ? null
+                              : (value) {
+                                  if (value == null) {
+                                    return;
+                                  }
+                                  setState(() {
+                                    _defaultReminderMinutes = value;
+                                  });
+                                  _saveNotificationSettings();
+                                },
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: _isSendingTestNotification
+                                ? null
+                                : _sendTestNotification,
+                            icon: _isSendingTestNotification
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.notifications_active),
+                            label: Text(
+                              _isSendingTestNotification
+                                  ? 'Scheduling...'
+                                  : 'Send test notification (10s)',
+                            ),
+                          ),
+                        ),
+                        if (!_windowsHasPackageIdentity)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 10),
+                            child: Text(
+                              'Windows background notifications while app is closed require MSIX install.',
+                              style: AppTextStyles.bodyText1.copyWith(
+                                color: AppColors.onSurface.withOpacity(0.7),
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Account Section
+              _animatedSection(
+                3,
                 Card(
                   child: ListTile(
                     leading: _userPhotoUrl != null
@@ -627,7 +857,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
               // Logout Button
               _animatedSection(
-                3,
+                4,
                 Card(
                   child: ListTile(
                     leading: Icon(Icons.logout, color: AppColors.error),
@@ -646,7 +876,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
               // About Section
               _animatedSection(
-                4,
+                5,
                 Card(
                   child: ListTile(
                     title: Text('About', style: AppTextStyles.bodyText1),

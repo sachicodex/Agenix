@@ -113,6 +113,10 @@ CREATE TABLE IF NOT EXISTS user_profile (
     }
   }
 
+  Stream<void> onEventsChanged() {
+    return _changeController.stream;
+  }
+
   Future<List<CalendarEvent>> getEventsForDateRange(DateTimeRange range) async {
     final db = _requireDb();
     final rangeStartUtc = range.start.toUtc().millisecondsSinceEpoch;
@@ -124,6 +128,21 @@ CREATE TABLE IF NOT EXISTS user_profile (
       whereArgs: [rangeEndUtc, rangeStartUtc],
     );
 
+    return rows.map(_fromRow).toList();
+  }
+
+  Future<List<CalendarEvent>> getEventsBetween(
+    DateTime startUtc,
+    DateTime endUtc,
+  ) async {
+    final db = _requireDb();
+    final startMs = startUtc.toUtc().millisecondsSinceEpoch;
+    final endMs = endUtc.toUtc().millisecondsSinceEpoch;
+    final rows = await db.query(
+      'events',
+      where: 'deleted = 0 AND start_utc < ? AND end_utc > ?',
+      whereArgs: [endMs, startMs],
+    );
     return rows.map(_fromRow).toList();
   }
 
