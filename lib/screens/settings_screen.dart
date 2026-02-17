@@ -42,7 +42,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _eventRemindersEnabled = true;
   int _defaultReminderMinutes = 15;
   bool _isSavingNotificationSettings = false;
-  bool _isSendingTestNotification = false;
   bool _windowsHasPackageIdentity = true;
 
   @override
@@ -149,32 +148,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     } finally {
       if (mounted) {
         setState(() => _isSavingNotificationSettings = false);
-      }
-    }
-  }
-
-  Future<void> _sendTestNotification() async {
-    setState(() => _isSendingTestNotification = true);
-    try {
-      await ref.read(notificationServiceProvider).scheduleTestNotification();
-      if (!mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Test notification scheduled for ~10 seconds from now.',
-          ),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) {
-        return;
-      }
-      _showErrorPopup('Failed to schedule test notification: ${e.toString()}');
-    } finally {
-      if (mounted) {
-        setState(() => _isSendingTestNotification = false);
       }
     }
   }
@@ -777,29 +750,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                   });
                                   _saveNotificationSettings();
                                 },
-                        ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: _isSendingTestNotification
-                                ? null
-                                : _sendTestNotification,
-                            icon: _isSendingTestNotification
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(Icons.notifications_active),
-                            label: Text(
-                              _isSendingTestNotification
-                                  ? 'Scheduling...'
-                                  : 'Send test notification (10s)',
-                            ),
-                          ),
                         ),
                         if (!_windowsHasPackageIdentity)
                           Padding(
