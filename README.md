@@ -1,7 +1,7 @@
 # Agenix
 
 <p align="center">
-  <img src="assets/logo/Agenix.png" alt="Agenix Logo" width="140" />
+  <img src="assets/logo/agenix-windows.png" alt="Agenix Logo" width="140" />
 </p>
 
 <p align="center">
@@ -19,8 +19,8 @@
 
 | Platform | Package | Link | Notes |
 |---|---|---|---|
-| Android | APK | [Latest Release](https://github.com/sachicodex/Nuvex-Flow/releases/latest) | Install from release assets on your device. |
-| Windows | MSIX | [Latest Release](https://github.com/sachicodex/Nuvex-Flow/releases/latest) | Recommended for best notification behavior when app is closed. |
+| Android | APK | [Latest Release](https://github.com/sachicodex/Agenix/releases/latest) | Install from release assets on your device. |
+| Windows | MSIX | [Latest Release](https://github.com/sachicodex/Agenix/releases/latest) | Recommended for best notification behavior when app is closed. |
 | Linux / macOS / iOS | Build from source | [Run From Source](#run-from-source) | Use Flutter build commands for your target platform. |
 
 ## About
@@ -35,23 +35,23 @@ Agenix helps you manage Google Calendar faster:
 ## Preview
 
 <p align="center">
-  <img src="assets/logo/text-logo.png" alt="Agenix Text Logo" width="360" />
+  <img src="assets/img/preview-desktop.png" alt="Agenix Desktop Preview" width="560" />
 </p>
 
 <p align="center">
-  <img src="assets/img/ai.png" alt="Agenix AI Visual" width="520" />
+  <img src="assets/img/preview-mobile.png" alt="Agenix Mobile Preview" width="320" />
 </p>
 
 ## Features
 
 | Icon | Feature | What you get |
 |---|---|---|
-| <img src="assets/icons/google_logo.svg" alt="Google" width="18" /> | Google Calendar integration | Sign in, read calendars, create/update/delete events, and sync. |
-| <img src="assets/icons/calendar.svg" alt="Calendar" width="18" /> | Day-view planner | Drag, resize, and create events directly on the timeline. |
-| <img src="assets/icons/check.svg" alt="Check" width="18" /> | Offline-first behavior | Events are saved locally first, then synced in background. |
-| <img src="assets/icons/account.svg" alt="Account" width="18" /> | Account + defaults | Keep your default calendar and account profile in settings. |
-| <img src="assets/icons/check.svg" alt="Check" width="18" /> | Smart reminders | Daily agenda (6:00 AM) + event reminder scheduling. |
-| <img src="assets/icons/check.svg" alt="Check" width="18" /> | AI writing help | Optimize event title/description using Groq API key in Settings. |
+| :calendar: | Google Calendar integration | Sign in, read calendars, create/update/delete events, and sync. |
+| :spiral_calendar_pad: | Day-view planner | Drag, resize, and create events directly on the timeline. |
+| :floppy_disk: | Offline-first behavior | Events are saved locally first, then synced in background. |
+| :bust_in_silhouette: | Account + defaults | Keep your default calendar and account profile in settings. |
+| :bell: | Smart reminders | Daily agenda (6:00 AM) + event reminder scheduling. |
+| :sparkles: | AI writing help | Optimize event title/description using Groq API key in Settings. |
 
 ## Mobile Gestures (Day View)
 
@@ -111,8 +111,8 @@ If AI is not configured, Agenix will show a setup prompt when you tap AI actions
 ### Setup
 
 ```bash
-git clone https://github.com/sachicodex/Nuvex-Flow.git
-cd Nuvex-Flow
+git clone https://github.com/sachicodex/Agenix.git
+cd Agenix
 flutter pub get
 flutter run
 ```
@@ -174,5 +174,5 @@ lib/
 
 ## Support
 
-- Issues: [GitHub Issues](https://github.com/sachicodex/Nuvex-Flow/issues)
-- Releases: [GitHub Releases](https://github.com/sachicodex/Nuvex-Flow/releases)
+- Issues: [GitHub Issues](https://github.com/sachicodex/Agenix/issues)
+- Releases: [GitHub Releases](https://github.com/sachicodex/Agenix/releases)
