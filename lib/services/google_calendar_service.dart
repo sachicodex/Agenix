@@ -8,6 +8,7 @@ import 'package:googleapis_auth/auth_io.dart' as auth_io;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher_string.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../google_oauth_config.dart';
@@ -28,6 +29,12 @@ class GoogleCalendarService {
   static const bool _verboseEventFetchLogs = false;
   String? _desktopUserEmail;
   String? _desktopUserPhotoUrl;
+
+  void _logDebug(String message) {
+    if (kDebugMode) {
+      debugPrint(message);
+    }
+  }
 
   /// Returns a map with email and photoUrl if available, else nulls.
   Future<Map<String, String?>> getAccountDetails() async {
@@ -123,7 +130,7 @@ class GoogleCalendarService {
     try {
       await LocalEventStore.instance.upsertCalendars(calendars);
     } catch (e) {
-      debugPrint('Failed to cache calendars locally: $e');
+      _logDebug('Failed to cache calendars locally: $e');
     }
 
     return calendars;
@@ -133,7 +140,7 @@ class GoogleCalendarService {
     try {
       return await LocalEventStore.instance.getCachedCalendars();
     } catch (e) {
-      debugPrint('Failed to read cached calendars: $e');
+      _logDebug('Failed to read cached calendars: $e');
       return const [];
     }
   }
@@ -181,7 +188,7 @@ class GoogleCalendarService {
         await _restoreDesktopAuthFromStorage();
       }
     } catch (e) {
-      debugPrint('Error initializing auth: $e');
+      _logDebug('Error initializing auth: $e');
       // If restoration fails, clear storage and require re-login
       await _storage.clearCredentials();
     }
@@ -241,9 +248,9 @@ class GoogleCalendarService {
         photoUrl: _desktopUserPhotoUrl,
       );
       _signedIn = true;
-      debugPrint('Desktop auth restored from storage');
+      _logDebug('Desktop auth restored from storage');
     } catch (e) {
-      debugPrint('Failed to restore desktop auth: $e');
+      _logDebug('Failed to restore desktop auth: $e');
       await _storage.clearCredentials();
       _signedIn = false;
       _authClient = null;
@@ -257,27 +264,13 @@ class GoogleCalendarService {
     List<String> scopes,
   ) async {
     try {
-      final clientId = kDesktopClientId.trim();
-      final clientSecret = kDesktopClientSecret.trim();
-      final basicAuth =
-          'Basic ${base64Encode(utf8.encode('$clientId:$clientSecret'))}';
-
-      final tokenResp = await http.post(
-        Uri.parse('https://oauth2.googleapis.com/token'),
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Authorization': basicAuth,
-        },
-        body: {
-          'grant_type': 'refresh_token',
-          'refresh_token': refreshToken,
-          'client_id': clientId,
-          'client_secret': clientSecret,
-        },
-      );
+      final tokenResp = await _exchangeDesktopTokenViaProxy(<String, String>{
+        'grant_type': 'refresh_token',
+        'refresh_token': refreshToken,
+      });
 
       if (tokenResp.statusCode != 200) {
-        throw Exception('Token refresh failed: ${tokenResp.body}');
+        throw Exception('Token refresh failed (status: ${tokenResp.statusCode})');
       }
 
       final tokenJson = jsonDecode(tokenResp.body) as Map<String, dynamic>;
@@ -320,12 +313,29 @@ class GoogleCalendarService {
         userPhotoUrl: _desktopUserPhotoUrl,
       );
 
-      debugPrint('Access token refreshed successfully');
+      _logDebug('Access token refreshed successfully');
     } catch (e) {
-      debugPrint('Error refreshing token: $e');
+      _logDebug('Error refreshing token: $e');
       await _storage.clearCredentials();
       throw Exception('Failed to refresh access token: $e');
     }
+  }
+
+  Future<http.Response> _exchangeDesktopTokenViaProxy(
+    Map<String, String> payload,
+  ) async {
+    final proxyUrl = kGoogleOauthProxyTokenUrl.trim();
+    if (proxyUrl.isEmpty || proxyUrl.startsWith('YOUR_')) {
+      throw Exception(
+        'OAuth proxy URL is not configured. Set `kGoogleOauthProxyTokenUrl` in `lib/google_oauth_config.dart`.',
+      );
+    }
+
+    return await http.post(
+      Uri.parse(proxyUrl),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(payload),
+    );
   }
 
   /// Attempts silent sign-in for Android/iOS. Returns true if successful.
@@ -342,7 +352,7 @@ class GoogleCalendarService {
           return true;
         }
       } catch (e) {
-        debugPrint('Silent sign-in failed: $e');
+        _logDebug('Silent sign-in failed: $e');
       }
       return false;
     }
@@ -404,8 +414,8 @@ class GoogleCalendarService {
     // an external factor that leads to a 500 on localhost).
     if (kDesktopClientId.startsWith('YOUR_') ||
         kDesktopClientId.isEmpty ||
-        kDesktopClientSecret.startsWith('YOUR_') ||
-        kDesktopClientSecret.isEmpty) {
+        kGoogleOauthProxyTokenUrl.startsWith('YOUR_') ||
+        kGoogleOauthProxyTokenUrl.isEmpty) {
       await showDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -414,15 +424,15 @@ class GoogleCalendarService {
             child: ListBody(
               children: const [
                 Text(
-                  'The Desktop OAuth Client ID or Client Secret is not set.',
+                  'The Desktop OAuth Client ID or OAuth proxy URL is not set.',
                 ),
                 SizedBox(height: 8),
                 Text(
-                  'Create a "Desktop" OAuth Client (APIs & Services → Credentials) and set both `kDesktopClientId` and `kDesktopClientSecret` in `lib/google_oauth_config.dart`.',
+                  'Set `kDesktopClientId` and `kGoogleOauthProxyTokenUrl` in `lib/google_oauth_config.dart`.',
                 ),
                 SizedBox(height: 8),
                 Text(
-                  'Note: Keep the client secret private and avoid committing it to public repositories.',
+                  'Keep the desktop client secret only in Cloudflare Worker secrets.',
                 ),
               ],
             ),
@@ -435,7 +445,7 @@ class GoogleCalendarService {
           ],
         ),
       );
-      throw Exception('Desktop OAuth Client ID/Secret not configured');
+      throw Exception('Desktop OAuth client or proxy URL not configured');
     }
 
     final scopes = [
@@ -486,7 +496,7 @@ class GoogleCalendarService {
           userEmail: _desktopUserEmail,
           userPhotoUrl: _desktopUserPhotoUrl,
         );
-        debugPrint('Credentials saved to secure storage');
+        _logDebug('Credentials saved to secure storage');
       }
       await _persistUserProfileToLocalDb(
         email: _desktopUserEmail,
@@ -622,7 +632,7 @@ class GoogleCalendarService {
 
     // Ensure we send timestamps with a valid timezone to Google Calendar.
     // Using UTC prevents invalid time zone definitions from causing API 400 errors.
-    debugPrint(
+    _logDebug(
       'Creating event: start=${start.toIso8601String()}, end=${end.toIso8601String()}, start.timeZone=${start.timeZoneName}, end.timeZone=${end.timeZoneName}',
     );
 
@@ -686,7 +696,7 @@ class GoogleCalendarService {
     final timeMax = DateTime(end.year, end.month, end.day, 23, 59, 59).toUtc();
 
     if (_verboseEventFetchLogs) {
-      debugPrint(
+      _logDebug(
         'Fetching events: timeMin=$timeMin (${start.toLocal()}), timeMax=$timeMax (${end.toLocal()}), timezone=$localTimeZone',
       );
     }
@@ -723,7 +733,7 @@ class GoogleCalendarService {
 
         final items = events.items ?? [];
         if (_verboseEventFetchLogs) {
-          debugPrint(
+          _logDebug(
             'Page returned ${items.length} events (pageToken: ${currentPageToken ?? 'none'})',
           );
         }
@@ -753,12 +763,12 @@ class GoogleCalendarService {
         currentPageToken = events.nextPageToken;
 
         if (_verboseEventFetchLogs && currentPageToken != null) {
-          debugPrint('More pages available, fetching next page...');
+          _logDebug('More pages available, fetching next page...');
         }
       } while (currentPageToken != null);
 
       if (_verboseEventFetchLogs) {
-        debugPrint(
+        _logDebug(
           'Total events fetched after pagination: ${allParsedEvents.length}',
         );
       }
@@ -771,7 +781,7 @@ class GoogleCalendarService {
     } catch (e) {
       // Handle 410 GONE - syncToken expired
       if (e.toString().contains('410') || e.toString().contains('GONE')) {
-        debugPrint('SyncToken expired, performing full sync');
+        _logDebug('SyncToken expired, performing full sync');
         // Retry with full sync (with pagination)
         final allParsedEvents = <Map<String, dynamic>>[];
         String? currentPageToken;
@@ -887,10 +897,10 @@ class GoogleCalendarService {
 
     final allEvents = <Map<String, dynamic>>[];
 
-    debugPrint('=== FETCHING EVENTS FROM ALL CALENDARS ===');
-    debugPrint('Total calendars found: ${calendars.length}');
+    _logDebug('=== FETCHING EVENTS FROM ALL CALENDARS ===');
+    _logDebug('Total calendars found: ${calendars.length}');
     for (final cal in calendars) {
-      debugPrint(
+      _logDebug(
         '  - ${cal['name']} (ID: ${cal['id']}, selected: ${cal['selected']})',
       );
     }
@@ -911,7 +921,7 @@ class GoogleCalendarService {
       calendarsProcessed++;
 
       try {
-        debugPrint(
+        _logDebug(
           '[Calendar $calendarsProcessed/${calendars.length}] Fetching from: $calendarName (ID: $calendarId)',
         );
         final result = await getEventsWithSync(
@@ -935,18 +945,18 @@ class GoogleCalendarService {
         }
 
         allEvents.addAll(events);
-        debugPrint('  ✓ Found ${events.length} events in "$calendarName"');
+        _logDebug('  ✓ Found ${events.length} events in "$calendarName"');
       } catch (e) {
-        debugPrint('  ✗ ERROR fetching from "$calendarName": $e');
+        _logDebug('  ✗ ERROR fetching from "$calendarName": $e');
         // Continue with other calendars even if one fails
       }
     }
 
-    debugPrint('=== SUMMARY ===');
-    debugPrint('Calendars processed: $calendarsProcessed');
-    debugPrint('Calendars with events: $calendarsWithEvents');
-    debugPrint('Total events from all calendars: ${allEvents.length}');
-    debugPrint('================');
+    _logDebug('=== SUMMARY ===');
+    _logDebug('Calendars processed: $calendarsProcessed');
+    _logDebug('Calendars with events: $calendarsWithEvents');
+    _logDebug('Total events from all calendars: ${allEvents.length}');
+    _logDebug('================');
     return allEvents;
   }
 
@@ -961,7 +971,7 @@ class GoogleCalendarService {
   }) {
     // Skip cancelled/deleted events unless explicitly included (sync diff).
     if (event.status == 'cancelled' && !includeCancelled) {
-      debugPrint('Skipping cancelled event: ${event.id}');
+      _logDebug('Skipping cancelled event: ${event.id}');
       return null;
     }
 
@@ -1008,7 +1018,7 @@ class GoogleCalendarService {
       start = startDateTime.toLocal();
       end = endDateTime.toLocal();
     } else {
-      debugPrint(
+      _logDebug(
         'Skipping event with invalid date/time: ${event.id}, start=$startDateTime, end=$endDateTime',
       );
       return null; // Skip invalid events
@@ -1041,7 +1051,7 @@ class GoogleCalendarService {
     // CRITICAL: Handle events with no title (they should still be shown)
     final title = event.summary?.trim();
     if (title == null || title.isEmpty) {
-      debugPrint('Event has no title, using default: ${event.id}');
+      _logDebug('Event has no title, using default: ${event.id}');
     }
 
     return {
@@ -1226,9 +1236,9 @@ class GoogleCalendarService {
     try {
       await LocalEventStore.instance.clearUserProfile();
     } catch (e) {
-      debugPrint('Failed to clear cached user profile: $e');
+      _logDebug('Failed to clear cached user profile: $e');
     }
-    debugPrint(
+    _logDebug(
       'Signed out and cleared stored credentials and default calendar',
     );
   }
@@ -1243,7 +1253,7 @@ class GoogleCalendarService {
         photoUrl: photoUrl,
       );
     } catch (e) {
-      debugPrint('Failed to cache user profile locally: $e');
+      _logDebug('Failed to cache user profile locally: $e');
     }
   }
 
@@ -1251,7 +1261,7 @@ class GoogleCalendarService {
     try {
       return await LocalEventStore.instance.getCachedUserProfile();
     } catch (e) {
-      debugPrint('Failed to read cached user profile: $e');
+      _logDebug('Failed to read cached user profile: $e');
       return {'email': null, 'photoUrl': null};
     }
   }
@@ -1294,16 +1304,12 @@ class GoogleCalendarService {
     }
 
     final port = server.port;
-    debugPrint('Loopback server listening on port $port');
+    _logDebug('Loopback server listening on port $port');
     final redirectUri = 'http://127.0.0.1:$port/';
 
     // Use trimmed client id to avoid accidental whitespace copying issues.
     final clientId = kDesktopClientId.trim();
-    final clientSecret = kDesktopClientSecret.trim();
-    debugPrint('Using Desktop client id: $clientId');
-    debugPrint(
-      'Desktop client secret length: ${clientSecret.length} (not printing secret)',
-    );
+    _logDebug('Using Desktop client id: $clientId');
 
     final authUrl = Uri.https('accounts.google.com', '/o/oauth2/v2/auth', {
       'response_type': 'code',
@@ -1317,7 +1323,7 @@ class GoogleCalendarService {
     });
 
     // Open system browser to authorize.
-    debugPrint('Opening browser to ${authUrl.toString()}');
+    _logDebug('Opening browser to ${authUrl.toString()}');
     await launchUrlString(
       authUrl.toString(),
       mode: LaunchMode.externalApplication,
@@ -1334,7 +1340,7 @@ class GoogleCalendarService {
       (request) async {
         try {
           final params = request.uri.queryParameters;
-          debugPrint('Loopback request received: ${request.uri}');
+          _logDebug('Loopback OAuth callback request received');
           if (params.containsKey('error')) {
             final err = params['error']!;
             request.response.statusCode = 200;
@@ -1425,9 +1431,9 @@ class GoogleCalendarService {
         // No automatic callback soon - prompt the user for manual copy/paste, but
         // keep listening for a late automatic callback.
         manualDialogOpen = true;
-        debugPrint('Showing manual copy/paste dialog for auth URL');
+        _logDebug('Showing manual copy/paste dialog for auth URL');
         _showManualCodeInputDialog(context, authUrl.toString()).then((manual) {
-          debugPrint(
+          _logDebug(
             'Manual dialog closed, manual code: ${manual != null ? 'provided' : 'cancelled'}',
           );
           manualDialogOpen = false;
@@ -1453,55 +1459,29 @@ class GoogleCalendarService {
       await server.close(force: true);
     }
 
-    // Use the already-trimmed clientId/clientSecret and add HTTP Basic auth header.
-    final basicAuth =
-        'Basic ${base64Encode(utf8.encode('${clientId}:${clientSecret}'))}';
+    final tokenResp = await _exchangeDesktopTokenViaProxy(<String, String>{
+      'grant_type': 'authorization_code',
+      'code': code,
+      'redirect_uri': redirectUri,
+      'code_verifier': verifier,
+    });
 
-    final tokenResp = await http.post(
-      Uri.parse('https://oauth2.googleapis.com/token'),
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Authorization': basicAuth,
-      },
-      body: {
-        'grant_type': 'authorization_code',
-        'code': code,
-        'redirect_uri': redirectUri,
-        'client_id': clientId,
-        'client_secret': clientSecret,
-        'code_verifier': verifier,
-      },
-    );
-
-    // Debug: log token response for troubleshooting (remove/guard in prod).
-    debugPrint('OAuth token exchange status: ${tokenResp.statusCode}');
-    debugPrint('OAuth token exchange body: ${tokenResp.body}');
+    _logDebug('OAuth token exchange status: ${tokenResp.statusCode}');
 
     if (tokenResp.statusCode == 401 || tokenResp.statusCode == 400) {
       final body = tokenResp.body.toLowerCase();
       if (body.contains('invalid_client') || body.contains('client_secret')) {
         throw Exception(
-          'Token exchange returned invalid_client / client_secret error. Check Desktop client ID/secret, exact copy, and that the client is type "Desktop" in Cloud Console. Response: ${tokenResp.body}',
+          'Token exchange returned invalid_client / client_secret error. Check Desktop client ID and Cloudflare Worker secret GOOGLE_CLIENT_SECRET.',
         );
       }
     }
 
     if (tokenResp.statusCode != 200) {
-      throw Exception('Token exchange failed: ${tokenResp.body}');
+      throw Exception('Token exchange failed (status: ${tokenResp.statusCode})');
     }
 
     final tokenJson = jsonDecode(tokenResp.body) as Map<String, dynamic>;
-
-    // Show presence of tokens (but not the tokens themselves) to help debugging.
-    final hasAccess =
-        tokenJson.containsKey('access_token') &&
-        (tokenJson['access_token'] as String).isNotEmpty;
-    final hasRefresh =
-        tokenJson.containsKey('refresh_token') &&
-        (tokenJson['refresh_token'] as String).isNotEmpty;
-    debugPrint(
-      'OAuth tokens present - access_token: $hasAccess, refresh_token: $hasRefresh',
-    );
     final accessToken = tokenJson['access_token'] as String?;
     final refreshToken = tokenJson['refresh_token'] as String?;
     final expiresIn = tokenJson['expires_in'] as int? ?? 3600;
@@ -1752,3 +1732,5 @@ class _SimpleAuthClient extends http.BaseClient {
     return _inner.send(request);
   }
 }
+
+

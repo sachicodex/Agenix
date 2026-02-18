@@ -104,9 +104,10 @@ If AI is not configured, Agenix will show a setup prompt when you tap AI actions
 ### Prerequisites
 
 - Flutter SDK (Dart 3.10+)
-- Google Calendar OAuth credentials
+- Google Cloud project with Google Calendar API + OAuth clients
+- Cloudflare account (free) for OAuth token proxy
 - Optional: Groq API key for AI features
-- Optional: Firebase config for Android push notifications
+- Firebase project for Android push notifications
 
 ### Setup
 
@@ -126,16 +127,100 @@ flutter run -d linux
 flutter run -d macos
 ```
 
-## Google OAuth Setup (Required)
+## Setup A-Z (Google Login + Cloudflare + Firebase Push)
 
-Update client IDs/secrets in:
+### 1. Create Google OAuth credentials
 
-- `lib/google_oauth_config.dart`
+In Google Cloud Console:
+1. Enable `Google Calendar API`.
+2. Create OAuth Client: `Desktop app`.
+3. Create OAuth Client: `Web application` (for Flutter web sign-in meta).
+4. Keep the desktop `Client ID` and `Client Secret`.
+5. Keep the web `Client ID`.
 
-You should provide your own OAuth credentials from Google Cloud Console:
-- Enable Google Calendar API.
-- Create OAuth clients for Android and Desktop.
-- Add valid package/bundle IDs, SHA fingerprints, and redirect settings as needed.
+### 2. Configure Flutter app OAuth values
+
+Set desktop client ID in `lib/google_oauth_config.dart`:
+
+```dart
+const String kDesktopClientId = 'YOUR_DESKTOP_CLIENT_ID.apps.googleusercontent.com';
+const String kGoogleOauthProxyTokenUrl = 'https://YOUR_WORKER_SUBDOMAIN.workers.dev/oauth/token';
+```
+
+Set web client ID in `web/index.html`:
+
+```html
+<meta name="google-signin-client_id" content="YOUR_WEB_CLIENT_ID.apps.googleusercontent.com">
+```
+
+### 3. Configure Cloudflare Worker OAuth proxy (required for desktop secret safety)
+
+From repo root:
+
+```bash
+cd oauth-proxy
+```
+
+Set `GOOGLE_CLIENT_ID` in `oauth-proxy/wrangler.jsonc`:
+
+```jsonc
+"vars": {
+  "GOOGLE_CLIENT_ID": "YOUR_DESKTOP_CLIENT_ID.apps.googleusercontent.com"
+}
+```
+
+Upload desktop client secret to Cloudflare Worker secret store:
+
+```bash
+wrangler secret put GOOGLE_CLIENT_SECRET
+```
+
+Deploy:
+
+```bash
+npm run deploy
+```
+
+Verify:
+
+```bash
+wrangler secret list
+```
+
+Expected secret name:
+- `GOOGLE_CLIENT_SECRET`
+
+Important:
+- `kDesktopClientId` in Flutter and `GOOGLE_CLIENT_ID` in Worker must match the same Google OAuth desktop client.
+- Never store desktop client secret in Flutter/Dart files.
+
+### 4. Configure Firebase push notifications (Android)
+
+In Firebase Console:
+1. Create project (or reuse existing).
+2. Add Android app with your package name.
+3. Download `google-services.json`.
+4. Place it at `android/app/google-services.json`.
+5. Ensure Firebase Messaging is enabled in project settings.
+
+Build/run Android:
+
+```bash
+flutter run -d android
+```
+
+### 5. Login flow test (end-to-end)
+
+1. Run app (`flutter run -d windows` or Android).
+2. Tap `Sign in with Google`.
+3. Browser opens for consent.
+4. After allowing access, app receives callback and exchanges code through Cloudflare Worker.
+5. App stores tokens locally and proceeds to calendar screen.
+6. Choose default calendar and continue.
+
+If sign-in fails with `401`:
+- Recheck that desktop client ID in app and Worker are identical.
+- Re-upload `GOOGLE_CLIENT_SECRET` and redeploy Worker.
 
 ## Notifications
 
@@ -143,7 +228,8 @@ You should provide your own OAuth credentials from Google Cloud Console:
   - Daily agenda summary at `6:00 AM` (configurable on/off)
   - Event reminders (default reminder configurable)
 - Push notifications:
-  - Firebase Messaging currently initialized on Android.
+  - Firebase Messaging is configured for Android using `android/app/google-services.json`.
+  - Device token generation depends on valid Firebase project setup.
 - Windows note:
   - Background notifications when app is closed work best with MSIX install.
 
