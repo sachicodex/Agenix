@@ -1,4 +1,4 @@
-import 'dart:io' show Platform, HttpServer, InternetAddress, File;
+import 'dart:io' show Platform, HttpServer, InternetAddress, File, Directory;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
@@ -7,13 +7,17 @@ import 'package:googleapis/calendar/v3.dart' as calendar;
 import 'package:googleapis_auth/auth_io.dart' as auth_io;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import '../google_oauth_config.dart';
 import 'auth_storage_service.dart';
 import '../data/local/local_event_store.dart';
+import 'firebase_bootstrap.dart';
 
 /// Lightweight service to sign in and insert events into Google Calendar.
 ///
@@ -29,6 +33,12 @@ class GoogleCalendarService {
   static const bool _verboseEventFetchLogs = false;
   String? _desktopUserEmail;
   String? _desktopUserPhotoUrl;
+  String? _desktopIdToken;
+  String? _lastFirebaseAuthError;
+  String? _lastFirebaseAuthContext;
+
+  String? get lastFirebaseAuthError => _lastFirebaseAuthError;
+  String? get lastFirebaseAuthContext => _lastFirebaseAuthContext;
 
   void _logDebug(String message) {
     if (kDebugMode) {
@@ -42,15 +52,26 @@ class GoogleCalendarService {
       _googleSignIn ??= GoogleSignIn(
         scopes: [calendar.CalendarApi.calendarScope],
       );
-      final acc =
-          await _googleSignIn!.signInSilently() ??
-          await _googleSignIn!.signIn();
-      final profile = {'email': acc?.email, 'photoUrl': acc?.photoUrl};
-      await _persistUserProfileToLocalDb(
-        email: profile['email'],
-        photoUrl: profile['photoUrl'],
-      );
-      return profile;
+      try {
+        final acc = await _googleSignIn!.signInSilently();
+        if (acc == null) {
+          return await _getUserProfileFromLocalDb();
+        }
+        final profile = {'email': acc?.email, 'photoUrl': acc?.photoUrl};
+        final photoHeaders = await _getMobileProfilePhotoHeaders(acc);
+        await _persistUserProfileToLocalDb(
+          email: profile['email'],
+          photoUrl: profile['photoUrl'],
+          photoHeaders: photoHeaders,
+        );
+        return await _resolveUserProfileForUi(
+          email: profile['email'],
+          preferredPhotoUrl: profile['photoUrl'],
+        );
+      } catch (e) {
+        _logDebug('Failed to fetch mobile account details, using cache: $e');
+        return await _getUserProfileFromLocalDb();
+      }
     }
     // For desktop, return stored info if available
     if (_signedIn) {
@@ -61,8 +82,12 @@ class GoogleCalendarService {
       await _persistUserProfileToLocalDb(
         email: profile['email'],
         photoUrl: profile['photoUrl'],
+        photoHeaders: _getDesktopProfilePhotoHeaders(),
       );
-      return profile;
+      return await _resolveUserProfileForUi(
+        email: profile['email'],
+        preferredPhotoUrl: profile['photoUrl'],
+      );
     }
     return await _getUserProfileFromLocalDb();
   }
@@ -173,7 +198,10 @@ class GoogleCalendarService {
       );
       // Try silent sign-in to restore session
       try {
-        await _googleSignIn!.signInSilently();
+        final account = await _googleSignIn!.signInSilently();
+        if (account != null) {
+          await _ensureFirebaseSignedIn(account);
+        }
       } catch (_) {
         // Silent sign-in failed, user needs to sign in again
       }
@@ -201,6 +229,7 @@ class GoogleCalendarService {
     try {
       final refreshToken = await _storage.getRefreshToken();
       final accessToken = await _storage.getAccessToken();
+      final idToken = await _storage.getIdToken();
       final tokenExpiry = await _storage.getTokenExpiry();
       final scopes = await _storage.getScopes();
       final userEmail = await _storage.getUserEmail();
@@ -243,12 +272,20 @@ class GoogleCalendarService {
 
       _desktopUserEmail = userEmail;
       _desktopUserPhotoUrl = userPhotoUrl;
+      _desktopIdToken = idToken;
       await _persistUserProfileToLocalDb(
         email: _desktopUserEmail,
         photoUrl: _desktopUserPhotoUrl,
       );
       _signedIn = true;
       _logDebug('Desktop auth restored from storage');
+
+      // Best-effort: ensure FirebaseAuth is also signed in so Firestore rules
+      // allow cloud settings sync.
+      await _ensureFirebaseSignedInWithTokens(
+        accessToken: _currentAccessTokenString,
+        idToken: _desktopIdToken,
+      );
     } catch (e) {
       _logDebug('Failed to restore desktop auth: $e');
       await _storage.clearCredentials();
@@ -270,11 +307,14 @@ class GoogleCalendarService {
       });
 
       if (tokenResp.statusCode != 200) {
-        throw Exception('Token refresh failed (status: ${tokenResp.statusCode})');
+        throw Exception(
+          'Token refresh failed (status: ${tokenResp.statusCode})',
+        );
       }
 
       final tokenJson = jsonDecode(tokenResp.body) as Map<String, dynamic>;
       final newAccessToken = tokenJson['access_token'] as String?;
+      final newIdToken = tokenJson['id_token'] as String?;
       final expiresIn = tokenJson['expires_in'] as int? ?? 3600;
       final newRefreshToken =
           tokenJson['refresh_token'] as String? ?? refreshToken;
@@ -302,11 +342,15 @@ class GoogleCalendarService {
 
       // Store access token string for persistence
       _currentAccessTokenString = newAccessToken;
+      if (newIdToken != null && newIdToken.trim().isNotEmpty) {
+        _desktopIdToken = newIdToken.trim();
+      }
 
       // Save updated tokens
       await _storage.saveCredentials(
         refreshToken: newRefreshToken,
         accessToken: newAccessToken,
+        idToken: _desktopIdToken,
         tokenExpiry: token.expiry,
         scopes: _storedCredentials!.scopes,
         userEmail: _desktopUserEmail,
@@ -348,6 +392,7 @@ class GoogleCalendarService {
       try {
         final account = await _googleSignIn!.signInSilently();
         if (account != null) {
+          await _ensureFirebaseSignedIn(account);
           _signedIn = true;
           return true;
         }
@@ -397,7 +442,28 @@ class GoogleCalendarService {
   /// consent screen; `context` is required to show error dialogs if the loopback
   /// handler fails.
   Future<void> ensureSignedIn(BuildContext context) async {
-    if (await isSignedIn()) return;
+    final alreadySignedIn = await isSignedIn();
+    if (alreadySignedIn) {
+      if (Platform.isAndroid || Platform.isIOS) {
+        _googleSignIn ??= GoogleSignIn(
+          scopes: [calendar.CalendarApi.calendarScope],
+        );
+        try {
+          final account = await _googleSignIn!.signInSilently();
+          if (account != null) {
+            await _ensureFirebaseSignedIn(account);
+          }
+        } catch (_) {
+          // Best-effort only.
+        }
+      } else {
+        await _ensureFirebaseSignedInWithTokens(
+          accessToken: _currentAccessTokenString,
+          idToken: _desktopIdToken,
+        );
+      }
+      return;
+    }
 
     if (Platform.isAndroid || Platform.isIOS) {
       _googleSignIn ??= GoogleSignIn(
@@ -405,6 +471,7 @@ class GoogleCalendarService {
       );
       final account = await _googleSignIn!.signIn();
       if (account == null) throw Exception('Sign in aborted by user');
+      await _ensureFirebaseSignedIn(account);
       _signedIn = true;
       return;
     }
@@ -461,6 +528,10 @@ class GoogleCalendarService {
       final client = await _obtainDesktopAuthClient(context, scopes);
       _authClient = client;
       _signedIn = true;
+      await _ensureFirebaseSignedInWithTokens(
+        accessToken: _currentAccessTokenString,
+        idToken: _desktopIdToken,
+      );
 
       // Fetch user info from Google People API
       try {
@@ -491,6 +562,7 @@ class GoogleCalendarService {
         await _storage.saveCredentials(
           refreshToken: _storedCredentials!.refreshToken,
           accessToken: _currentAccessTokenString!,
+          idToken: _desktopIdToken,
           tokenExpiry: _storedCredentials!.accessToken.expiry,
           scopes: _storedCredentials!.scopes,
           userEmail: _desktopUserEmail,
@@ -1221,6 +1293,9 @@ class GoogleCalendarService {
     if (_googleSignIn != null) {
       await _googleSignIn!.signOut();
     }
+    try {
+      await FirebaseAuth.instance.signOut();
+    } catch (_) {}
 
     _authClient?.close();
     _authClient = null;
@@ -1229,28 +1304,209 @@ class GoogleCalendarService {
     _currentAccessTokenString = null;
     _desktopUserEmail = null;
     _desktopUserPhotoUrl = null;
+    _desktopIdToken = null;
 
     // Clear stored credentials and default calendar from secure storage
     await _storage.clearCredentials();
     await _storage.clearDefaultCalendar();
     try {
       await LocalEventStore.instance.clearUserProfile();
+      await _deleteCachedProfilePhotoFromDisk();
     } catch (e) {
       _logDebug('Failed to clear cached user profile: $e');
     }
-    _logDebug(
-      'Signed out and cleared stored credentials and default calendar',
-    );
+    _logDebug('Signed out and cleared stored credentials and default calendar');
+  }
+
+  Future<void> _ensureFirebaseSignedIn(GoogleSignInAccount account) async {
+    try {
+      final auth = await account.authentication;
+      final credential = GoogleAuthProvider.credential(
+        accessToken: auth.accessToken,
+        idToken: auth.idToken,
+      );
+      await FirebaseAuth.instance.signInWithCredential(credential);
+      _lastFirebaseAuthError = null;
+      _lastFirebaseAuthContext = 'mobile: ok';
+    } catch (e) {
+      _logDebug('Firebase Auth sign-in failed: $e');
+      _lastFirebaseAuthError = e.toString();
+      _lastFirebaseAuthContext = 'mobile: failed';
+    }
+  }
+
+  Future<void> _ensureFirebaseSignedInWithTokens({
+    required String? accessToken,
+    required String? idToken,
+  }) async {
+    final hasAccessToken = accessToken != null && accessToken.trim().isNotEmpty;
+    final hasIdToken = idToken != null && idToken.trim().isNotEmpty;
+    _lastFirebaseAuthContext =
+        'desktop: accessToken=$hasAccessToken, idToken=$hasIdToken';
+    if (!hasAccessToken && !hasIdToken) {
+      _logDebug('No Google tokens available for Firebase sign-in.');
+      _lastFirebaseAuthError =
+          'No Google tokens available for Firebase sign-in.';
+      return;
+    }
+
+    try {
+      await FirebaseBootstrap.ensureInitialized();
+      // Avoid redundant sign-in when already authenticated.
+      try {
+        final existing = FirebaseAuth.instance.currentUser;
+        if (existing != null) {
+          return;
+        }
+      } catch (e) {
+        _logDebug('FirebaseAuth unavailable (skip Firebase sign-in): $e');
+        return;
+      }
+
+      final credential = GoogleAuthProvider.credential(
+        accessToken: accessToken,
+        idToken: idToken,
+      );
+      await FirebaseAuth.instance.signInWithCredential(credential);
+      _lastFirebaseAuthError = null;
+    } catch (e) {
+      _logDebug('Firebase Auth desktop sign-in failed: $e');
+      _lastFirebaseAuthError = e.toString();
+    }
+  }
+
+  /// Best-effort Firebase Auth sign-in for sync features.
+  Future<User?> ensureFirebaseAuthSignedIn() async {
+    try {
+      await FirebaseBootstrap.ensureInitialized();
+    } catch (_) {}
+
+    try {
+      final existing = FirebaseAuth.instance.currentUser;
+      if (existing != null) return existing;
+    } catch (e) {
+      _logDebug('FirebaseAuth unavailable (skip Firebase sign-in): $e');
+      return null;
+    }
+
+    if (Platform.isAndroid || Platform.isIOS) {
+      _googleSignIn ??= GoogleSignIn(
+        scopes: [calendar.CalendarApi.calendarScope],
+      );
+      try {
+        final account =
+            await _googleSignIn!.signInSilently() ??
+            await _googleSignIn!.signIn();
+        if (account != null) {
+          await _ensureFirebaseSignedIn(account);
+        }
+      } catch (e) {
+        _logDebug('Firebase Auth mobile sign-in failed: $e');
+      }
+      return FirebaseAuth.instance.currentUser;
+    }
+
+    // Desktop: try to refresh access token if needed, then sign in.
+    try {
+      if (_currentAccessTokenString == null ||
+          _currentAccessTokenString!.isEmpty) {
+        final refreshToken = await _storage.getRefreshToken();
+        if (refreshToken != null && refreshToken.isNotEmpty) {
+          final scopes = await _storage.getScopes();
+          await _refreshAccessToken(refreshToken, scopes);
+        }
+      }
+      await _ensureFirebaseSignedInWithTokens(
+        accessToken: _currentAccessTokenString,
+        idToken: _desktopIdToken,
+      );
+    } catch (e) {
+      _logDebug('Firebase Auth desktop sign-in failed: $e');
+    }
+
+    return FirebaseAuth.instance.currentUser;
+  }
+
+  /// Best-effort Firebase Auth sign-in without user interaction.
+  Future<User?> ensureFirebaseAuthSignedInSilently() async {
+    try {
+      await FirebaseBootstrap.ensureInitialized();
+    } catch (_) {}
+
+    try {
+      final existing = FirebaseAuth.instance.currentUser;
+      if (existing != null) return existing;
+    } catch (e) {
+      _logDebug('FirebaseAuth unavailable (skip Firebase sign-in): $e');
+      return null;
+    }
+
+    if (Platform.isAndroid || Platform.isIOS) {
+      _googleSignIn ??= GoogleSignIn(
+        scopes: [calendar.CalendarApi.calendarScope],
+      );
+      try {
+        final account = await _googleSignIn!.signInSilently();
+        if (account != null) {
+          await _ensureFirebaseSignedIn(account);
+        }
+      } catch (e) {
+        _logDebug('Firebase Auth mobile silent sign-in failed: $e');
+      }
+      return FirebaseAuth.instance.currentUser;
+    }
+
+    try {
+      await _ensureFirebaseSignedInWithTokens(
+        accessToken: _currentAccessTokenString,
+        idToken: _desktopIdToken,
+      );
+    } catch (_) {}
+    return FirebaseAuth.instance.currentUser;
   }
 
   Future<void> _persistUserProfileToLocalDb({
     required String? email,
     required String? photoUrl,
+    Map<String, String>? photoHeaders,
   }) async {
     try {
+      final cachedProfile = await _getUserProfileFromLocalDb();
+      final canReuseExistingLocal = _canReuseCachedPhotoForEmail(
+        cachedEmail: cachedProfile['email'],
+        incomingEmail: email,
+      );
+      final existingLocalPath = canReuseExistingLocal
+          ? _existingLocalPhotoPath(cachedProfile['photoUrl'])
+          : null;
+      final incomingLocalPath = _existingLocalPhotoPath(photoUrl);
+
+      String? localPhotoPath = incomingLocalPath;
+      if (localPhotoPath == null) {
+        if (_isRemotePhotoUrl(photoUrl)) {
+          final cached = await _downloadAndCacheProfilePhoto(
+            photoUrl!,
+            headers: photoHeaders,
+          );
+          if (cached != null && cached.isNotEmpty) {
+            localPhotoPath = cached;
+          } else if (existingLocalPath != null) {
+            // Keep prior on-disk profile image if remote fetch failed.
+            localPhotoPath = existingLocalPath;
+          } else {
+            localPhotoPath = photoUrl;
+          }
+        } else if (photoUrl != null && photoUrl.isNotEmpty) {
+          localPhotoPath = photoUrl;
+        } else {
+          localPhotoPath = existingLocalPath;
+        }
+      }
+
+      final resolvedEmail = _firstNonEmpty(email, cachedProfile['email']);
       await LocalEventStore.instance.upsertUserProfile(
-        email: email,
-        photoUrl: photoUrl,
+        email: resolvedEmail,
+        photoUrl: localPhotoPath,
       );
     } catch (e) {
       _logDebug('Failed to cache user profile locally: $e');
@@ -1259,10 +1515,195 @@ class GoogleCalendarService {
 
   Future<Map<String, String?>> _getUserProfileFromLocalDb() async {
     try {
-      return await LocalEventStore.instance.getCachedUserProfile();
+      final profile = await LocalEventStore.instance.getCachedUserProfile();
+      final email = profile['email'];
+      final photoUrl = profile['photoUrl'];
+
+      final localPath = _existingLocalPhotoPath(photoUrl);
+      if (localPath != null) {
+        return {'email': email, 'photoUrl': localPath};
+      }
+
+      // No known user context, avoid recovering an old avatar from disk.
+      if (_firstNonEmpty(email, photoUrl) == null) {
+        return profile;
+      }
+
+      // Recover from stale DB values by probing known cached avatar files.
+      final recovered = await _findCachedProfilePhotoOnDisk();
+      if (recovered != null) {
+        await LocalEventStore.instance.upsertUserProfile(
+          email: email,
+          photoUrl: recovered,
+        );
+        return {'email': email, 'photoUrl': recovered};
+      }
+
+      return profile;
     } catch (e) {
       _logDebug('Failed to read cached user profile: $e');
       return {'email': null, 'photoUrl': null};
+    }
+  }
+
+  /// Downloads the user's Google profile photo and caches it locally.
+  /// Returns the local file path, or null if download fails.
+  Future<String?> _downloadAndCacheProfilePhoto(
+    String remoteUrl, {
+    Map<String, String>? headers,
+  }) async {
+    try {
+      final uri = Uri.tryParse(remoteUrl);
+      if (uri == null) return null;
+
+      http.Response resp;
+      if (headers != null && headers.isNotEmpty) {
+        resp = await http.get(uri, headers: headers);
+        if (resp.statusCode != 200 || resp.bodyBytes.isEmpty) {
+          // Fallback retry without auth headers for public photo URLs.
+          resp = await http.get(uri);
+        }
+      } else {
+        resp = await http.get(uri);
+      }
+      if (resp.statusCode != 200 || resp.bodyBytes.isEmpty) {
+        _logDebug(
+          'Profile photo download failed with status ${resp.statusCode}',
+        );
+        return null;
+      }
+
+      final dir = await getApplicationDocumentsDirectory();
+      final ext = p.extension(uri.path).isNotEmpty
+          ? p.extension(uri.path)
+          : '.jpg';
+      final fileName = 'user_profile_photo$ext';
+      final file = File(p.join(dir.path, fileName));
+
+      await file.writeAsBytes(resp.bodyBytes, flush: true);
+      return file.path;
+    } catch (e) {
+      _logDebug('Error downloading profile photo: $e');
+      return null;
+    }
+  }
+
+  Future<Map<String, String?>> _resolveUserProfileForUi({
+    required String? email,
+    required String? preferredPhotoUrl,
+  }) async {
+    final cached = await _getUserProfileFromLocalDb();
+
+    final localPreferred = _existingLocalPhotoPath(preferredPhotoUrl);
+    final localCached = _existingLocalPhotoPath(cached['photoUrl']);
+
+    final resolvedPhotoUrl =
+        localPreferred ??
+        localCached ??
+        _firstNonEmpty(preferredPhotoUrl, cached['photoUrl']);
+
+    return {
+      'email': _firstNonEmpty(email, cached['email']),
+      'photoUrl': resolvedPhotoUrl,
+    };
+  }
+
+  Future<Map<String, String>?> _getMobileProfilePhotoHeaders(
+    GoogleSignInAccount? acc,
+  ) async {
+    if (acc == null) return null;
+    try {
+      final headers = await acc.authHeaders;
+      return headers.isEmpty ? null : headers;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Map<String, String>? _getDesktopProfilePhotoHeaders() {
+    final token = _currentAccessTokenString;
+    if (token == null || token.isEmpty) return null;
+    return {'Authorization': 'Bearer $token'};
+  }
+
+  bool _isRemotePhotoUrl(String? value) {
+    if (value == null || value.isEmpty) return false;
+    return value.startsWith('http://') || value.startsWith('https://');
+  }
+
+  String? _existingLocalPhotoPath(String? value) {
+    if (value == null || value.isEmpty || _isRemotePhotoUrl(value)) {
+      return null;
+    }
+    try {
+      final file = File(value);
+      if (file.existsSync()) {
+        return file.path;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  String? _firstNonEmpty(String? first, String? second) {
+    if (first != null && first.isNotEmpty) return first;
+    if (second != null && second.isNotEmpty) return second;
+    return null;
+  }
+
+  bool _canReuseCachedPhotoForEmail({
+    required String? cachedEmail,
+    required String? incomingEmail,
+  }) {
+    if (incomingEmail == null || incomingEmail.isEmpty) {
+      return true;
+    }
+    if (cachedEmail == null || cachedEmail.isEmpty) {
+      return false;
+    }
+    return cachedEmail.toLowerCase() == incomingEmail.toLowerCase();
+  }
+
+  Future<String?> _findCachedProfilePhotoOnDisk() async {
+    try {
+      final docsDir = await getApplicationDocumentsDirectory();
+      final entries = Directory(docsDir.path).listSync(followLinks: false);
+      String? newestPath;
+      DateTime? newestModifiedAt;
+      for (final entry in entries) {
+        if (entry is! File) continue;
+        final fileName = p.basename(entry.path).toLowerCase();
+        if (!fileName.startsWith('user_profile_photo') || !entry.existsSync()) {
+          continue;
+        }
+        final modifiedAt = entry.lastModifiedSync();
+        if (newestModifiedAt == null || modifiedAt.isAfter(newestModifiedAt)) {
+          newestModifiedAt = modifiedAt;
+          newestPath = entry.path;
+        }
+      }
+      return newestPath;
+    } catch (e) {
+      _logDebug('Failed to recover cached profile photo from disk: $e');
+    }
+    return null;
+  }
+
+  Future<void> _deleteCachedProfilePhotoFromDisk() async {
+    try {
+      final docsDir = await getApplicationDocumentsDirectory();
+      final entries = Directory(docsDir.path).listSync(followLinks: false);
+      for (final entry in entries) {
+        if (entry is! File) continue;
+        final fileName = p.basename(entry.path).toLowerCase();
+        if (!fileName.startsWith('user_profile_photo') || !entry.existsSync()) {
+          continue;
+        }
+        try {
+          await entry.delete();
+        } catch (_) {}
+      }
+    } catch (e) {
+      _logDebug('Failed to clear cached profile photo files: $e');
     }
   }
 
@@ -1478,12 +1919,15 @@ class GoogleCalendarService {
     }
 
     if (tokenResp.statusCode != 200) {
-      throw Exception('Token exchange failed (status: ${tokenResp.statusCode})');
+      throw Exception(
+        'Token exchange failed (status: ${tokenResp.statusCode})',
+      );
     }
 
     final tokenJson = jsonDecode(tokenResp.body) as Map<String, dynamic>;
     final accessToken = tokenJson['access_token'] as String?;
     final refreshToken = tokenJson['refresh_token'] as String?;
+    final idToken = tokenJson['id_token'] as String?;
     final expiresIn = tokenJson['expires_in'] as int? ?? 3600;
 
     final tokenExpiry = DateTime.now()
@@ -1496,6 +1940,7 @@ class GoogleCalendarService {
     // Store credentials and access token string for later persistence
     _storedCredentials = credentials;
     _currentAccessTokenString = accessToken;
+    _desktopIdToken = idToken;
 
     final client = auth_io.authenticatedClient(http.Client(), credentials);
     return client;
@@ -1732,5 +2177,3 @@ class _SimpleAuthClient extends http.BaseClient {
     return _inner.send(request);
   }
 }
-
-

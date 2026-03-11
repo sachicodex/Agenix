@@ -33,7 +33,7 @@ class AgendaBuilder {
     if (sameDayEvents.isEmpty) {
       return const AgendaNotificationContent(
         title: "Today's Agenda",
-        body: 'No events today \u{1F389}',
+        body: "You don't have any events or tasks today.",
       );
     }
 

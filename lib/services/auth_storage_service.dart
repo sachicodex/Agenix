@@ -19,6 +19,7 @@ class AuthStorageService {
   // Storage keys
   static const String _keyRefreshToken = 'refresh_token';
   static const String _keyAccessToken = 'access_token';
+  static const String _keyIdToken = 'id_token';
   static const String _keyTokenExpiry = 'token_expiry';
   static const String _keyUserEmail = 'user_email';
   static const String _keyUserPhotoUrl = 'user_photo_url';
@@ -31,6 +32,7 @@ class AuthStorageService {
   Future<void> saveCredentials({
     required String? refreshToken,
     required String? accessToken,
+    String? idToken,
     required DateTime? tokenExpiry,
     required List<String> scopes,
     String? userEmail,
@@ -43,6 +45,9 @@ class AuthStorageService {
       }
       if (accessToken != null && accessToken.isNotEmpty) {
         await _storage.write(key: _keyAccessToken, value: accessToken);
+      }
+      if (idToken != null && idToken.isNotEmpty) {
+        await _storage.write(key: _keyIdToken, value: idToken);
       }
       if (tokenExpiry != null) {
         await _storage.write(
@@ -84,6 +89,16 @@ class AuthStorageService {
       return await _storage.read(key: _keyAccessToken);
     } catch (e) {
       print('Error reading access token: $e');
+      return null;
+    }
+  }
+
+  /// Retrieve stored ID token (OIDC)
+  Future<String?> getIdToken() async {
+    try {
+      return await _storage.read(key: _keyIdToken);
+    } catch (e) {
+      print('Error reading id token: $e');
       return null;
     }
   }
@@ -160,6 +175,7 @@ class AuthStorageService {
     try {
       await _storage.delete(key: _keyRefreshToken);
       await _storage.delete(key: _keyAccessToken);
+      await _storage.delete(key: _keyIdToken);
       await _storage.delete(key: _keyTokenExpiry);
       await _storage.delete(key: _keyUserEmail);
       await _storage.delete(key: _keyUserPhotoUrl);

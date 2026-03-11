@@ -5,6 +5,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
+import 'dart:io';
 import '../models/calendar_event.dart';
 import '../services/google_calendar_service.dart';
 import '../providers/event_providers.dart';
@@ -57,7 +58,8 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   static const bool _requireTouchHoldForGridCreateOnMobile = true;
   static const bool _requireTouchHoldForResizeOnMobile = true;
   static const Duration _mobileDoubleTapWindow = Duration(milliseconds: 280);
-  static const double _mobileDoubleTapDistance = 28.0;
+  static const Duration _mobileTripleTapWindow = Duration(milliseconds: 420);
+  static const double _mobileTripleTapDistance = 30.0;
   static const Duration _desktopDoubleClickWindow = Duration(milliseconds: 260);
   static const double _desktopDoubleClickDistance = 18.0;
   static const double _mobileMinEventInteractionHeight = 52.0;
@@ -106,6 +108,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   Offset? _dragStartGlobalPosition;
   CalendarEvent? _draggedEventOriginal;
   bool _isDraggingEvent = false;
+  bool _dragCreatesDuplicate = false;
 
   // Resize state
   String? _resizingEventId;
@@ -154,6 +157,9 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   String? _lastMobileTapEventId;
   DateTime? _lastMobileTapTime;
   Offset? _lastMobileTapPosition;
+  int _mobileTapCount = 0;
+  String? _mobileDuplicateDragEventId;
+  Timer? _pendingMobileDoubleTapTimer;
   String? _lastDesktopClickEventId;
   DateTime? _lastDesktopClickTime;
   Offset? _lastDesktopClickPosition;
@@ -271,6 +277,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     _dragSyncDebounceTimer?.cancel();
     _mobileInteractionWatchdogTimer?.cancel();
     _gridLongPressTimer?.cancel();
+    _pendingMobileDoubleTapTimer?.cancel();
     super.dispose();
   }
 
@@ -679,6 +686,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
         _draggedEventOriginal = null;
       });
       _clearEventTouchPressState();
+      _clearMobileTapSequence();
     }
   }
 
@@ -719,6 +727,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       });
     }
     _clearEventTouchPressState();
+    _clearMobileTapSequence();
   }
 
   Future<void> _handleSwipePointerUp(PointerUpEvent event) async {
@@ -1521,15 +1530,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
               children: [
                 AppPressFeedback(
                   child: IconButton(
-                    icon: _userPhotoUrl != null
-                        ? CircleAvatar(
-                            backgroundImage: NetworkImage(
-                              _userPhotoUrl!,
-                              headers: const {'Cache-Control': 'max-age=3600'},
-                            ),
-                            radius: 16,
-                          )
-                        : const Icon(Icons.account_circle, size: 32),
+                    icon: _buildHeaderAvatarIcon(),
                     visualDensity: isMobile ? VisualDensity.compact : null,
                     tooltip: '',
                     onPressed: () async {
@@ -1554,6 +1555,50 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
 
   Widget _buildCalendarContent() {
     return _buildDayView();
+  }
+
+  Widget _buildHeaderAvatarIcon() {
+    final photoUrl = _userPhotoUrl;
+    if (photoUrl == null || photoUrl.isEmpty) {
+      return const Icon(Icons.account_circle, size: 32);
+    }
+
+    ImageProvider<Object>? imageProvider;
+    if (photoUrl.startsWith('http://') || photoUrl.startsWith('https://')) {
+      imageProvider = NetworkImage(
+        photoUrl,
+        headers: const {'Cache-Control': 'max-age=3600'},
+      );
+    } else {
+      try {
+        final file = File(photoUrl);
+        if (file.existsSync()) {
+          imageProvider = FileImage(file);
+        }
+      } catch (_) {
+        // Fallback to default icon below.
+      }
+    }
+
+    if (imageProvider == null) {
+      return const Icon(Icons.account_circle, size: 32);
+    }
+
+    return CircleAvatar(
+      radius: 16,
+      backgroundColor: Colors.transparent,
+      child: ClipOval(
+        child: Image(
+          image: imageProvider,
+          width: 32,
+          height: 32,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) {
+            return const Icon(Icons.account_circle, size: 32);
+          },
+        ),
+      ),
+    );
   }
 
   Widget _buildDayView() {
@@ -2816,7 +2861,9 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
 
     for (final event in _timedEvents) {
       final isDraggingOriginal =
-          _isDraggingEvent && _draggedEventId == event.id;
+          _isDraggingEvent &&
+          _draggedEventId == event.id &&
+          !_dragCreatesDuplicate;
       widgets.add(
         _buildEventWidget(
           event,
@@ -3060,6 +3107,15 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
           _dragStartTime = event.startDateTime;
           _dragStartGlobalPosition = pointerEvent.position;
           _draggedEventOriginal = event;
+          if (pointerEvent.kind == PointerDeviceKind.touch &&
+              _isMobileLayout(context)) {
+            _trackMobileTapSequenceOnPointerDown(
+              event.id,
+              pointerEvent.position,
+            );
+          } else if (pointerEvent.kind != PointerDeviceKind.touch) {
+            _clearMobileTapSequence();
+          }
         },
         onPointerMove: (pointerEvent) {
           if (isPreview || _eventActionsPopoverEventId != null) return;
@@ -3107,12 +3163,21 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
           }
 
           if (!_isDraggingEvent) {
+            final duplicateByShortcut = _shouldStartDragAsDuplicate(
+              pointerEvent: pointerEvent,
+              eventId: event.id,
+            );
             _dragThresholdExceeded = true;
             setState(() {
               _draggedEventId = event.id;
               _isDraggingEvent = true;
               _dragPreviewEvent = event;
+              _dragCreatesDuplicate = duplicateByShortcut;
             });
+            if (duplicateByShortcut &&
+                pointerEvent.kind == PointerDeviceKind.touch) {
+              HapticFeedback.mediumImpact();
+            }
             _armMobileInteractionWatchdog();
           }
 
@@ -3152,9 +3217,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
 
           if (!_dragThresholdExceeded) {
             if (pointerEvent.kind == PointerDeviceKind.touch) {
-              if (_isMobileDoubleTap(event.id, pointerEvent.position)) {
-                _showEditEventModal(event);
-              }
+              _handleMobileTapUp(event.id);
             } else {
               if (_isDesktopDoubleClick(event.id, pointerEvent.position)) {
                 _showEditEventModal(event);
@@ -3612,7 +3675,9 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     _dragStartGlobalPosition = null;
     _draggedEventOriginal = null;
     _isDraggingEvent = false;
+    _dragCreatesDuplicate = false;
     _dragPreviewEvent = null;
+    _mobileDuplicateDragEventId = null;
     _clearMobileInteractionWatchdog();
   }
 
@@ -3621,16 +3686,60 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       setState(() {
         _clearDragState();
       });
+      _clearMobileTapSequence();
       return;
     }
 
     final originalEvent = _draggedEventOriginal;
     final updatedEvent = _dragPreviewEvent!;
+    final createsDuplicate = _dragCreatesDuplicate;
+    final isMobile = _isMobileLayout(context);
 
     if (originalEvent == null) {
       setState(() {
         _clearDragState();
       });
+      _clearMobileTapSequence();
+      return;
+    }
+
+    _clearMobileTapSequence();
+
+    if (createsDuplicate) {
+      setState(() {
+        _clearDragState();
+      });
+      final duplicateEvent = originalEvent.copyWith(
+        id: '',
+        gEventId: null,
+        startDateTime: updatedEvent.startDateTime,
+        endDateTime: updatedEvent.endDateTime,
+        updatedAtRemote: null,
+        dirty: false,
+        deleted: false,
+        pendingAction: PendingAction.none,
+      );
+
+      try {
+        final created = await _repository.createEvent(duplicateEvent);
+        if (!mounted) return;
+        setState(() {
+          _pinOptimisticEventOverride(created);
+          _eventsMap[created.id] = created;
+          _updateEventLists();
+        });
+        if (isMobile) {
+          _scheduleMobileDragSyncPush();
+        } else {
+          unawaited(
+            _syncService.pushLocalChanges().catchError((e) {
+              debugPrint('Background sync failed after drag duplicate: $e');
+            }),
+          );
+        }
+      } catch (e) {
+        debugPrint('Error duplicating event via drag: $e');
+      }
       return;
     }
 
@@ -3641,7 +3750,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       _clearDragState();
     });
 
-    final isMobile = _isMobileLayout(context);
     if (isMobile) {
       _enqueueMobileDragCommit(
         updatedEvent: updatedEvent,
@@ -4093,29 +4201,98 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     _touchPendingEventId = null;
   }
 
-  bool _isMobileDoubleTap(String eventId, Offset currentPosition) {
+  void _trackMobileTapSequenceOnPointerDown(String eventId, Offset position) {
     final now = DateTime.now();
     final lastTime = _lastMobileTapTime;
     final lastEventId = _lastMobileTapEventId;
     final lastPos = _lastMobileTapPosition;
 
-    final withinWindow =
+    final withinSequence =
         lastTime != null &&
-        now.difference(lastTime) <= _mobileDoubleTapWindow &&
+        now.difference(lastTime) <= _mobileTripleTapWindow &&
         lastEventId == eventId &&
         lastPos != null &&
-        (currentPosition - lastPos).distance <= _mobileDoubleTapDistance;
+        (position - lastPos).distance <= _mobileTripleTapDistance;
 
-    if (withinWindow) {
-      _lastMobileTapTime = null;
-      _lastMobileTapEventId = null;
-      _lastMobileTapPosition = null;
-      return true;
+    if (withinSequence) {
+      _mobileTapCount = _mobileTapCount < 3 ? _mobileTapCount + 1 : 3;
+    } else {
+      _mobileTapCount = 1;
+      _mobileDuplicateDragEventId = null;
+      _cancelPendingMobileDoubleTapEdit();
     }
 
     _lastMobileTapTime = now;
     _lastMobileTapEventId = eventId;
-    _lastMobileTapPosition = currentPosition;
+    _lastMobileTapPosition = position;
+
+    if (_mobileTapCount >= 3) {
+      _mobileDuplicateDragEventId = eventId;
+      _cancelPendingMobileDoubleTapEdit();
+    }
+  }
+
+  void _handleMobileTapUp(String eventId) {
+    if (_mobileDuplicateDragEventId == eventId) {
+      // Third tap was released without entering drag, so disarm shortcut.
+      _clearMobileTapSequence();
+      return;
+    }
+    if (_mobileTapCount == 2 && _lastMobileTapEventId == eventId) {
+      _schedulePendingMobileDoubleTapEdit(eventId);
+    }
+  }
+
+  void _schedulePendingMobileDoubleTapEdit(String eventId) {
+    _cancelPendingMobileDoubleTapEdit();
+    _pendingMobileDoubleTapTimer = Timer(_mobileDoubleTapWindow, () {
+      if (!mounted) return;
+      if (_mobileDuplicateDragEventId == eventId) return;
+      if (_isDraggingEvent || _resizingEventId != null || _isDraggingToCreate) {
+        return;
+      }
+      final event = _eventsMap[eventId];
+      if (event == null) return;
+      _showEditEventModal(event);
+      _clearMobileTapSequence();
+    });
+  }
+
+  void _cancelPendingMobileDoubleTapEdit() {
+    _pendingMobileDoubleTapTimer?.cancel();
+    _pendingMobileDoubleTapTimer = null;
+  }
+
+  void _clearMobileTapSequence() {
+    _cancelPendingMobileDoubleTapEdit();
+    _mobileTapCount = 0;
+    _lastMobileTapEventId = null;
+    _lastMobileTapTime = null;
+    _lastMobileTapPosition = null;
+    _mobileDuplicateDragEventId = null;
+  }
+
+  bool _shouldStartDragAsDuplicate({
+    required PointerEvent pointerEvent,
+    required String eventId,
+  }) {
+    final isWindowsAltDrag =
+        Platform.isWindows &&
+        pointerEvent.kind == PointerDeviceKind.mouse &&
+        HardwareKeyboard.instance.isAltPressed;
+    if (isWindowsAltDrag) {
+      return true;
+    }
+
+    final isMobileTripleTapDrag =
+        pointerEvent.kind == PointerDeviceKind.touch &&
+        _isMobileLayout(context) &&
+        _mobileDuplicateDragEventId == eventId;
+    if (isMobileTripleTapDrag) {
+      _clearMobileTapSequence();
+      return true;
+    }
+
     return false;
   }
 
@@ -4200,6 +4377,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     _clearEventTouchPressState();
     _clearPendingResizeTouch();
     _clearMobileInteractionWatchdog();
+    _clearMobileTapSequence();
   }
 
   void _armMobileInteractionWatchdog({bool preserveDeferral = false}) {

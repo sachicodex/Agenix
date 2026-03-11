@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -16,6 +15,8 @@ import 'screens/create_event_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/sync_feedback_screen.dart';
 import 'services/google_calendar_service.dart';
+import 'services/firebase_bootstrap.dart';
+import 'services/settings_sync_coordinator.dart';
 import 'theme/app_theme.dart';
 
 Future<void> main() async {
@@ -26,19 +27,24 @@ Future<void> main() async {
     databaseFactory = databaseFactoryFfi;
   }
 
+  // Load .env early because desktop Firebase init may depend on it.
+  // Keep optional so the app can still run without Firebase configuration.
+  await dotenv.load(isOptional: true);
+
+  // Android/iOS uses native config; desktop can use .env FirebaseOptions.
+  try {
+    await FirebaseBootstrap.ensureInitialized();
+  } catch (e, st) {
+    // Keep app running even if Firebase isn't configured, but log for debug.
+    debugPrint('Firebase init failed: $e');
+    debugPrint('$st');
+  }
+
   if (isFirebaseMessagingSupportedPlatform()) {
-    await Firebase.initializeApp();
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
   }
 
   await LocalEventStore.instance.initialize();
-
-  // Load environment variables from .env (optional) - non-blocking
-  // If the .env file is missing, dotenv.load() may throw; catch and continue
-  // so the app can run using system environment variables instead.
-  dotenv.load().catchError((e) {
-    // Silently continue - app can use system environment variables
-  });
 
   // Initialize authentication service to restore any stored credentials
   // Run in background to not block app startup
@@ -62,8 +68,11 @@ class _MyAppState extends ConsumerState<MyApp> {
     super.initState();
     Future.microtask(() async {
       await ref.read(notificationRescheduleCoordinatorProvider).start();
+      SettingsSyncCoordinator.instance.start();
       try {
-        await ref.read(firebasePushServiceProvider).initialize();
+        if (isFirebaseMessagingSupportedPlatform()) {
+          await ref.read(firebasePushServiceProvider).initialize();
+        }
       } catch (e, st) {
         debugPrint('FCM initialize error: $e');
         debugPrint('$st');

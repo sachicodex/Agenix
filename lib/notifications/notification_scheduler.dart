@@ -45,6 +45,9 @@ class NotificationScheduler {
     }
 
     final now = tz.TZDateTime.now(tz.local);
+    final agendaMinutes = settings.dailyAgendaMinutesAfterMidnight;
+    final agendaHour = (agendaMinutes ~/ 60).clamp(0, 23);
+    final agendaMinute = (agendaMinutes % 60).clamp(0, 59);
     final startDay = tz.TZDateTime(tz.local, now.year, now.month, now.day);
     final endDay = startDay.add(Duration(days: daysAhead));
     final events = await _eventSource.getEventsBetween(
@@ -57,16 +60,18 @@ class NotificationScheduler {
       final dayStart = startDay.add(Duration(days: i));
       final dayKey = _dateKey(dayStart);
       final notificationId = _stablePositiveId('agenda:$dayKey');
-      final previouslyScheduledId = previousAgendaMap[dayKey];
 
-      final scheduledAt = tz.TZDateTime(
+      var scheduledAt = tz.TZDateTime(
         tz.local,
         dayStart.year,
         dayStart.month,
         dayStart.day,
-        6,
+        agendaHour,
+        agendaMinute,
       );
       if (!scheduledAt.isAfter(now)) {
+        // Do not send instant catch-up agenda notifications when the selected
+        // time is already passed/equal for today. Wait for the next valid day.
         continue;
       }
 
@@ -75,16 +80,15 @@ class NotificationScheduler {
         events: events,
       );
 
-      // Avoid re-scheduling the same pending notification repeatedly.
-      if (previouslyScheduledId != notificationId) {
-        await _notificationService.scheduleAgendaNotification(
-          notificationId: notificationId,
-          title: content.title,
-          body: content.body,
-          scheduledDate: scheduledAt,
-          payload: 'agenda:$dayKey',
-        );
-      }
+      // Always (re)schedule by ID so user time/content changes replace stale
+      // pending alarms, including while app is later closed.
+      await _notificationService.scheduleAgendaNotification(
+        notificationId: notificationId,
+        title: content.title,
+        body: content.body,
+        scheduledDate: scheduledAt,
+        payload: 'agenda:$dayKey',
+      );
       nextAgendaMap[dayKey] = notificationId;
     }
 

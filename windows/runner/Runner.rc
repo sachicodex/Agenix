@@ -90,7 +90,7 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "Sachicodex" "\0"
-            VALUE "FileDescription", "Agenix - Calendar Management Application" "\0"
+            VALUE "FileDescription", "Agenix" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "agenix" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2025 Sachicodex. All rights reserved." "\0"

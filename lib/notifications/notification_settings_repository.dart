@@ -16,8 +16,11 @@ class NotificationSettingsRepository {
   static const String _dailyAgendaEnabledKey = 'notif_daily_agenda_enabled';
   static const String _eventRemindersEnabledKey =
       'notif_event_reminders_enabled';
+   static const String _dailyAgendaMinutesKey =
+      'notif_daily_agenda_minutes_after_midnight';
 
   static const int _defaultReminderMinutes = 15;
+  static const int _defaultDailyAgendaMinutesAfterMidnight = 6 * 60;
 
   Future<NotificationUserSettings> getSettings() async {
     final prefs = await _preferencesLoader();
@@ -26,6 +29,9 @@ class NotificationSettingsRepository {
           prefs.getInt(_defaultReminderMinutesKey) ?? _defaultReminderMinutes,
       dailyAgendaEnabled: prefs.getBool(_dailyAgendaEnabledKey) ?? true,
       eventRemindersEnabled: prefs.getBool(_eventRemindersEnabledKey) ?? true,
+      dailyAgendaMinutesAfterMidnight:
+          prefs.getInt(_dailyAgendaMinutesKey) ??
+          _defaultDailyAgendaMinutesAfterMidnight,
     );
   }
 
@@ -45,6 +51,10 @@ class NotificationSettingsRepository {
       _eventRemindersEnabledKey,
       settings.eventRemindersEnabled,
     );
+    await prefs.setInt(
+      _dailyAgendaMinutesKey,
+      settings.dailyAgendaMinutesAfterMidnight,
+    );
     _emit(settings);
   }
 
@@ -57,6 +67,14 @@ class NotificationSettingsRepository {
 
   Future<void> setDailyAgendaEnabled(bool enabled) async {
     final next = (await getSettings()).copyWith(dailyAgendaEnabled: enabled);
+    await saveSettings(next);
+  }
+
+  Future<void> setDailyAgendaMinutesAfterMidnight(int minutes) async {
+    final clamped = minutes.clamp(0, 24 * 60 - 1);
+    final next = (await getSettings()).copyWith(
+      dailyAgendaMinutesAfterMidnight: clamped,
+    );
     await saveSettings(next);
   }
 

@@ -152,24 +152,16 @@ class NotificationService {
     required NotificationDetails details,
     String? payload,
   }) async {
+    await initialize();
+
     if (defaultTargetPlatform == TargetPlatform.windows) {
-      final canScheduleInOs = MsixUtils.hasPackageIdentity();
-      if (!canScheduleInOs) {
-        _scheduleWindowsInProcess(
-          notificationId: notificationId,
-          title: title,
-          body: body,
-          scheduledDate: scheduledDate,
-          details: details,
-          payload: payload,
-        );
-        return;
-      }
+      // Always clear any existing in-process timer to avoid duplicates.
+      _windowsTimers.remove(notificationId)?.cancel();
     }
 
     if (defaultTargetPlatform == TargetPlatform.android) {
-      // Prefer alarmClock for best delivery reliability when app is closed.
-      // If unavailable/denied on a device, fall back gracefully.
+      // Prefer exact scheduling; some OEMs (Android 8+) behave better with this.
+      // If unavailable/denied, fall back gracefully.
       try {
         await _plugin.zonedSchedule(
           id: notificationId,
@@ -177,7 +169,7 @@ class NotificationService {
           body: body,
           scheduledDate: scheduledDate,
           notificationDetails: details,
-          androidScheduleMode: AndroidScheduleMode.alarmClock,
+          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
           payload: payload,
         );
         return;
@@ -190,7 +182,7 @@ class NotificationService {
           body: body,
           scheduledDate: scheduledDate,
           notificationDetails: details,
-          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          androidScheduleMode: AndroidScheduleMode.alarmClock,
           payload: payload,
         );
         return;

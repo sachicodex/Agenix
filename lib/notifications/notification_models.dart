@@ -3,16 +3,19 @@ class NotificationUserSettings {
     required this.defaultReminderMinutes,
     required this.dailyAgendaEnabled,
     required this.eventRemindersEnabled,
+    required this.dailyAgendaMinutesAfterMidnight,
   });
 
   final int defaultReminderMinutes;
   final bool dailyAgendaEnabled;
   final bool eventRemindersEnabled;
+  final int dailyAgendaMinutesAfterMidnight;
 
   NotificationUserSettings copyWith({
     int? defaultReminderMinutes,
     bool? dailyAgendaEnabled,
     bool? eventRemindersEnabled,
+    int? dailyAgendaMinutesAfterMidnight,
   }) {
     return NotificationUserSettings(
       defaultReminderMinutes:
@@ -20,6 +23,8 @@ class NotificationUserSettings {
       dailyAgendaEnabled: dailyAgendaEnabled ?? this.dailyAgendaEnabled,
       eventRemindersEnabled:
           eventRemindersEnabled ?? this.eventRemindersEnabled,
+      dailyAgendaMinutesAfterMidnight:
+          dailyAgendaMinutesAfterMidnight ?? this.dailyAgendaMinutesAfterMidnight,
     );
   }
 }
