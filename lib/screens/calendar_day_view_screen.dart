@@ -779,6 +779,12 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       _syncService.pushLocalChanges();
       _refreshUserInfo();
     }
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      _dragSyncDebounceTimer?.cancel();
+      _resizeSyncDebounceTimer?.cancel();
+      unawaited(_syncService.pushLocalChanges());
+    }
   }
 
   @override
@@ -3751,10 +3757,18 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     });
 
     if (isMobile) {
-      _enqueueMobileDragCommit(
-        updatedEvent: updatedEvent,
-        originalEvent: originalEvent,
-      );
+      try {
+        await _repository.updateEvent(updatedEvent);
+        _scheduleMobileDragSyncPush();
+      } catch (e) {
+        debugPrint('Error updating event (mobile drag): $e');
+        if (!mounted) return;
+        setState(() {
+          _clearOptimisticEventOverride(originalEvent.id);
+          _eventsMap[originalEvent.id] = originalEvent;
+          _updateEventLists();
+        });
+      }
       return;
     }
 

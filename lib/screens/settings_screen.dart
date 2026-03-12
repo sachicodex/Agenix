@@ -1149,7 +1149,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                           style: AppTextStyles.headline2.copyWith(fontSize: 18),
                         ),
                         const SizedBox(height: 12),
-                        if (Platform.isAndroid)
+                        if (Platform.isAndroid) ...[
                           Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -1161,7 +1161,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                                       'Battery optimization disabled',
                                       style: AppTextStyles.bodyText1,
                                     ),
-                                    const SizedBox(height: 6),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Required for reliable reminders on Vivo, Xiaomi, OPPO',
+                                      style: AppTextStyles.bodyText1.copyWith(
+                                        fontSize: 12,
+                                        color: AppColors.onSurface.withOpacity(0.6),
+                                      ),
+                                    ),
                                   ],
                                 ),
                               ),
@@ -1180,6 +1187,55 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                               ),
                             ],
                           ),
+                          const SizedBox(height: 8),
+                          OutlinedButton.icon(
+                            onPressed: () async {
+                              try {
+                                await const OpenSettingsPlusAndroid().applicationDetails();
+                              } catch (_) {}
+                            },
+                            icon: const Icon(Icons.settings, size: 18),
+                            label: const Text('Open app settings'),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          ExpansionTile(
+                            tilePadding: EdgeInsets.zero,
+                            childrenPadding: const EdgeInsets.only(
+                              left: 4,
+                              right: 4,
+                              bottom: 8,
+                            ),
+                            title: Text(
+                              'Tips for Vivo, Xiaomi, OPPO',
+                              style: AppTextStyles.bodyText1.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            subtitle: Text(
+                              'Ensure notifications work reliably',
+                              style: AppTextStyles.bodyText1.copyWith(
+                                fontSize: 12,
+                                color: AppColors.onSurface.withOpacity(0.6),
+                              ),
+                            ),
+                            children: [
+                              Text(
+                                '• Autostart: Settings > Apps > Agenix > Autostart → Enable\n'
+                                '• Battery: Set Agenix to "Not optimized" or "No restrictions"\n'
+                                '• Lock app: Swipe up recent apps → Lock Agenix (Vivo/Xiaomi)\n'
+                                '• High power: Battery > High background power → Enable Agenix',
+                                style: AppTextStyles.bodyText1.copyWith(
+                                  fontSize: 13,
+                                  height: 1.5,
+                                  color: AppColors.onSurface.withOpacity(0.85),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                         SwitchListTile(
                           contentPadding: EdgeInsets.zero,
                           title: Text(

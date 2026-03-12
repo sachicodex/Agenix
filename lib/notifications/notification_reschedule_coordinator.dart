@@ -39,7 +39,7 @@ class NotificationRescheduleCoordinator {
     }
     _started = true;
 
-    await _scheduler.syncAndReschedule();
+    await rescheduleNow();
     _eventChangesSubscription = _eventSource.onEventsChanged().listen((_) {
       _triggerDebouncedReschedule();
     });
@@ -57,6 +57,11 @@ class NotificationRescheduleCoordinator {
     if (previous == SyncState.syncing && status.state == SyncState.idle) {
       _triggerDebouncedReschedule();
     }
+  }
+
+  /// Reschedule immediately (no debounce). Use on app open and app resume.
+  Future<void> rescheduleNow() async {
+    await _runQueuedReschedule();
   }
 
   void _triggerDebouncedReschedule() {

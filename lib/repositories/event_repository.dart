@@ -1,7 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../data/local/local_event_store.dart';
 import '../models/calendar_event.dart';
+import '../services/background_event_sync.dart';
+import '../services/event_sync_activity_tracker.dart';
+import '../services/foreground_event_sync_service.dart';
 
 class EventRepository {
   EventRepository(this._localStore);
@@ -26,6 +31,9 @@ class EventRepository {
     );
 
     await _localStore.upsertEvent(record);
+    await EventSyncActivityTracker.markLocalChange();
+    unawaited(BackgroundEventSync.scheduleOneOffSync());
+    await ForegroundEventSyncService.startIfNeeded();
     return record;
   }
 
@@ -42,6 +50,9 @@ class EventRepository {
       pendingAction: nextPending,
     );
     await _upsertWithIdentityTransition(oldId: event.id, event: record);
+    await EventSyncActivityTracker.markLocalChange();
+    unawaited(BackgroundEventSync.scheduleOneOffSync());
+    await ForegroundEventSyncService.startIfNeeded();
     return record;
   }
 
@@ -63,6 +74,9 @@ class EventRepository {
       pendingAction: PendingAction.delete,
     );
     await _localStore.upsertEvent(record);
+    await EventSyncActivityTracker.markLocalChange();
+    unawaited(BackgroundEventSync.scheduleOneOffSync());
+    await ForegroundEventSyncService.startIfNeeded();
   }
 
   PendingAction _mergePendingAction(PendingAction current) {

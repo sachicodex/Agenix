@@ -58,8 +58,12 @@ class NotificationService {
           NotificationChannels.agendaId,
           NotificationChannels.agendaName,
           channelDescription: NotificationChannels.agendaDescription,
-          importance: Importance.defaultImportance,
-          priority: Priority.defaultPriority,
+          importance: Importance.high,
+          priority: Priority.high,
+          enableVibration: true,
+          visibility: NotificationVisibility.public,
+          category: AndroidNotificationCategory.event,
+          ticker: "Today's Agenda",
         ),
         windows: WindowsNotificationDetails(),
       ),
@@ -84,8 +88,13 @@ class NotificationService {
           NotificationChannels.remindersId,
           NotificationChannels.remindersName,
           channelDescription: NotificationChannels.remindersDescription,
-          importance: Importance.high,
-          priority: Priority.high,
+          importance: Importance.max,
+          priority: Priority.max,
+          enableVibration: true,
+          visibility: NotificationVisibility.public,
+          playSound: true,
+          category: AndroidNotificationCategory.reminder,
+          ticker: 'Event reminder',
         ),
         windows: WindowsNotificationDetails(),
       ),
@@ -160,43 +169,35 @@ class NotificationService {
     }
 
     if (defaultTargetPlatform == TargetPlatform.android) {
-      // Prefer exact scheduling; some OEMs (Android 8+) behave better with this.
-      // If unavailable/denied, fall back gracefully.
-      try {
-        await _plugin.zonedSchedule(
-          id: notificationId,
-          title: title,
-          body: body,
-          scheduledDate: scheduledDate,
-          notificationDetails: details,
-          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-          payload: payload,
-        );
-        return;
-      } catch (_) {}
-
-      try {
-        await _plugin.zonedSchedule(
-          id: notificationId,
-          title: title,
-          body: body,
-          scheduledDate: scheduledDate,
-          notificationDetails: details,
-          androidScheduleMode: AndroidScheduleMode.alarmClock,
-          payload: payload,
-        );
-        return;
-      } catch (_) {}
-
-      await _plugin.zonedSchedule(
-        id: notificationId,
-        title: title,
-        body: body,
-        scheduledDate: scheduledDate,
-        notificationDetails: details,
-        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-        payload: payload,
-      );
+      // Android 8+ (API 26+): alarmClock is most reliable for terminated apps and
+      // Doze mode—uses AlarmManager.setAlarmClock(), exempt from batching.
+      // exactAllowWhileIdle can be delayed/dropped on some OEMs (e.g. Android 8.1).
+      const androidModes = <AndroidScheduleMode>[
+        AndroidScheduleMode.alarmClock,
+        AndroidScheduleMode.exactAllowWhileIdle,
+        AndroidScheduleMode.inexactAllowWhileIdle,
+      ];
+      Object? lastError;
+      for (final mode in androidModes) {
+        try {
+          await _plugin.zonedSchedule(
+            id: notificationId,
+            title: title,
+            body: body,
+            scheduledDate: scheduledDate,
+            notificationDetails: details,
+            androidScheduleMode: mode,
+            payload: payload,
+          );
+          return;
+        } catch (e) {
+          lastError = e;
+          if (kDebugMode) {
+            debugPrint('Agenix notification schedule ($mode) failed: $e');
+          }
+        }
+      }
+      if (lastError != null) throw lastError;
       return;
     }
 
@@ -293,7 +294,8 @@ class NotificationService {
         NotificationChannels.agendaId,
         NotificationChannels.agendaName,
         description: NotificationChannels.agendaDescription,
-        importance: Importance.defaultImportance,
+        importance: Importance.high,
+        enableVibration: true,
       ),
     );
 
@@ -302,7 +304,8 @@ class NotificationService {
         NotificationChannels.remindersId,
         NotificationChannels.remindersName,
         description: NotificationChannels.remindersDescription,
-        importance: Importance.high,
+        importance: Importance.max,
+        enableVibration: true,
       ),
     );
 

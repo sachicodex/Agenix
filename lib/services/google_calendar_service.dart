@@ -178,13 +178,19 @@ class GoogleCalendarService {
   http.Client? _authClient;
   bool _signedIn = false;
   bool _initialized = false;
+  bool _allowInteractiveSignIn = true;
   final AuthStorageService _storage = AuthStorageService();
   auth_io.AccessCredentials? _storedCredentials;
   String?
   _currentAccessTokenString; // Store access token string for persistence
+  Future<void>? _desktopRefreshInFlight;
 
   /// Get the storage service instance (for calendar selection)
   AuthStorageService get storage => _storage;
+
+  void setAllowInteractiveSignIn(bool allowed) {
+    _allowInteractiveSignIn = allowed;
+  }
 
   /// Initialize the service and restore authentication state from storage.
   /// Should be called at app startup.
@@ -361,8 +367,68 @@ class GoogleCalendarService {
     } catch (e) {
       _logDebug('Error refreshing token: $e');
       await _storage.clearCredentials();
+      _authClient?.close();
+      _authClient = null;
+      _storedCredentials = null;
+      _currentAccessTokenString = null;
+      _signedIn = false;
       throw Exception('Failed to refresh access token: $e');
     }
+  }
+
+  Future<void> _refreshDesktopAccessTokenIfNeeded() async {
+    // Only applies to desktop flows where we persist refresh credentials.
+    if (Platform.isAndroid || Platform.isIOS) return;
+
+    DateTime? expiry = _storedCredentials?.accessToken.expiry;
+    expiry ??= await _storage.getTokenExpiry();
+
+    final nowUtc = DateTime.now().toUtc();
+    final needsRefresh =
+        expiry == null ||
+        expiry.toUtc().isBefore(nowUtc.add(const Duration(minutes: 5)));
+
+    if (!needsRefresh) return;
+
+    final refreshToken =
+        _storedCredentials?.refreshToken ?? await _storage.getRefreshToken();
+    if (refreshToken == null || refreshToken.isEmpty) {
+      throw Exception('Sign in required (missing refresh token).');
+    }
+
+    // Avoid duplicate refresh calls when multiple API requests race.
+    if (_desktopRefreshInFlight != null) {
+      await _desktopRefreshInFlight;
+      return;
+    }
+
+    final scopes = _storedCredentials?.scopes ?? await _storage.getScopes();
+    final refreshFuture = _refreshAccessToken(refreshToken, scopes);
+    _desktopRefreshInFlight = refreshFuture;
+    try {
+      await refreshFuture;
+    } finally {
+      _desktopRefreshInFlight = null;
+    }
+  }
+
+  Future<void> _ensureDesktopClientReady() async {
+    if (!_initialized) {
+      await initialize();
+    }
+
+    if (_authClient == null || _storedCredentials == null) {
+      final hasStored = await _storage.hasStoredCredentials();
+      if (hasStored) {
+        await _restoreDesktopAuthFromStorage();
+      }
+    }
+
+    if (_authClient == null) {
+      throw Exception('Not signed in (desktop).');
+    }
+
+    await _refreshDesktopAccessTokenIfNeeded();
   }
 
   Future<http.Response> _exchangeDesktopTokenViaProxy(
@@ -672,9 +738,11 @@ class GoogleCalendarService {
         scopes: [calendar.CalendarApi.calendarScope],
       );
 
-      final account =
-          await _googleSignIn!.signInSilently() ??
-          await _googleSignIn!.signIn();
+      final silent = await _googleSignIn!.signInSilently();
+      if (silent == null && !_allowInteractiveSignIn) {
+        throw Exception('Sign in required (interactive disabled).');
+      }
+      final account = silent ?? await _googleSignIn!.signIn();
       if (account == null) throw Exception('Sign in aborted by user');
 
       final auth = await account.authentication;
@@ -684,6 +752,7 @@ class GoogleCalendarService {
       return _SimpleAuthClient(accessToken);
     }
 
+    await _ensureDesktopClientReady();
     if (_authClient != null) return _authClient!;
 
     throw Exception('Not signed in (desktop).');

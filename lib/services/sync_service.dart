@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -26,12 +27,14 @@ class SyncService {
 
   Timer? _timer;
   Timer? _rangeUpdateDebounceTimer;
+  Timer? _deferredPushTimer;
   DateTimeRange? _currentRange;
   String? _defaultCalendarId;
   SharedPreferences? _prefs;
   bool _backgroundSyncInProgress = false;
   Future<void>? _pushLocalChangesInFlight;
   bool _pushLocalChangesNeedsAnotherPass = false;
+  String? _syncLockOwner;
 
   // Keep this aligned with LocalEventStore database version.
   static const int _localDbSchemaVersion = 3;
@@ -41,6 +44,10 @@ class SyncService {
   static const String _prefLastSuccessfulSyncMs = 'sync_last_successful_ms';
   static const String _prefKnownDbVersion = 'sync_known_db_version';
   static const String _prefKnownEngineVersion = 'sync_known_engine_version';
+  static const String _prefSyncLockMs = 'sync_push_lock_ms';
+  static const String _prefSyncLockOwner = 'sync_push_lock_owner';
+  static const Duration _syncLockTimeout = Duration(seconds: 20);
+  static const Duration _deferredPushDelay = Duration(seconds: 6);
 
   final StreamController<SyncStatus> _statusController =
       StreamController<SyncStatus>.broadcast();
@@ -48,6 +55,11 @@ class SyncService {
 
   Stream<SyncStatus> get statusStream => _statusController.stream;
   SyncStatus get status => _status;
+  bool get isBusy =>
+      _status.state == SyncState.syncing ||
+      _backgroundSyncInProgress ||
+      _pushLocalChangesInFlight != null ||
+      _deferredPushTimer != null;
 
   Future<void> start({
     required DateTimeRange range,
@@ -218,10 +230,15 @@ class SyncService {
 
   Future<void> pushLocalChanges() async {
     if (!await _ensureSignedIn()) return;
+    if (!await _tryAcquireSyncLock()) {
+      _scheduleDeferredPush();
+      return;
+    }
 
     if (_pushLocalChangesInFlight != null) {
       _pushLocalChangesNeedsAnotherPass = true;
       await _pushLocalChangesInFlight;
+      await _releaseSyncLock();
       return;
     }
 
@@ -233,7 +250,16 @@ class SyncService {
       if (identical(_pushLocalChangesInFlight, inFlight)) {
         _pushLocalChangesInFlight = null;
       }
+      await _releaseSyncLock();
     }
+  }
+
+  void _scheduleDeferredPush() {
+    if (_deferredPushTimer != null) return;
+    _deferredPushTimer = Timer(_deferredPushDelay, () async {
+      _deferredPushTimer = null;
+      await pushLocalChanges();
+    });
   }
 
   Future<void> _runQueuedPushLocalChanges() async {
@@ -248,7 +274,14 @@ class SyncService {
     if (pending.isEmpty) return;
 
     for (final event in pending) {
-      final normalizedEvent = _normalizeRemoteIdentity(event);
+      final latest = await _localStore.getById(event.id);
+      if (latest == null) {
+        continue;
+      }
+      if (!latest.dirty && latest.pendingAction == PendingAction.none) {
+        continue;
+      }
+      final normalizedEvent = _normalizeRemoteIdentity(latest);
       try {
         if (normalizedEvent.pendingAction == PendingAction.create) {
           final created = await _remoteSource.insertEvent(
@@ -677,6 +710,40 @@ class SyncService {
     if (!_statusController.isClosed) {
       _statusController.add(status);
     }
+  }
+
+  Future<bool> _tryAcquireSyncLock() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final last = _prefs!.getInt(_prefSyncLockMs);
+    final lastOwner = _prefs!.getString(_prefSyncLockOwner);
+    if (last != null && now - last < _syncLockTimeout.inMilliseconds) {
+      if (lastOwner != null && lastOwner.isNotEmpty) {
+        return false;
+      }
+    }
+
+    final owner = '${now}_${Random().nextInt(1 << 32)}';
+    await _prefs!.setInt(_prefSyncLockMs, now);
+    await _prefs!.setString(_prefSyncLockOwner, owner);
+
+    final confirm = _prefs!.getString(_prefSyncLockOwner);
+    if (confirm != owner) {
+      return false;
+    }
+    _syncLockOwner = owner;
+    return true;
+  }
+
+  Future<void> _releaseSyncLock() async {
+    if (_syncLockOwner == null) return;
+    _prefs ??= await SharedPreferences.getInstance();
+    final owner = _prefs!.getString(_prefSyncLockOwner);
+    if (owner == _syncLockOwner) {
+      await _prefs!.remove(_prefSyncLockOwner);
+      await _prefs!.remove(_prefSyncLockMs);
+    }
+    _syncLockOwner = null;
   }
 
   Future<String?> _getSyncToken(String calendarId) async {
