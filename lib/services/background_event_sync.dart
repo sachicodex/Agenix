@@ -1,16 +1,28 @@
 import 'dart:io';
 
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:workmanager/workmanager.dart';
 
 import '../data/local/local_event_store.dart';
+import '../data/remote/remote_calendar_data_source.dart';
 import '../notifications/background_notification_rescheduler.dart';
 import '../services/google_calendar_service.dart';
-import '../services/local_events_sync_service.dart';
+import '../services/sync_service.dart';
 
 const String kEventSyncTaskName = 'event_sync_task';
 const String kEventSyncOneOffPrefix = 'event_sync_oneoff';
 const String kEventSyncPeriodicId = 'event_sync_periodic';
+// Keep aligned with NotificationScheduler.daysAhead defaults.
+const int kBackgroundSyncDaysAhead = 30;
+
+DateTimeRange _buildBackgroundSyncRange({
+  int daysAhead = kBackgroundSyncDaysAhead,
+}) {
+  final now = DateTime.now();
+  final startOfDay = DateTime(now.year, now.month, now.day);
+  final endDay = startOfDay.add(Duration(days: daysAhead));
+  return DateTimeRange(start: startOfDay, end: endDay);
+}
 
 class BackgroundEventSync {
   static Future<void> initialize() async {
@@ -58,7 +70,20 @@ void callbackDispatcher() {
       GoogleCalendarService.instance.setAllowInteractiveSignIn(false);
       bool syncOk = false;
       try {
-        await LocalEventsSyncService.instance.syncLocalEventsToGoogle();
+        final defaultCalendarId =
+            await GoogleCalendarService.instance.storage.getDefaultCalendarId();
+        final calendarId =
+            (defaultCalendarId == null || defaultCalendarId.isEmpty)
+                ? 'primary'
+                : defaultCalendarId;
+        final syncService = SyncService(
+          LocalEventStore.instance,
+          RemoteCalendarDataSource(GoogleCalendarService.instance),
+        );
+        await syncService.backgroundPushAndPull(
+          calendarId: calendarId,
+          range: _buildBackgroundSyncRange(),
+        );
         syncOk = true;
       } catch (_) {
         return false;

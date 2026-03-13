@@ -846,6 +846,29 @@ class SyncService {
     return false;
   }
 
+  /// Background-friendly entrypoint for Android WorkManager tasks.
+  ///
+  /// This does not rely on any UI state. Callers must provide an explicit
+  /// [calendarId] (typically the user's default calendar) and [range].
+  /// It will:
+  ///   1) Ensure the user is signed in (silent if possible),
+  ///   2) Push any pending local changes,
+  ///   3) Pull remote changes incrementally using stored sync tokens.
+  Future<void> backgroundPushAndPull({
+    required String calendarId,
+    required DateTimeRange range,
+  }) async {
+    // Reuse the existing sync engine but avoid UI status noise.
+    _defaultCalendarId = calendarId;
+    _currentRange = range;
+    _prefs ??= await SharedPreferences.getInstance();
+
+    await _runBackgroundSyncTask(() async {
+      await pushLocalChanges();
+      await incrementalSync(showProgress: false);
+    });
+  }
+
   Future<void> _runBackgroundSyncTask(Future<void> Function() task) async {
     if (_backgroundSyncInProgress) return;
     _backgroundSyncInProgress = true;
