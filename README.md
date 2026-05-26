@@ -20,7 +20,7 @@
 | Platform | Package | Link | Notes |
 |---|---|---|---|
 | Android | APK | [Latest Release](https://github.com/sachicodex/Agenix/releases/latest) | Install the release APK on your Android device. |
-| Windows | EXE / MSIX | [Latest Release](https://github.com/sachicodex/Agenix/releases/latest) | MSIX is recommended for the best Windows notification/startup experience. |
+| Windows | MSIX | [Latest Release](https://github.com/sachicodex/Agenix/releases/latest) | MSIX is recommended for the best Windows notification/startup experience. |
 | Linux / macOS / iOS | Build from source | [Run From Source](#run-from-source) | Source builds are possible with Flutter tooling, but Android and Windows are the main polished targets in this repo. |
 
 ## About
