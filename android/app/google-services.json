@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "178139986306",
+    "project_id": "agenix-487415",
+    "storage_bucket": "agenix-487415.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:178139986306:android:d9bd48a1d8eca7fb53f79b",
+        "android_client_info": {
+          "package_name": "com.sachicodex.agenix"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "178139986306-tch7kuo2igt068sjo2cc0ql3n3u19fus.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBseXs3kq-t9w5ivBM0e1mITZwF8uc7Lr4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "178139986306-f6946dnsmnngvsa0mpqdft8p42emt5h1.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

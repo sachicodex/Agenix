@@ -1,0 +1,2448 @@
+import 'dart:io'
+    show
+        Platform,
+        HttpServer,
+        InternetAddress,
+        File,
+        Directory,
+        SocketException;
+import 'dart:async';
+import 'dart:convert';
+import 'dart:math';
+import 'package:crypto/crypto.dart';
+import 'package:googleapis/calendar/v3.dart' as calendar;
+import 'package:googleapis_auth/auth_io.dart' as auth_io;
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:http/http.dart' as http;
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:url_launcher/url_launcher_string.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:path/path.dart' as p;
+import '../google_oauth_config.dart';
+import 'app_data_service.dart';
+import 'auth_storage_service.dart';
+import '../data/local/local_event_store.dart';
+import 'firebase_bootstrap.dart';
+
+/// Lightweight service to sign in and insert events into Google Calendar.
+///
+/// Notes:
+/// - Android: uses `google_sign_in` to obtain an access token and then calls the
+///   Calendar API with that token (no refresh token in this simple flow).
+/// - Windows/Desktop: uses `clientViaUserConsent` (loopback) to perform an
+///   OAuth2 consent flow and receive an authenticated client.
+///
+/// For production you should persist refresh credentials securely (e.g., in
+/// flutter_secure_storage) and handle token refresh logic.
+class _DesktopTokenRefreshException implements Exception {
+  _DesktopTokenRefreshException(this.response);
+
+  final http.Response response;
+
+  @override
+  String toString() => 'Token refresh failed (status: ${response.statusCode})';
+}
+
+class GoogleCalendarService {
+  static const bool _verboseEventFetchLogs = false;
+  String? _desktopUserDisplayName;
+  String? _desktopUserEmail;
+  String? _desktopUserPhotoUrl;
+  String? _desktopIdToken;
+  String? _lastFirebaseAuthError;
+  String? _lastFirebaseAuthContext;
+
+  String? get lastFirebaseAuthError => _lastFirebaseAuthError;
+  String? get lastFirebaseAuthContext => _lastFirebaseAuthContext;
+
+  void _logDebug(String message) {
+    if (kDebugMode) {
+      debugPrint(message);
+    }
+  }
+
+  /// Only wipe stored OAuth credentials when Google reports a terminal auth error.
+  /// Transient network/proxy failures should not force re-login on next launch.
+  bool _shouldClearStoredCredentials(Object error, {http.Response? response}) {
+    if (error is SocketException || error is TimeoutException) {
+      return false;
+    }
+
+    final message = error.toString().toLowerCase();
+    if (message.contains('failed host lookup') ||
+        message.contains('connection refused') ||
+        message.contains('connection timed out') ||
+        message.contains('network is unreachable') ||
+        message.contains('temporarily unavailable')) {
+      return false;
+    }
+
+    if (response != null) {
+      final status = response.statusCode;
+      if (status == 429 || status >= 500) return false;
+
+      final body = response.body.toLowerCase();
+      if (body.contains('invalid_grant') ||
+          body.contains('invalid_token') ||
+          body.contains('token has been expired or revoked') ||
+          body.contains('unauthorized_client')) {
+        return true;
+      }
+      if (status == 400 || status == 401) {
+        return body.contains('invalid');
+      }
+    }
+
+    return false;
+  }
+
+  /// Returns a map with displayName, email and photoUrl if available.
+  Future<Map<String, String?>> getAccountDetails() async {
+    if (Platform.isAndroid || Platform.isIOS) {
+      _googleSignIn ??= GoogleSignIn(
+        scopes: [calendar.CalendarApi.calendarScope],
+      );
+      try {
+        final acc = await _googleSignIn!.signInSilently();
+        if (acc == null) {
+          return await _getUserProfileFromLocalDb();
+        }
+        final profile = {
+          'displayName': acc.displayName,
+          'email': acc.email,
+          'photoUrl': acc.photoUrl,
+        };
+        final photoHeaders = await _getMobileProfilePhotoHeaders(acc);
+        await _persistUserProfileToLocalDb(
+          email: profile['email'],
+          photoUrl: profile['photoUrl'],
+          photoHeaders: photoHeaders,
+        );
+        return await _resolveUserProfileForUi(
+          displayName: profile['displayName'],
+          email: profile['email'],
+          preferredPhotoUrl: profile['photoUrl'],
+        );
+      } catch (e) {
+        _logDebug('Failed to fetch mobile account details, using cache: $e');
+        return await _getUserProfileFromLocalDb();
+      }
+    }
+    // For desktop, return stored info if available
+    if (_signedIn) {
+      final profile = {
+        'displayName': _desktopUserDisplayName,
+        'email': _desktopUserEmail,
+        'photoUrl': _desktopUserPhotoUrl,
+      };
+      await _persistUserProfileToLocalDb(
+        email: profile['email'],
+        photoUrl: profile['photoUrl'],
+        photoHeaders: _getDesktopProfilePhotoHeaders(),
+      );
+      return await _resolveUserProfileForUi(
+        displayName: profile['displayName'],
+        email: profile['email'],
+        preferredPhotoUrl: profile['photoUrl'],
+      );
+    }
+    return await _getUserProfileFromLocalDb();
+  }
+
+  /// Returns a list of the user's calendars as maps with 'id', 'name', and 'color'.
+  /// Filters out the default "Calendar" entry which is Google's auto-created primary calendar
+  /// that users haven't explicitly created or renamed.
+  /// Also includes 'primary' calendar even if it's named "Calendar".
+  Future<List<Map<String, dynamic>>> getUserCalendars() async {
+    final client = await _getAuthenticatedClient();
+    final calApi = calendar.CalendarApi(client);
+    final list = await calApi.calendarList.list();
+    final items = list.items ?? [];
+
+    final calendars = items
+        .map((c) {
+          // Get calendar color - Google Calendar API provides backgroundColor
+          int calendarColor = 0xFF039BE5; // Default blue
+          if (c.backgroundColor != null) {
+            // Google Calendar API returns color as hex string like "#a4bdfc"
+            final hexColor = c.backgroundColor!.replaceAll('#', '');
+            if (hexColor.length == 6) {
+              calendarColor = int.parse('FF$hexColor', radix: 16);
+            }
+          } else if (c.colorId != null) {
+            // Fallback to colorId if backgroundColor not available
+            final colorMap = {
+              '1': 0xFF7986CB, // lavender
+              '2': 0xFF33B679, // green
+              '3': 0xFF8E24AA, // purple
+              '4': 0xFFE67C73, // red
+              '5': 0xFFF6BF26, // yellow
+              '6': 0xFFF4511E, // orange
+              '7': 0xFF039BE5, // blue
+              '8': 0xFF0097A7, // teal
+              '9': 0xFFAD1457, // pink
+              '10': 0xFF616161, // grey
+              '11': 0xFF795548, // brown
+            };
+            calendarColor = colorMap[c.colorId] ?? 0xFF039BE5;
+          }
+
+          return {
+            'id': c.id ?? '',
+            'name': c.summary ?? c.id ?? '',
+            'color': calendarColor,
+            'backgroundColor': c.backgroundColor,
+            'colorId': c.colorId,
+            'selected':
+                c.selected ?? true, // Whether calendar is selected/visible
+          };
+        })
+        .where((c) {
+          // Filter out empty IDs
+          final id = c['id'] as String?;
+          if (id == null || id.isEmpty) return false;
+          // Include primary calendar even if named "Calendar"
+          if (id == 'primary') return true;
+          // Filter out calendars with the generic name "Calendar"
+          final name = (c['name'] as String?) ?? '';
+          return name.isNotEmpty && name.toLowerCase() != 'calendar';
+        })
+        .toList();
+
+    try {
+      await LocalEventStore.instance.upsertCalendars(calendars);
+    } catch (e) {
+      _logDebug('Failed to cache calendars locally: $e');
+    }
+
+    return calendars;
+  }
+
+  Future<List<Map<String, dynamic>>> getCachedCalendars() async {
+    try {
+      return await LocalEventStore.instance.getCachedCalendars();
+    } catch (e) {
+      _logDebug('Failed to read cached calendars: $e');
+      return const [];
+    }
+  }
+
+  GoogleCalendarService._privateConstructor();
+  static final GoogleCalendarService instance =
+      GoogleCalendarService._privateConstructor();
+
+  GoogleSignIn? _googleSignIn;
+  http.Client? _authClient;
+  bool _signedIn = false;
+  bool _initialized = false;
+  Future<void>? _initializeFuture;
+  bool _allowInteractiveSignIn = true;
+  final AuthStorageService _storage = AuthStorageService();
+  auth_io.AccessCredentials? _storedCredentials;
+  String?
+  _currentAccessTokenString; // Store access token string for persistence
+  Future<void>? _desktopRefreshInFlight;
+
+  /// Get the storage service instance (for calendar selection)
+  AuthStorageService get storage => _storage;
+
+  void setAllowInteractiveSignIn(bool allowed) {
+    _allowInteractiveSignIn = allowed;
+  }
+
+  /// Initialize the service and restore authentication state from storage.
+  /// Should be called at app startup.
+  Future<void> initialize() async {
+    if (_initialized) return;
+    _initializeFuture ??= _initializeInternal();
+    await _initializeFuture;
+  }
+
+  Future<void> _initializeInternal() async {
+    if (Platform.isAndroid || Platform.isIOS) {
+      // For Android/iOS, google_sign_in handles persistence automatically
+      _googleSignIn ??= GoogleSignIn(
+        scopes: [calendar.CalendarApi.calendarScope],
+      );
+      // Try silent sign-in to restore session
+      try {
+        final account = await _googleSignIn!.signInSilently();
+        if (account != null) {
+          await _ensureFirebaseSignedIn(account);
+        }
+      } catch (_) {
+        // Silent sign-in failed, user needs to sign in again
+      }
+      _initialized = true;
+      return;
+    }
+
+    // For desktop, restore from secure storage
+    try {
+      final hasStored = await _storage.hasStoredCredentials();
+      if (hasStored) {
+        await _restoreDesktopAuthFromStorage();
+      }
+    } catch (e) {
+      _logDebug('Error initializing auth: $e');
+      if (_shouldClearStoredCredentials(e)) {
+        await _storage.clearCredentials();
+        _signedIn = false;
+        _authClient = null;
+        _storedCredentials = null;
+      }
+    }
+
+    _initialized = true;
+  }
+
+  /// Restore desktop authentication from stored credentials
+  Future<void> _restoreDesktopAuthFromStorage() async {
+    try {
+      final refreshToken = await _storage.getRefreshToken();
+      final accessToken = await _storage.getAccessToken();
+      final idToken = await _storage.getIdToken();
+      final tokenExpiry = await _storage.getTokenExpiry();
+      final scopes = await _storage.getScopes();
+      final userDisplayName = await _storage.getUserDisplayName();
+      final userEmail = await _storage.getUserEmail();
+      final userPhotoUrl = await _storage.getUserPhotoUrl();
+
+      if (refreshToken == null || refreshToken.isEmpty) {
+        return;
+      }
+
+      // Check if access token is still valid
+      bool needsRefresh = true;
+      if (accessToken != null &&
+          tokenExpiry != null &&
+          tokenExpiry.isAfter(DateTime.now().add(const Duration(minutes: 5)))) {
+        needsRefresh = false;
+      }
+
+      if (needsRefresh) {
+        try {
+          await _refreshAccessToken(refreshToken, scopes);
+        } catch (e) {
+          if (_shouldClearStoredCredentials(e)) {
+            rethrow;
+          }
+          await _markDesktopSignedInOffline(
+            refreshToken: refreshToken,
+            accessToken: accessToken,
+            tokenExpiry: tokenExpiry,
+            scopes: scopes,
+            userDisplayName: userDisplayName,
+            userEmail: userEmail,
+            userPhotoUrl: userPhotoUrl,
+            idToken: idToken,
+          );
+          return;
+        }
+      } else {
+        // Use stored access token
+        if (tokenExpiry == null) {
+          // Token expiry missing, refresh the token
+          await _refreshAccessToken(refreshToken, scopes);
+          return;
+        }
+        final token = auth_io.AccessToken('Bearer', accessToken!, tokenExpiry);
+        _storedCredentials = auth_io.AccessCredentials(
+          token,
+          refreshToken,
+          scopes.isNotEmpty ? scopes : [calendar.CalendarApi.calendarScope],
+        );
+        _authClient = auth_io.authenticatedClient(
+          http.Client(),
+          _storedCredentials!,
+        );
+        _currentAccessTokenString = accessToken; // Store for later use
+      }
+
+      _desktopUserDisplayName = userDisplayName;
+      _desktopUserEmail = userEmail;
+      _desktopUserPhotoUrl = userPhotoUrl;
+      _desktopIdToken = idToken;
+      await _persistUserProfileToLocalDb(
+        email: _desktopUserEmail,
+        photoUrl: _desktopUserPhotoUrl,
+      );
+      _signedIn = true;
+      _logDebug('Desktop auth restored from storage');
+
+      // Best-effort: ensure FirebaseAuth is also signed in so Firestore rules
+      // allow cloud settings sync.
+      await _ensureFirebaseSignedInWithTokens(
+        accessToken: _currentAccessTokenString,
+        idToken: _desktopIdToken,
+      );
+    } catch (e) {
+      _logDebug('Failed to restore desktop auth: $e');
+      if (_shouldClearStoredCredentials(e)) {
+        await _storage.clearCredentials();
+        _signedIn = false;
+        _authClient = null;
+        _storedCredentials = null;
+      } else {
+        final refreshToken = await _storage.getRefreshToken();
+        if (refreshToken != null && refreshToken.isNotEmpty) {
+          await _markDesktopSignedInOffline(
+            refreshToken: refreshToken,
+            accessToken: await _storage.getAccessToken(),
+            tokenExpiry: await _storage.getTokenExpiry(),
+            scopes: await _storage.getScopes(),
+            userDisplayName: await _storage.getUserDisplayName(),
+            userEmail: await _storage.getUserEmail(),
+            userPhotoUrl: await _storage.getUserPhotoUrl(),
+            idToken: await _storage.getIdToken(),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _markDesktopSignedInOffline({
+    required String refreshToken,
+    required List<String> scopes,
+    String? accessToken,
+    DateTime? tokenExpiry,
+    String? userDisplayName,
+    String? userEmail,
+    String? userPhotoUrl,
+    String? idToken,
+  }) async {
+    final resolvedScopes = scopes.isNotEmpty
+        ? scopes
+        : [calendar.CalendarApi.calendarScope];
+
+    if (accessToken != null && accessToken.isNotEmpty && tokenExpiry != null) {
+      final token = auth_io.AccessToken('Bearer', accessToken, tokenExpiry);
+      _storedCredentials = auth_io.AccessCredentials(
+        token,
+        refreshToken,
+        resolvedScopes,
+      );
+      _authClient = auth_io.authenticatedClient(
+        http.Client(),
+        _storedCredentials!,
+      );
+      _currentAccessTokenString = accessToken;
+    }
+
+    _desktopUserDisplayName = userDisplayName;
+    _desktopUserEmail = userEmail;
+    _desktopUserPhotoUrl = userPhotoUrl;
+    _desktopIdToken = idToken;
+    await _persistUserProfileToLocalDb(
+      email: _desktopUserEmail,
+      photoUrl: _desktopUserPhotoUrl,
+    );
+    _signedIn = true;
+    _logDebug('Desktop auth restored offline (token refresh deferred)');
+  }
+
+  /// Refresh access token using refresh token
+  Future<void> _refreshAccessToken(
+    String refreshToken,
+    List<String> scopes,
+  ) async {
+    try {
+      final tokenResp = await _exchangeDesktopTokenViaProxy(<String, String>{
+        'grant_type': 'refresh_token',
+        'refresh_token': refreshToken,
+      });
+
+      if (tokenResp.statusCode != 200) {
+        throw _DesktopTokenRefreshException(tokenResp);
+      }
+
+      final tokenJson = jsonDecode(tokenResp.body) as Map<String, dynamic>;
+      final newAccessToken = tokenJson['access_token'] as String?;
+      final newIdToken = tokenJson['id_token'] as String?;
+      final expiresIn = tokenJson['expires_in'] as int? ?? 3600;
+      final newRefreshToken =
+          tokenJson['refresh_token'] as String? ?? refreshToken;
+
+      if (newAccessToken == null) {
+        throw Exception('No access token in refresh response');
+      }
+
+      final token = auth_io.AccessToken(
+        'Bearer',
+        newAccessToken,
+        DateTime.now().add(Duration(seconds: expiresIn)).toUtc(),
+      );
+
+      _storedCredentials = auth_io.AccessCredentials(
+        token,
+        newRefreshToken,
+        scopes.isNotEmpty ? scopes : [calendar.CalendarApi.calendarScope],
+      );
+
+      _authClient = auth_io.authenticatedClient(
+        http.Client(),
+        _storedCredentials!,
+      );
+
+      // Store access token string for persistence
+      _currentAccessTokenString = newAccessToken;
+      if (newIdToken != null && newIdToken.trim().isNotEmpty) {
+        _desktopIdToken = newIdToken.trim();
+      }
+
+      // Save updated tokens
+      await _storage.saveCredentials(
+        refreshToken: newRefreshToken,
+        accessToken: newAccessToken,
+        idToken: _desktopIdToken,
+        tokenExpiry: token.expiry,
+        scopes: _storedCredentials!.scopes,
+        userEmail: _desktopUserEmail,
+        userPhotoUrl: _desktopUserPhotoUrl,
+      );
+
+      _logDebug('Access token refreshed successfully');
+    } catch (e) {
+      _logDebug('Error refreshing token: $e');
+      final response = e is _DesktopTokenRefreshException ? e.response : null;
+      if (_shouldClearStoredCredentials(e, response: response)) {
+        await _storage.clearCredentials();
+        _authClient?.close();
+        _authClient = null;
+        _storedCredentials = null;
+        _currentAccessTokenString = null;
+        _signedIn = false;
+      }
+      throw Exception('Failed to refresh access token: $e');
+    }
+  }
+
+  Future<void> _refreshDesktopAccessTokenIfNeeded() async {
+    // Only applies to desktop flows where we persist refresh credentials.
+    if (Platform.isAndroid || Platform.isIOS) return;
+
+    DateTime? expiry = _storedCredentials?.accessToken.expiry;
+    expiry ??= await _storage.getTokenExpiry();
+
+    final nowUtc = DateTime.now().toUtc();
+    final needsRefresh =
+        expiry == null ||
+        expiry.toUtc().isBefore(nowUtc.add(const Duration(minutes: 5)));
+
+    if (!needsRefresh) return;
+
+    final refreshToken =
+        _storedCredentials?.refreshToken ?? await _storage.getRefreshToken();
+    if (refreshToken == null || refreshToken.isEmpty) {
+      throw Exception('Sign in required (missing refresh token).');
+    }
+
+    // Avoid duplicate refresh calls when multiple API requests race.
+    if (_desktopRefreshInFlight != null) {
+      await _desktopRefreshInFlight;
+      return;
+    }
+
+    final scopes = _storedCredentials?.scopes ?? await _storage.getScopes();
+    final refreshFuture = _refreshAccessToken(refreshToken, scopes);
+    _desktopRefreshInFlight = refreshFuture;
+    try {
+      await refreshFuture;
+    } finally {
+      _desktopRefreshInFlight = null;
+    }
+  }
+
+  Future<void> _ensureDesktopClientReady() async {
+    if (!_initialized) {
+      await initialize();
+    }
+
+    if (_authClient == null || _storedCredentials == null) {
+      final hasStored = await _storage.hasStoredCredentials();
+      if (hasStored) {
+        await _restoreDesktopAuthFromStorage();
+      }
+    }
+
+    if (_authClient == null) {
+      throw Exception('Not signed in (desktop).');
+    }
+
+    await _refreshDesktopAccessTokenIfNeeded();
+  }
+
+  Future<http.Response> _exchangeDesktopTokenViaProxy(
+    Map<String, String> payload,
+  ) async {
+    final proxyUrl = kGoogleOauthProxyTokenUrl.trim();
+    if (proxyUrl.isEmpty || proxyUrl.startsWith('YOUR_')) {
+      throw Exception(
+        'OAuth proxy URL is not configured. Set `kGoogleOauthProxyTokenUrl` in `lib/google_oauth_config.dart`.',
+      );
+    }
+
+    return await http.post(
+      Uri.parse(proxyUrl),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(payload),
+    );
+  }
+
+  /// Attempts silent sign-in for Android/iOS. Returns true if successful.
+  /// This should be called before showing any sign-in UI to avoid bad UX.
+  Future<bool> trySilentSignIn() async {
+    if (Platform.isAndroid || Platform.isIOS) {
+      _googleSignIn ??= GoogleSignIn(
+        scopes: [calendar.CalendarApi.calendarScope],
+      );
+      try {
+        final account = await _googleSignIn!.signInSilently();
+        if (account != null) {
+          await _ensureFirebaseSignedIn(account);
+          _signedIn = true;
+          return true;
+        }
+      } catch (e) {
+        _logDebug('Silent sign-in failed: $e');
+      }
+      return false;
+    }
+    // For desktop, just check if already signed in
+    return await isSignedIn();
+  }
+
+  /// Returns whether we have a usable signed-in session.
+  Future<bool> isSignedIn() async {
+    // Ensure initialization
+    if (!_initialized) {
+      await initialize();
+    }
+
+    if (Platform.isAndroid || Platform.isIOS) {
+      _googleSignIn ??= GoogleSignIn(
+        scopes: [calendar.CalendarApi.calendarScope],
+      );
+      return await _googleSignIn!.isSignedIn();
+    }
+
+    // For desktop, check both in-memory state and storage
+    if (_signedIn && _authClient != null) {
+      return true;
+    }
+
+    // If not signed in but have stored credentials, try to restore
+    final hasStored = await _storage.hasStoredCredentials();
+    if (hasStored && !_signedIn) {
+      try {
+        await _restoreDesktopAuthFromStorage();
+      } catch (_) {
+        // Offline/transient restore failures still keep the saved session.
+      }
+      if (_signedIn) return true;
+      return await _storage.hasStoredCredentials();
+    }
+
+    return false;
+  }
+
+  /// Ensure the user is signed in. On desktop, this may show the browser
+  /// consent screen; `context` is required to show error dialogs if the loopback
+  /// handler fails.
+  Future<void> ensureSignedIn(BuildContext context) async {
+    final alreadySignedIn = await isSignedIn();
+    if (alreadySignedIn) {
+      if (Platform.isAndroid || Platform.isIOS) {
+        _googleSignIn ??= GoogleSignIn(
+          scopes: [calendar.CalendarApi.calendarScope],
+        );
+        try {
+          final account = await _googleSignIn!.signInSilently();
+          if (account != null) {
+            await _ensureFirebaseSignedIn(account);
+          }
+        } catch (_) {
+          // Best-effort only.
+        }
+      } else {
+        await _ensureFirebaseSignedInWithTokens(
+          accessToken: _currentAccessTokenString,
+          idToken: _desktopIdToken,
+        );
+      }
+      return;
+    }
+
+    if (Platform.isAndroid || Platform.isIOS) {
+      _googleSignIn ??= GoogleSignIn(
+        scopes: [calendar.CalendarApi.calendarScope],
+      );
+      final account = await _googleSignIn!.signIn();
+      if (account == null) throw Exception('Sign in aborted by user');
+      await _ensureFirebaseSignedIn(account);
+      _signedIn = true;
+      return;
+    }
+
+    // Desktop flow: use clientViaUserConsent with loopback. Provide error
+    // instructions if the local callback fails (common cause: browser blocking or
+    // an external factor that leads to a 500 on localhost).
+    if (kDesktopClientId.startsWith('YOUR_') ||
+        kDesktopClientId.isEmpty ||
+        kGoogleOauthProxyTokenUrl.startsWith('YOUR_') ||
+        kGoogleOauthProxyTokenUrl.isEmpty) {
+      if (!context.mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('OAuth client not configured'),
+          content: SingleChildScrollView(
+            child: ListBody(
+              children: const [
+                Text(
+                  'The Desktop OAuth Client ID or OAuth proxy URL is not set.',
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'Set `kDesktopClientId` and `kGoogleOauthProxyTokenUrl` in `lib/google_oauth_config.dart`.',
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'Keep the desktop client secret only in Cloudflare Worker secrets.',
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      throw Exception('Desktop OAuth client or proxy URL not configured');
+    }
+
+    final scopes = [
+      calendar.CalendarApi.calendarScope,
+      'email',
+      'profile',
+      'https://www.googleapis.com/auth/userinfo.email',
+      'https://www.googleapis.com/auth/userinfo.profile',
+      'openid',
+    ];
+
+    try {
+      if (!context.mounted) {
+        throw Exception('Sign in aborted');
+      }
+      final client = await _obtainDesktopAuthClient(context, scopes);
+      _authClient = client;
+      _signedIn = true;
+      await _ensureFirebaseSignedInWithTokens(
+        accessToken: _currentAccessTokenString,
+        idToken: _desktopIdToken,
+      );
+
+      // Fetch user info from Google People API
+      try {
+        final peopleResp = await client.get(
+          Uri.parse(
+            'https://people.googleapis.com/v1/people/me?personFields=names,emailAddresses,photos',
+          ),
+        );
+        if (peopleResp.statusCode == 200) {
+          final data = jsonDecode(peopleResp.body);
+          _desktopUserDisplayName =
+              (data['names'] != null && data['names'].isNotEmpty)
+              ? data['names'][0]['displayName']
+              : null;
+          _desktopUserEmail =
+              (data['emailAddresses'] != null &&
+                  data['emailAddresses'].isNotEmpty)
+              ? data['emailAddresses'][0]['value']
+              : null;
+          _desktopUserPhotoUrl =
+              (data['photos'] != null && data['photos'].isNotEmpty)
+              ? data['photos'][0]['url']
+              : null;
+        }
+      } catch (_) {
+        _desktopUserDisplayName = null;
+        _desktopUserEmail = null;
+        _desktopUserPhotoUrl = null;
+      }
+
+      // Save credentials to secure storage for persistence
+      if (_storedCredentials != null && _currentAccessTokenString != null) {
+        await _storage.saveCredentials(
+          refreshToken: _storedCredentials!.refreshToken,
+          accessToken: _currentAccessTokenString!,
+          idToken: _desktopIdToken,
+          tokenExpiry: _storedCredentials!.accessToken.expiry,
+          scopes: _storedCredentials!.scopes,
+          userDisplayName: _desktopUserDisplayName,
+          userEmail: _desktopUserEmail,
+          userPhotoUrl: _desktopUserPhotoUrl,
+        );
+        _logDebug('Credentials saved to secure storage');
+      }
+      await _persistUserProfileToLocalDb(
+        email: _desktopUserEmail,
+        photoUrl: _desktopUserPhotoUrl,
+      );
+    } catch (err) {
+      final errStr = err.toString();
+      if (errStr.contains('invalid_client')) {
+        if (!context.mounted) rethrow;
+        await showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('OAuth client error'),
+            content: SingleChildScrollView(
+              child: ListBody(
+                children: const [
+                  Text('The OAuth client was not found (invalid_client).'),
+                  SizedBox(height: 8),
+                  Text(
+                    'Ensure you created a "Desktop" OAuth client in the Google Cloud Console (APIs & Services → Credentials) '
+                    'and pasted its client ID into `lib/google_oauth_config.dart` as `kDesktopClientId`.',
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+        rethrow;
+      }
+
+      // Show a helpful dialog with the actual error and actionable steps.
+      if (!context.mounted) rethrow;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Sign-in failed'),
+          content: SingleChildScrollView(
+            child: ListBody(
+              children: [
+                const Text('Sign-in did not complete.'),
+                const SizedBox(height: 8),
+                Text('Reason: ${err.toString()}'),
+                const SizedBox(height: 8),
+                const Text('Try one of the following:'),
+                const SizedBox(height: 6),
+                const Text(
+                  '• Allow loopback redirects and try again using a different browser.',
+                ),
+                const Text(
+                  '• Ensure the Desktop OAuth client ID exists in the Cloud Console.',
+                ),
+                const Text(
+                  '• If the problem persists, use the manual copy/paste fallback when prompted.',
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('OK'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                showDialog<void>(
+                  context: context,
+                  builder: (dCtx) => AlertDialog(
+                    title: const Text('Error details'),
+                    content: SingleChildScrollView(child: Text(err.toString())),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(dCtx).pop(),
+                        child: const Text('Close'),
+                      ),
+                    ],
+                  ),
+                );
+              },
+              child: const Text('Show details'),
+            ),
+          ],
+        ),
+      );
+
+      rethrow;
+    }
+  }
+
+  /// Gets an authenticated http client (throws if sign-in not done). The caller
+  /// should not close the returned client in Android/iOS (google_sign_in token
+  /// wrapper used), but for desktop clients we return the _authClient which is
+  /// closed by callers when appropriate.
+  Future<http.Client> _getAuthenticatedClient() async {
+    if (Platform.isAndroid || Platform.isIOS) {
+      _googleSignIn ??= GoogleSignIn(
+        scopes: [calendar.CalendarApi.calendarScope],
+      );
+
+      final silent = await _googleSignIn!.signInSilently();
+      if (silent == null && !_allowInteractiveSignIn) {
+        throw Exception('Sign in required (interactive disabled).');
+      }
+      final account = silent ?? await _googleSignIn!.signIn();
+      if (account == null) throw Exception('Sign in aborted by user');
+
+      final auth = await account.authentication;
+      final accessToken = auth.accessToken;
+      if (accessToken == null) throw Exception('Missing access token');
+
+      return _SimpleAuthClient(accessToken);
+    }
+
+    await _ensureDesktopClientReady();
+    if (_authClient != null) return _authClient!;
+
+    throw Exception('Not signed in (desktop).');
+  }
+
+  /// Inserts a calendar event into the primary calendar.
+  Future<calendar.Event> insertEvent({
+    required String summary,
+    String? description,
+    required DateTime start,
+    required DateTime end,
+    String calendarId = 'primary',
+    String? customEventId,
+    List<Map<String, dynamic>>? reminders,
+  }) async {
+    final client = await _getAuthenticatedClient();
+
+    final cal = calendar.CalendarApi(client);
+
+    // Ensure we send timestamps with a valid timezone to Google Calendar.
+    // Using UTC prevents invalid time zone definitions from causing API 400 errors.
+    final event = calendar.Event()
+      ..summary = summary
+      ..description = description
+      ..start = calendar.EventDateTime(dateTime: start.toUtc(), timeZone: 'UTC')
+      ..end = calendar.EventDateTime(dateTime: end.toUtc(), timeZone: 'UTC');
+
+    if (customEventId != null && customEventId.isNotEmpty) {
+      event.id = customEventId;
+    }
+
+    if (reminders != null && reminders.isNotEmpty) {
+      event.reminders = calendar.EventReminders(
+        useDefault: false,
+        overrides: reminders
+            .map(
+              (r) => calendar.EventReminder(
+                method: r['method'],
+                minutes: r['minutes'],
+              ),
+            )
+            .toList(),
+      );
+    }
+
+    try {
+      final created = await cal.events.insert(event, calendarId);
+
+      // If the desktop auth flow was used, the _authClient should stay open during
+      // the app's session. We don't close it here.
+      return created;
+    } catch (error) {
+      if (customEventId != null && customEventId.isNotEmpty) {
+        try {
+          return await cal.events.get(calendarId, customEventId);
+        } catch (_) {
+          // Fall through to the original error when no matching event exists.
+        }
+      }
+      rethrow;
+    }
+  }
+
+  /// Fetches events from Google Calendar for a given date range with incremental sync support.
+  /// Returns events list and syncToken for incremental sync.
+  /// Uses user's local timezone consistently.
+  /// CRITICAL: Handles pagination to get ALL events, not just the first page.
+  /// calendarColor: Optional color of the calendar (for event coloring)
+  Future<Map<String, dynamic>> getEventsWithSync({
+    required DateTime start,
+    required DateTime end,
+    String calendarId = 'primary',
+    String? syncToken,
+    int? calendarColor,
+    bool includeCancelled = false,
+  }) async {
+    final client = await _getAuthenticatedClient();
+    final cal = calendar.CalendarApi(client);
+
+    // Get local timezone for proper date range calculation
+    final localTimeZone = DateTime.now().timeZoneName;
+
+    // Use UTC for API calls, but ensure we include the full day range
+    // Add buffer to account for timezone differences
+    final timeMin = DateTime(
+      start.year,
+      start.month,
+      start.day,
+      0,
+      0,
+      0,
+    ).toUtc();
+    // End should be start of next day in UTC to include all events of the selected day
+    final timeMax = DateTime(end.year, end.month, end.day, 23, 59, 59).toUtc();
+
+    if (_verboseEventFetchLogs) {
+      _logDebug(
+        'Fetching events: timeMin=$timeMin (${start.toLocal()}), timeMax=$timeMax (${end.toLocal()}), timezone=$localTimeZone',
+      );
+    }
+
+    try {
+      final allParsedEvents = <Map<String, dynamic>>[];
+      String? currentPageToken;
+      String? finalSyncToken;
+
+      do {
+        calendar.Events events;
+        if (syncToken != null &&
+            syncToken.isNotEmpty &&
+            currentPageToken == null) {
+          // Incremental sync (only on first page)
+          events = await cal.events.list(
+            calendarId,
+            syncToken: syncToken,
+            pageToken: currentPageToken,
+            showDeleted: includeCancelled,
+          );
+        } else {
+          // Full sync or pagination
+          events = await cal.events.list(
+            calendarId,
+            timeMin: timeMin,
+            timeMax: timeMax,
+            singleEvents: true,
+            orderBy: 'startTime',
+            pageToken: currentPageToken,
+            timeZone: localTimeZone, // Specify timezone for proper filtering
+          );
+        }
+
+        final items = events.items ?? [];
+        if (_verboseEventFetchLogs) {
+          _logDebug(
+            'Page returned ${items.length} events (pageToken: ${currentPageToken ?? 'none'})',
+          );
+        }
+
+        // Parse all events from this page
+        final parsedEvents = items
+            .map(
+              (event) => _parseEvent(
+                event,
+                calendarId,
+                calendarColor: calendarColor,
+                includeCancelled: includeCancelled,
+              ),
+            )
+            .where((e) => e != null)
+            .cast<Map<String, dynamic>>()
+            .toList();
+
+        allParsedEvents.addAll(parsedEvents);
+
+        // Save syncToken from first page
+        finalSyncToken ??= events.nextSyncToken;
+
+        // Check if there are more pages
+        currentPageToken = events.nextPageToken;
+
+        if (_verboseEventFetchLogs && currentPageToken != null) {
+          _logDebug('More pages available, fetching next page...');
+        }
+      } while (currentPageToken != null);
+
+      if (_verboseEventFetchLogs) {
+        _logDebug(
+          'Total events fetched after pagination: ${allParsedEvents.length}',
+        );
+      }
+
+      return {
+        'events': allParsedEvents,
+        'syncToken': finalSyncToken,
+        'nextPageToken': null, // All pages fetched
+      };
+    } catch (e) {
+      // Handle 410 GONE - syncToken expired
+      if (e.toString().contains('410') || e.toString().contains('GONE')) {
+        _logDebug('SyncToken expired, performing full sync');
+        // Retry with full sync (with pagination)
+        final allParsedEvents = <Map<String, dynamic>>[];
+        String? currentPageToken;
+
+        do {
+          final events = await cal.events.list(
+            calendarId,
+            timeMin: timeMin,
+            timeMax: timeMax,
+            singleEvents: true,
+            orderBy: 'startTime',
+            pageToken: currentPageToken,
+            timeZone: localTimeZone,
+          );
+
+          final items = events.items ?? [];
+          final parsedEvents = items
+              .map(
+                (event) => _parseEvent(
+                  event,
+                  calendarId,
+                  calendarColor: calendarColor,
+                  includeCancelled: includeCancelled,
+                ),
+              )
+              .where((e) => e != null)
+              .cast<Map<String, dynamic>>()
+              .toList();
+
+          allParsedEvents.addAll(parsedEvents);
+          currentPageToken = events.nextPageToken;
+        } while (currentPageToken != null);
+
+        return {
+          'events': allParsedEvents,
+          'syncToken': null, // Will be set on next successful sync
+          'nextPageToken': null,
+        };
+      }
+      rethrow;
+    }
+  }
+
+  /// Fetches events from Google Calendar for a given date range.
+  /// Returns a list of events as maps with: id, title, startDateTime, endDateTime, allDay, color, description
+  Future<List<Map<String, dynamic>>> getEvents({
+    required DateTime start,
+    required DateTime end,
+    String calendarId = 'primary',
+  }) async {
+    final result = await getEventsWithSync(
+      start: start,
+      end: end,
+      calendarId: calendarId,
+    );
+    return result['events'] as List<Map<String, dynamic>>;
+  }
+
+  /// Fetches events from ALL calendars for a given date range.
+  /// Returns a list of events with their calendar colors.
+  /// CRITICAL: This fetches from ALL calendars directly from API, not filtered list
+  Future<List<Map<String, dynamic>>> getEventsFromAllCalendars({
+    required DateTime start,
+    required DateTime end,
+  }) async {
+    // CRITICAL FIX: Get ALL calendars directly from API, don't use filtered getUserCalendars()
+    // This ensures we get events from ALL calendars, not just filtered ones
+    final client = await _getAuthenticatedClient();
+    final calApi = calendar.CalendarApi(client);
+    final list = await calApi.calendarList.list();
+    final items = list.items ?? [];
+
+    // Process all calendars (no filtering)
+    final calendars = items
+        .map((c) {
+          // Get calendar color
+          int calendarColor = 0xFF039BE5; // Default blue
+          if (c.backgroundColor != null) {
+            final hexColor = c.backgroundColor!.replaceAll('#', '');
+            if (hexColor.length == 6) {
+              calendarColor = int.parse('FF$hexColor', radix: 16);
+            }
+          } else if (c.colorId != null) {
+            final colorMap = {
+              '1': 0xFF7986CB,
+              '2': 0xFF33B679,
+              '3': 0xFF8E24AA,
+              '4': 0xFFE67C73,
+              '5': 0xFFF6BF26,
+              '6': 0xFFF4511E,
+              '7': 0xFF039BE5,
+              '8': 0xFF0097A7,
+              '9': 0xFFAD1457,
+              '10': 0xFF616161,
+              '11': 0xFF795548,
+            };
+            calendarColor = colorMap[c.colorId] ?? 0xFF039BE5;
+          }
+
+          return {
+            'id': c.id ?? '',
+            'name': c.summary ?? c.id ?? '',
+            'color': calendarColor,
+            'selected': c.selected ?? true,
+          };
+        })
+        .where((c) {
+          // Only filter out calendars with empty IDs
+          final id = c['id'] as String?;
+          return id != null && id.isNotEmpty;
+        })
+        .toList();
+
+    final allEvents = <Map<String, dynamic>>[];
+
+    _logDebug('=== FETCHING EVENTS FROM ALL CALENDARS ===');
+    _logDebug('Total calendars found: ${calendars.length}');
+    for (final cal in calendars) {
+      _logDebug(
+        '  - ${cal['name']} (ID: ${cal['id']}, selected: ${cal['selected']})',
+      );
+    }
+
+    // Fetch events from each calendar
+    // CRITICAL: Fetch from ALL calendars, regardless of selected/visible status
+    // This ensures all calendar events are shown, not just default calendar
+    int calendarsProcessed = 0;
+    int calendarsWithEvents = 0;
+
+    for (final cal in calendars) {
+      final calendarId = cal['id'] as String;
+      final calendarColor = cal['color'] as int;
+      final calendarName = cal['name'] as String;
+
+      // CRITICAL FIX: Don't skip calendars - show ALL calendars
+      // The user wants to see events from all calendars, not just selected ones
+      calendarsProcessed++;
+
+      try {
+        _logDebug(
+          '[Calendar $calendarsProcessed/${calendars.length}] Fetching from: $calendarName (ID: $calendarId)',
+        );
+        final result = await getEventsWithSync(
+          start: start,
+          end: end,
+          calendarId: calendarId,
+          calendarColor: calendarColor,
+        );
+
+        final events = result['events'] as List<Map<String, dynamic>>;
+
+        if (events.isNotEmpty) {
+          calendarsWithEvents++;
+        }
+
+        // Update each event with the calendar's color
+        for (final event in events) {
+          event['color'] = calendarColor; // Use calendar color, not event color
+          event['calendarId'] = calendarId;
+          event['calendarName'] = calendarName;
+        }
+
+        allEvents.addAll(events);
+        _logDebug('  ✓ Found ${events.length} events in "$calendarName"');
+      } catch (e) {
+        _logDebug('  ✗ ERROR fetching from "$calendarName": $e');
+        // Continue with other calendars even if one fails
+      }
+    }
+
+    _logDebug('=== SUMMARY ===');
+    _logDebug('Calendars processed: $calendarsProcessed');
+    _logDebug('Calendars with events: $calendarsWithEvents');
+    _logDebug('Total events from all calendars: ${allEvents.length}');
+    _logDebug('================');
+    return allEvents;
+  }
+
+  /// Parses a Google Calendar event to our format
+  /// CRITICAL: This must handle all event types including those created in Google Calendar app
+  /// calendarColor: The color of the calendar this event belongs to (from calendarList)
+  Map<String, dynamic>? _parseEvent(
+    calendar.Event event,
+    String calendarId, {
+    int? calendarColor,
+    bool includeCancelled = false,
+  }) {
+    // Skip cancelled/deleted events unless explicitly included (sync diff).
+    if (event.status == 'cancelled' && !includeCancelled) {
+      _logDebug('Skipping cancelled event: ${event.id}');
+      return null;
+    }
+
+    if (event.status == 'cancelled') {
+      return {
+        'id': event.id ?? '',
+        'title': event.summary?.trim().isNotEmpty == true
+            ? event.summary!.trim()
+            : '(Deleted)',
+        'startDateTime': DateTime.now(),
+        'endDateTime': DateTime.now(),
+        'allDay': false,
+        'color': calendarColor ?? 0xFF039BE5,
+        'description': event.description ?? '',
+        'location': event.location ?? '',
+        'reminders': const <int>[],
+        'googleCalendarId': event.id,
+        'calendarId': calendarId,
+        'timezone': '',
+        'updatedAtRemote': event.updated?.toUtc(),
+        'deleted': true,
+        'recurringEventId': event.recurringEventId,
+        'recurrence': event.recurrence,
+      };
+    }
+
+    final startDateTime = event.start?.dateTime ?? event.start?.date;
+    final endDateTime = event.end?.dateTime ?? event.end?.date;
+    final isAllDay = event.start?.date != null;
+
+    DateTime? start;
+    DateTime? end;
+
+    if (isAllDay && startDateTime != null) {
+      // All-day events use date only - keep in local timezone
+      final dateStr = event.start!.date!.toIso8601String();
+      start = DateTime.parse(dateStr);
+      end = event.end?.date != null
+          ? DateTime.parse(event.end!.date!.toIso8601String())
+          : start.add(const Duration(days: 1));
+    } else if (startDateTime != null && endDateTime != null) {
+      // Convert UTC to local timezone
+      // CRITICAL: Events from Google Calendar API are in UTC, convert to local
+      start = startDateTime.toLocal();
+      end = endDateTime.toLocal();
+    } else {
+      _logDebug(
+        'Skipping event with invalid date/time: ${event.id}, start=$startDateTime, end=$endDateTime',
+      );
+      return null; // Skip invalid events
+    }
+
+    // Get color - prioritize calendar color, then event colorId, then default
+    int eventColorValue = 0xFF039BE5; // Default blue
+
+    // First, use the calendar's color (this is what Google Calendar does)
+    if (calendarColor != null) {
+      eventColorValue = calendarColor;
+    } else if (event.colorId != null) {
+      // Fallback to event-specific colorId if calendar color not provided
+      final colorMap = {
+        '1': 0xFF7986CB, // lavender
+        '2': 0xFF33B679, // green
+        '3': 0xFF8E24AA, // purple
+        '4': 0xFFE67C73, // red
+        '5': 0xFFF6BF26, // yellow
+        '6': 0xFFF4511E, // orange
+        '7': 0xFF039BE5, // blue
+        '8': 0xFF0097A7, // teal
+        '9': 0xFFAD1457, // pink
+        '10': 0xFF616161, // grey
+        '11': 0xFF795548, // brown
+      };
+      eventColorValue = colorMap[event.colorId] ?? 0xFF039BE5;
+    }
+
+    // CRITICAL: Handle events with no title (they should still be shown)
+    final title = event.summary?.trim();
+    if (title == null || title.isEmpty) {
+      _logDebug('Event has no title, using default: ${event.id}');
+    }
+
+    return {
+      'id': event.id ?? '',
+      'title': title ?? '(No Title)',
+      'startDateTime': start,
+      'endDateTime': end,
+      'allDay': isAllDay,
+      'color': eventColorValue,
+      'description': event.description ?? '',
+      'location': event.location ?? '',
+      'reminders':
+          event.reminders?.overrides?.map((r) => r.minutes ?? 0).toList() ?? [],
+      'googleCalendarId': event.id,
+      'calendarId': calendarId,
+      'timezone': event.start?.timeZone ?? '',
+      'updatedAtRemote': event.updated?.toUtc(),
+      'deleted': event.status == 'cancelled',
+      'recurringEventId': event.recurringEventId,
+      'recurrence': event.recurrence,
+    };
+  }
+
+  /// Creates a watch channel for push notifications
+  /// Returns channel info that should be stored
+  Future<Map<String, dynamic>> watchCalendar({
+    required String calendarId,
+    required String channelId,
+    required String address, // Webhook URL or app-specific identifier
+    int expirationMinutes = 43200, // 30 days default
+  }) async {
+    final client = await _getAuthenticatedClient();
+    final cal = calendar.CalendarApi(client);
+
+    final expirationMs = DateTime.now()
+        .add(Duration(minutes: expirationMinutes))
+        .millisecondsSinceEpoch;
+    final channel = calendar.Channel()
+      ..id = channelId
+      ..type = 'web_hook'
+      ..address = address
+      ..expiration = expirationMs.toString();
+
+    final result = await cal.events.watch(channel, calendarId);
+
+    return {
+      'channelId': result.id,
+      'resourceId': result.resourceId,
+      'expiration': result.expiration,
+    };
+  }
+
+  /// Stops a watch channel
+  Future<void> stopWatch({
+    required String channelId,
+    required String resourceId,
+  }) async {
+    final client = await _getAuthenticatedClient();
+    final cal = calendar.CalendarApi(client);
+
+    final channel = calendar.Channel()
+      ..id = channelId
+      ..resourceId = resourceId;
+
+    await cal.channels.stop(channel);
+  }
+
+  /// Updates an existing event
+  Future<calendar.Event> updateEvent({
+    required String eventId,
+    required String summary,
+    String? description,
+    required DateTime start,
+    required DateTime end,
+    String calendarId = 'primary',
+    List<Map<String, dynamic>>? reminders,
+    Color? color,
+  }) async {
+    final client = await _getAuthenticatedClient();
+    final cal = calendar.CalendarApi(client);
+
+    // Get existing event first
+    final existingEvent = await cal.events.get(calendarId, eventId);
+
+    // Update fields
+    existingEvent.summary = summary;
+    existingEvent.description = description;
+    existingEvent.start = calendar.EventDateTime(
+      dateTime: start.toUtc(),
+      timeZone: 'UTC',
+    );
+    existingEvent.end = calendar.EventDateTime(
+      dateTime: end.toUtc(),
+      timeZone: 'UTC',
+    );
+
+    if (reminders != null && reminders.isNotEmpty) {
+      existingEvent.reminders = calendar.EventReminders(
+        useDefault: false,
+        overrides: reminders
+            .map(
+              (r) => calendar.EventReminder(
+                method: r['method'],
+                minutes: r['minutes'],
+              ),
+            )
+            .toList(),
+      );
+    }
+
+    if (color != null) {
+      // Map color to Google Calendar colorId (simplified)
+      existingEvent.colorId = _colorToColorId(color);
+    }
+
+    return await cal.events.update(existingEvent, calendarId, eventId);
+  }
+
+  /// Moves an existing event from one calendar to another.
+  Future<calendar.Event> moveEvent({
+    required String eventId,
+    required String sourceCalendarId,
+    required String destinationCalendarId,
+  }) async {
+    final client = await _getAuthenticatedClient();
+    final cal = calendar.CalendarApi(client);
+    return await cal.events.move(
+      sourceCalendarId,
+      eventId,
+      destinationCalendarId,
+    );
+  }
+
+  /// Deletes an event
+  Future<void> deleteEvent({
+    required String eventId,
+    String calendarId = 'primary',
+  }) async {
+    final client = await _getAuthenticatedClient();
+    final cal = calendar.CalendarApi(client);
+
+    await cal.events.delete(calendarId, eventId);
+  }
+
+  /// Maps Flutter Color to Google Calendar colorId
+  String? _colorToColorId(Color color) {
+    final colorValue = color.toARGB32();
+    // Map common colors to Google Calendar color IDs
+    if (colorValue == 0xFF7986CB) return '1';
+    if (colorValue == 0xFF33B679) return '2';
+    if (colorValue == 0xFF8E24AA) return '3';
+    if (colorValue == 0xFFE67C73) return '4';
+    if (colorValue == 0xFFF6BF26) return '5';
+    if (colorValue == 0xFFF4511E) return '6';
+    if (colorValue == 0xFF039BE5 || colorValue == 0xFF2196F3) return '7';
+    if (colorValue == 0xFF0097A7) return '8';
+    if (colorValue == 0xFFAD1457) return '9';
+    if (colorValue == 0xFF616161) return '10';
+    if (colorValue == 0xFF795548) return '11';
+    // Unknown colors should not force a Google event color override.
+    // Returning null keeps/clears per-event override so calendar color remains.
+    return null;
+  }
+
+  /// Signs out and clears all stored authentication data.
+  Future<void> signOut() async {
+    if (_googleSignIn != null) {
+      await _googleSignIn!.signOut();
+    }
+    try {
+      await FirebaseAuth.instance.signOut();
+    } catch (_) {}
+
+    _authClient?.close();
+    _authClient = null;
+    _signedIn = false;
+    _storedCredentials = null;
+    _currentAccessTokenString = null;
+    _desktopUserEmail = null;
+    _desktopUserPhotoUrl = null;
+    _desktopIdToken = null;
+
+    // Clear stored credentials and default calendar from secure storage
+    await _storage.clearCredentials();
+    await _storage.clearDefaultCalendar();
+    try {
+      await LocalEventStore.instance.clearUserProfile();
+      await _deleteCachedProfilePhotoFromDisk();
+    } catch (e) {
+      _logDebug('Failed to clear cached user profile: $e');
+    }
+    _logDebug('Signed out and cleared stored credentials and default calendar');
+  }
+
+  Future<void> _ensureFirebaseSignedIn(GoogleSignInAccount account) async {
+    try {
+      final auth = await account.authentication;
+      final credential = GoogleAuthProvider.credential(
+        accessToken: auth.accessToken,
+        idToken: auth.idToken,
+      );
+      await FirebaseAuth.instance.signInWithCredential(credential);
+      _lastFirebaseAuthError = null;
+      _lastFirebaseAuthContext = 'mobile: ok';
+    } catch (e) {
+      _logDebug('Firebase Auth sign-in failed: $e');
+      _lastFirebaseAuthError = e.toString();
+      _lastFirebaseAuthContext = 'mobile: failed';
+    }
+  }
+
+  Future<void> _ensureFirebaseSignedInWithTokens({
+    required String? accessToken,
+    required String? idToken,
+  }) async {
+    final hasAccessToken = accessToken != null && accessToken.trim().isNotEmpty;
+    final hasIdToken = idToken != null && idToken.trim().isNotEmpty;
+    _lastFirebaseAuthContext =
+        'desktop: accessToken=$hasAccessToken, idToken=$hasIdToken';
+    if (!hasAccessToken && !hasIdToken) {
+      _logDebug('No Google tokens available for Firebase sign-in.');
+      _lastFirebaseAuthError =
+          'No Google tokens available for Firebase sign-in.';
+      return;
+    }
+
+    try {
+      await FirebaseBootstrap.ensureInitialized();
+      // Avoid redundant sign-in when already authenticated.
+      try {
+        final existing = FirebaseAuth.instance.currentUser;
+        if (existing != null) {
+          return;
+        }
+      } catch (e) {
+        _logDebug('FirebaseAuth unavailable (skip Firebase sign-in): $e');
+        return;
+      }
+
+      final credential = GoogleAuthProvider.credential(
+        accessToken: accessToken,
+        idToken: idToken,
+      );
+      await FirebaseAuth.instance.signInWithCredential(credential);
+      _lastFirebaseAuthError = null;
+    } catch (e) {
+      _logDebug('Firebase Auth desktop sign-in failed: $e');
+      _lastFirebaseAuthError = e.toString();
+    }
+  }
+
+  /// Best-effort Firebase Auth sign-in for sync features.
+  Future<User?> ensureFirebaseAuthSignedIn() async {
+    try {
+      await FirebaseBootstrap.ensureInitialized();
+    } catch (_) {}
+
+    try {
+      final existing = FirebaseAuth.instance.currentUser;
+      if (existing != null) return existing;
+    } catch (e) {
+      _logDebug('FirebaseAuth unavailable (skip Firebase sign-in): $e');
+      return null;
+    }
+
+    if (Platform.isAndroid || Platform.isIOS) {
+      _googleSignIn ??= GoogleSignIn(
+        scopes: [calendar.CalendarApi.calendarScope],
+      );
+      try {
+        final account =
+            await _googleSignIn!.signInSilently() ??
+            await _googleSignIn!.signIn();
+        if (account != null) {
+          await _ensureFirebaseSignedIn(account);
+        }
+      } catch (e) {
+        _logDebug('Firebase Auth mobile sign-in failed: $e');
+      }
+      return FirebaseAuth.instance.currentUser;
+    }
+
+    // Desktop: try to refresh access token if needed, then sign in.
+    try {
+      if (_currentAccessTokenString == null ||
+          _currentAccessTokenString!.isEmpty) {
+        final refreshToken = await _storage.getRefreshToken();
+        if (refreshToken != null && refreshToken.isNotEmpty) {
+          final scopes = await _storage.getScopes();
+          await _refreshAccessToken(refreshToken, scopes);
+        }
+      }
+      await _ensureFirebaseSignedInWithTokens(
+        accessToken: _currentAccessTokenString,
+        idToken: _desktopIdToken,
+      );
+    } catch (e) {
+      _logDebug('Firebase Auth desktop sign-in failed: $e');
+    }
+
+    return FirebaseAuth.instance.currentUser;
+  }
+
+  /// Best-effort Firebase Auth sign-in without user interaction.
+  Future<User?> ensureFirebaseAuthSignedInSilently() async {
+    try {
+      await FirebaseBootstrap.ensureInitialized();
+    } catch (_) {}
+
+    try {
+      final existing = FirebaseAuth.instance.currentUser;
+      if (existing != null) return existing;
+    } catch (e) {
+      _logDebug('FirebaseAuth unavailable (skip Firebase sign-in): $e');
+      return null;
+    }
+
+    if (Platform.isAndroid || Platform.isIOS) {
+      _googleSignIn ??= GoogleSignIn(
+        scopes: [calendar.CalendarApi.calendarScope],
+      );
+      try {
+        final account = await _googleSignIn!.signInSilently();
+        if (account != null) {
+          await _ensureFirebaseSignedIn(account);
+        }
+      } catch (e) {
+        _logDebug('Firebase Auth mobile silent sign-in failed: $e');
+      }
+      return FirebaseAuth.instance.currentUser;
+    }
+
+    try {
+      await _ensureFirebaseSignedInWithTokens(
+        accessToken: _currentAccessTokenString,
+        idToken: _desktopIdToken,
+      );
+    } catch (_) {}
+    return FirebaseAuth.instance.currentUser;
+  }
+
+  Future<void> _persistUserProfileToLocalDb({
+    required String? email,
+    required String? photoUrl,
+    Map<String, String>? photoHeaders,
+  }) async {
+    try {
+      final cachedProfile = await _getUserProfileFromLocalDb();
+      final canReuseExistingLocal = _canReuseCachedPhotoForEmail(
+        cachedEmail: cachedProfile['email'],
+        incomingEmail: email,
+      );
+      final existingLocalPath = canReuseExistingLocal
+          ? _existingLocalPhotoPath(cachedProfile['photoUrl'])
+          : null;
+      final incomingLocalPath = _existingLocalPhotoPath(photoUrl);
+
+      String? localPhotoPath = incomingLocalPath;
+      if (localPhotoPath == null) {
+        if (_isRemotePhotoUrl(photoUrl)) {
+          final cached = await _downloadAndCacheProfilePhoto(
+            photoUrl!,
+            headers: photoHeaders,
+          );
+          if (cached != null && cached.isNotEmpty) {
+            localPhotoPath = cached;
+          } else if (existingLocalPath != null) {
+            // Keep prior on-disk profile image if remote fetch failed.
+            localPhotoPath = existingLocalPath;
+          } else {
+            localPhotoPath = photoUrl;
+          }
+        } else if (photoUrl != null && photoUrl.isNotEmpty) {
+          localPhotoPath = photoUrl;
+        } else {
+          localPhotoPath = existingLocalPath;
+        }
+      }
+
+      final resolvedEmail = _firstNonEmpty(email, cachedProfile['email']);
+      await LocalEventStore.instance.upsertUserProfile(
+        email: resolvedEmail,
+        photoUrl: localPhotoPath,
+      );
+    } catch (e) {
+      _logDebug('Failed to cache user profile locally: $e');
+    }
+  }
+
+  Future<Map<String, String?>> _getUserProfileFromLocalDb() async {
+    try {
+      final profile = await LocalEventStore.instance.getCachedUserProfile();
+      final email = profile['email'];
+      final photoUrl = profile['photoUrl'];
+
+      final localPath = _existingLocalPhotoPath(photoUrl);
+      if (localPath != null) {
+        return {'email': email, 'photoUrl': localPath};
+      }
+
+      // No known user context, avoid recovering an old avatar from disk.
+      if (_firstNonEmpty(email, photoUrl) == null) {
+        return profile;
+      }
+
+      // Recover from stale DB values by probing known cached avatar files.
+      final recovered = await _findCachedProfilePhotoOnDisk();
+      if (recovered != null) {
+        await LocalEventStore.instance.upsertUserProfile(
+          email: email,
+          photoUrl: recovered,
+        );
+        return {'email': email, 'photoUrl': recovered};
+      }
+
+      return profile;
+    } catch (e) {
+      _logDebug('Failed to read cached user profile: $e');
+      return {'email': null, 'photoUrl': null};
+    }
+  }
+
+  /// Downloads the user's Google profile photo and caches it locally.
+  /// Returns the local file path, or null if download fails.
+  Future<String?> _downloadAndCacheProfilePhoto(
+    String remoteUrl, {
+    Map<String, String>? headers,
+  }) async {
+    try {
+      final uri = Uri.tryParse(remoteUrl);
+      if (uri == null) return null;
+
+      http.Response resp;
+      if (headers != null && headers.isNotEmpty) {
+        resp = await http.get(uri, headers: headers);
+        if (resp.statusCode != 200 || resp.bodyBytes.isEmpty) {
+          // Fallback retry without auth headers for public photo URLs.
+          resp = await http.get(uri);
+        }
+      } else {
+        resp = await http.get(uri);
+      }
+      if (resp.statusCode != 200 || resp.bodyBytes.isEmpty) {
+        _logDebug(
+          'Profile photo download failed with status ${resp.statusCode}',
+        );
+        return null;
+      }
+
+      final dir = await AppDataService.instance.getProfileDirectory();
+      final ext = p.extension(uri.path).isNotEmpty
+          ? p.extension(uri.path)
+          : '.jpg';
+      final fileName = '${AppDataService.profilePhotoPrefix}$ext';
+      final file = File(p.join(dir.path, fileName));
+
+      await file.writeAsBytes(resp.bodyBytes, flush: true);
+      return file.path;
+    } catch (e) {
+      _logDebug('Error downloading profile photo: $e');
+      return null;
+    }
+  }
+
+  Future<Map<String, String?>> _resolveUserProfileForUi({
+    required String? displayName,
+    required String? email,
+    required String? preferredPhotoUrl,
+  }) async {
+    final cached = await _getUserProfileFromLocalDb();
+
+    final localPreferred = _existingLocalPhotoPath(preferredPhotoUrl);
+    final localCached = _existingLocalPhotoPath(cached['photoUrl']);
+
+    final resolvedPhotoUrl =
+        localPreferred ??
+        localCached ??
+        _firstNonEmpty(preferredPhotoUrl, cached['photoUrl']);
+
+    return {
+      'displayName': displayName,
+      'email': _firstNonEmpty(email, cached['email']),
+      'photoUrl': resolvedPhotoUrl,
+    };
+  }
+
+  Future<Map<String, String>?> _getMobileProfilePhotoHeaders(
+    GoogleSignInAccount? acc,
+  ) async {
+    if (acc == null) return null;
+    try {
+      final headers = await acc.authHeaders;
+      return headers.isEmpty ? null : headers;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Map<String, String>? _getDesktopProfilePhotoHeaders() {
+    final token = _currentAccessTokenString;
+    if (token == null || token.isEmpty) return null;
+    return {'Authorization': 'Bearer $token'};
+  }
+
+  bool _isRemotePhotoUrl(String? value) {
+    if (value == null || value.isEmpty) return false;
+    return value.startsWith('http://') || value.startsWith('https://');
+  }
+
+  String? _existingLocalPhotoPath(String? value) {
+    if (value == null || value.isEmpty || _isRemotePhotoUrl(value)) {
+      return null;
+    }
+    try {
+      final file = File(value);
+      if (file.existsSync()) {
+        return file.path;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  String? _firstNonEmpty(String? first, String? second) {
+    if (first != null && first.isNotEmpty) return first;
+    if (second != null && second.isNotEmpty) return second;
+    return null;
+  }
+
+  bool _canReuseCachedPhotoForEmail({
+    required String? cachedEmail,
+    required String? incomingEmail,
+  }) {
+    if (incomingEmail == null || incomingEmail.isEmpty) {
+      return true;
+    }
+    if (cachedEmail == null || cachedEmail.isEmpty) {
+      return false;
+    }
+    return cachedEmail.toLowerCase() == incomingEmail.toLowerCase();
+  }
+
+  Future<String?> _findCachedProfilePhotoOnDisk() async {
+    try {
+      return _newestProfilePhotoInDirectory(
+        await AppDataService.instance.getProfileDirectory(),
+      );
+    } catch (e) {
+      _logDebug('Failed to recover cached profile photo from disk: $e');
+    }
+
+    // Also probe legacy Documents root from older builds.
+    try {
+      final docs = await AppDataService.instance.getAppDataDirectory();
+      final parent = Directory(p.dirname(docs.path));
+      return _newestProfilePhotoInDirectory(parent);
+    } catch (_) {}
+
+    return null;
+  }
+
+  String? _newestProfilePhotoInDirectory(Directory directory) {
+    if (!directory.existsSync()) return null;
+
+    String? newestPath;
+    DateTime? newestModifiedAt;
+    for (final entry in directory.listSync(followLinks: false)) {
+      if (entry is! File) continue;
+      final fileName = p.basename(entry.path).toLowerCase();
+      if (!fileName.startsWith(AppDataService.profilePhotoPrefix) ||
+          !entry.existsSync()) {
+        continue;
+      }
+      final modifiedAt = entry.lastModifiedSync();
+      if (newestModifiedAt == null || modifiedAt.isAfter(newestModifiedAt)) {
+        newestModifiedAt = modifiedAt;
+        newestPath = entry.path;
+      }
+    }
+    return newestPath;
+  }
+
+  Future<void> _deleteCachedProfilePhotoFromDisk() async {
+    try {
+      await _deleteProfilePhotosInDirectory(
+        await AppDataService.instance.getProfileDirectory(),
+      );
+
+      // Clean up any leftover files from older builds.
+      final docs = await AppDataService.instance.getAppDataDirectory();
+      await _deleteProfilePhotosInDirectory(Directory(p.dirname(docs.path)));
+    } catch (e) {
+      _logDebug('Failed to clear cached profile photo files: $e');
+    }
+  }
+
+  Future<void> _deleteProfilePhotosInDirectory(Directory directory) async {
+    if (!directory.existsSync()) return;
+    for (final entry in directory.listSync(followLinks: false)) {
+      if (entry is! File) continue;
+      final fileName = p.basename(entry.path).toLowerCase();
+      if (!fileName.startsWith(AppDataService.profilePhotoPrefix) ||
+          !entry.existsSync()) {
+        continue;
+      }
+      try {
+        await entry.delete();
+      } catch (_) {}
+    }
+  }
+
+  /// Return a human-readable account label when available (displayName or email).
+  Future<String?> getAccountDisplayName() async {
+    if (Platform.isAndroid || Platform.isIOS) {
+      _googleSignIn ??= GoogleSignIn(
+        scopes: [calendar.CalendarApi.calendarScope],
+      );
+      final acc = await _googleSignIn!.signInSilently();
+      return acc?.displayName ?? acc?.email;
+    }
+
+    if (_signedIn) return 'Signed in (Desktop)';
+    return null;
+  }
+
+  /// Attempts a PKCE + loopback flow. Binds to IPv4 (prefer 127.0.0.1) and falls
+  /// back to IPv6 binding. If the browser cannot connect back, offers a manual
+  /// code paste fallback.
+  Future<http.Client> _obtainDesktopAuthClient(
+    BuildContext context,
+    List<String> scopes,
+  ) async {
+    final verifier = _createCodeVerifier();
+    final challenge = _createCodeChallenge(verifier);
+
+    HttpServer server;
+    try {
+      // Prefer IPv4 loopback to avoid localhost => ::1 IPv6 mismatches.
+      server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    } catch (_) {
+      // Fall back to IPv6 (allow both v6 and v4 mapped if supported).
+      server = await HttpServer.bind(
+        InternetAddress.loopbackIPv6,
+        0,
+        v6Only: false,
+      );
+    }
+
+    final port = server.port;
+    _logDebug('Loopback server listening on port $port');
+    final redirectUri = 'http://127.0.0.1:$port/';
+
+    // Use trimmed client id to avoid accidental whitespace copying issues.
+    final clientId = kDesktopClientId.trim();
+    _logDebug('Using Desktop client id: $clientId');
+
+    final authUrl = Uri.https('accounts.google.com', '/o/oauth2/v2/auth', {
+      'response_type': 'code',
+      'client_id': clientId,
+      'redirect_uri': redirectUri,
+      'scope': scopes.join(' '),
+      'access_type': 'offline',
+      'prompt': 'consent',
+      'code_challenge': challenge,
+      'code_challenge_method': 'S256',
+    });
+
+    // Open system browser to authorize.
+    _logDebug('Opening browser to ${authUrl.toString()}');
+    await launchUrlString(
+      authUrl.toString(),
+      mode: LaunchMode.externalApplication,
+    );
+
+    // Robust listener: use a shared completer so either the server handler or
+    // the manual dialog can supply the authorization code. This lets us handle
+    // timeouts, late arrivals (race), and programmatically close the manual
+    // dialog if the server later receives the callback.
+    final resultCompleter = Completer<String>();
+    var manualDialogOpen = false;
+
+    server.listen(
+      (request) async {
+        try {
+          final params = request.uri.queryParameters;
+          _logDebug('Loopback OAuth callback request received');
+          if (params.containsKey('error')) {
+            final err = params['error']!;
+            request.response.statusCode = 200;
+            request.response.headers.set(
+              'Content-Type',
+              'text/html; charset=utf-8',
+            );
+            final html = _buildBrandedHtmlPage(
+              title: 'Authentication Failed',
+              message: err,
+              isError: true,
+            );
+            request.response.write(html);
+            await request.response.close();
+
+            if (!resultCompleter.isCompleted) {
+              resultCompleter.completeError(Exception('OAuth error: $err'));
+            }
+            return;
+          }
+
+          final nextCode = params['code'];
+          if (nextCode != null) {
+            // respond to browser immediately
+            request.response.statusCode = 200;
+            request.response.headers.set(
+              'Content-Type',
+              'text/html; charset=utf-8',
+            );
+            final html = _buildBrandedHtmlPage(
+              title: 'Authentication Successful',
+              message: 'You can close this window.',
+              isError: false,
+            );
+            request.response.write(html);
+            await request.response.close();
+
+            if (!resultCompleter.isCompleted) {
+              resultCompleter.complete(nextCode);
+              // close manual dialog if open
+              if (manualDialogOpen && context.mounted) {
+                try {
+                  Navigator.of(context, rootNavigator: true).pop();
+                } catch (_) {}
+              }
+            }
+            return;
+          }
+
+          // No recognizable params - return a simple page
+          request.response.statusCode = 400;
+          request.response.headers.set(
+            'Content-Type',
+            'text/html; charset=utf-8',
+          );
+          final html = _buildBrandedHtmlPage(
+            title: 'Invalid Request',
+            message: 'The authentication request was invalid.',
+            isError: true,
+          );
+          request.response.write(html);
+          await request.response.close();
+        } catch (e) {
+          // If the server handler itself throws, surface it.
+          if (!resultCompleter.isCompleted) {
+            resultCompleter.completeError(Exception('Server error: $e'));
+          }
+          try {
+            await request.response.close();
+          } catch (_) {}
+        }
+      },
+      onError: (e) {
+        if (!resultCompleter.isCompleted) resultCompleter.completeError(e);
+      },
+    );
+
+    // Wait a short period for automatic callback. If nothing arrives, show
+    // the manual-copy dialog and wait for either to complete.
+    String code;
+    try {
+      try {
+        // Wait briefly for automatic callback from browser.
+        final auto = await resultCompleter.future.timeout(
+          const Duration(seconds: 20),
+        );
+        code = auto;
+      } on TimeoutException {
+        // No automatic callback soon - prompt the user for manual copy/paste, but
+        // keep listening for a late automatic callback.
+        manualDialogOpen = true;
+        _logDebug('Showing manual copy/paste dialog for auth URL');
+        if (!context.mounted) {
+          if (!resultCompleter.isCompleted) {
+            resultCompleter.completeError(Exception('Sign in aborted'));
+          }
+          throw Exception('Sign in aborted');
+        }
+        _showManualCodeInputDialog(context, authUrl.toString()).then((manual) {
+          _logDebug(
+            'Manual dialog closed, manual code: ${manual != null ? 'provided' : 'cancelled'}',
+          );
+          manualDialogOpen = false;
+          if (!resultCompleter.isCompleted) {
+            if (manual == null) {
+              resultCompleter.completeError(Exception('Sign in aborted'));
+            } else {
+              resultCompleter.complete(manual);
+            }
+          }
+        });
+
+        // Wait longer for either the server callback or manual input.
+        code = await resultCompleter.future.timeout(const Duration(minutes: 3));
+      }
+    } catch (err) {
+      // bubble up with informative message
+      throw Exception(
+        'Automatic localhost callback failed or sign-in aborted: ${err.toString()}',
+      );
+    } finally {
+      // ensure server closed
+      await server.close(force: true);
+    }
+
+    final tokenResp = await _exchangeDesktopTokenViaProxy(<String, String>{
+      'grant_type': 'authorization_code',
+      'code': code,
+      'redirect_uri': redirectUri,
+      'code_verifier': verifier,
+    });
+
+    _logDebug('OAuth token exchange status: ${tokenResp.statusCode}');
+
+    if (tokenResp.statusCode == 401 || tokenResp.statusCode == 400) {
+      final body = tokenResp.body.toLowerCase();
+      if (body.contains('invalid_client') || body.contains('client_secret')) {
+        throw Exception(
+          'Token exchange returned invalid_client / client_secret error. Check Desktop client ID and Cloudflare Worker secret GOOGLE_CLIENT_SECRET.',
+        );
+      }
+    }
+
+    if (tokenResp.statusCode != 200) {
+      throw Exception(
+        'Token exchange failed (status: ${tokenResp.statusCode})',
+      );
+    }
+
+    final tokenJson = jsonDecode(tokenResp.body) as Map<String, dynamic>;
+    final accessToken = tokenJson['access_token'] as String?;
+    final refreshToken = tokenJson['refresh_token'] as String?;
+    final idToken = tokenJson['id_token'] as String?;
+    final expiresIn = tokenJson['expires_in'] as int? ?? 3600;
+
+    final tokenExpiry = DateTime.now()
+        .add(Duration(seconds: expiresIn))
+        .toUtc();
+    final token = auth_io.AccessToken('Bearer', accessToken!, tokenExpiry);
+
+    final credentials = auth_io.AccessCredentials(token, refreshToken, scopes);
+
+    // Store credentials and access token string for later persistence
+    _storedCredentials = credentials;
+    _currentAccessTokenString = accessToken;
+    _desktopIdToken = idToken;
+
+    final client = auth_io.authenticatedClient(http.Client(), credentials);
+    return client;
+  }
+
+  String _createCodeVerifier() {
+    final rand = Random.secure();
+    final bytes = List<int>.generate(32, (_) => rand.nextInt(256));
+    return base64UrlEncode(bytes).replaceAll('=', '');
+  }
+
+  String _createCodeChallenge(String verifier) {
+    final bytes = sha256.convert(utf8.encode(verifier)).bytes;
+    return base64UrlEncode(bytes).replaceAll('=', '');
+  }
+
+  Future<String?> _showManualCodeInputDialog(
+    BuildContext context,
+    String authUrl,
+  ) {
+    final controller = TextEditingController();
+
+    return showDialog<String?>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Complete sign-in manually'),
+        content: SingleChildScrollView(
+          child: ListBody(
+            children: [
+              const Text('The browser could not reach the app at localhost.'),
+              const SizedBox(height: 8),
+              const Text(
+                'Click the link below, complete sign-in, then copy the "code" parameter from the URL and paste it below.',
+              ),
+              const SizedBox(height: 6),
+              SelectableText(authUrl),
+              const SizedBox(height: 8),
+              TextField(
+                controller: controller,
+                decoration: const InputDecoration(labelText: 'Paste code here'),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              final data = await Clipboard.getData('text/plain');
+              if (data?.text != null) {
+                controller.text = data!.text!;
+              }
+            },
+            child: const Text('Paste from clipboard'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(null),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(
+              controller.text.trim().isEmpty ? null : controller.text.trim(),
+            ),
+            child: const Text('Submit'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Builds a branded HTML page for OAuth redirect
+  String _buildBrandedHtmlPage({
+    required String title,
+    required String message,
+    required bool isError,
+  }) {
+    final color = isError ? '#D32F2F' : '#D99A00'; // Error red or primary gold
+    final iconBg = isError
+        ? 'rgba(211, 47, 47, 0.2)'
+        : 'rgba(217, 154, 0, 0.2)';
+    final iconSymbol = isError ? '✕' : '✓';
+
+    // Escape HTML special characters in title and message
+    final escapedTitle = _escapeHtml(title);
+    final escapedMessage = _escapeHtml(message);
+    final logoDataUrl = _resolveAgenixLogoDataUrl();
+    final faviconDataUrl = logoDataUrl ?? '';
+
+    return '''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>$escapedTitle</title>
+  <link rel="icon" type="image/png" href="$faviconDataUrl">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap');
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #030303 0%, #161616 100%);
+      color: #F5F5F5;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container {
+      background: #161616;
+      border-radius: 16px;
+      padding: 48px 32px;
+      text-align: center;
+      max-width: 500px;
+      width: 100%;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+      border: 1px solid rgba(217, 154, 0, 0.2);
+    }
+    .logo {
+      font-size: 32px;
+      font-weight: 700;
+      color: #D99A00;
+      margin-bottom: 8px;
+      letter-spacing: -0.5px;
+    }
+    .subtitle {
+      font-size: 14px;
+      color: #D1D5DB;
+      margin-bottom: 32px;
+      font-weight: 400;
+      opacity: 0.8;
+    }
+    .icon {
+      width: 64px;
+      height: 64px;
+      margin: 0 auto 24px;
+      border-radius: 50%;
+      background: $iconBg;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 32px;
+    }
+    h1 {
+      font-size: 24px;
+      font-weight: 600;
+      color: $color;
+      margin-bottom: 16px;
+    }
+    p {
+      font-size: 16px;
+      color: #D1D5DB;
+      line-height: 1.6;
+      font-weight: 400;
+    }
+    .divider {
+      height: 1px;
+      background: rgba(217, 154, 0, 0.2);
+      margin: 32px 0;
+    }
+    .footer {
+      font-size: 12px;
+      color: #9CA3AF;
+      margin-top: 24px;
+      opacity: 0.6;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">AGENIX</div>
+    <div class="subtitle">Streamline your calendar management</div>
+    <div class="icon">$iconSymbol</div>
+    <h1>$escapedTitle</h1>
+    <p>$escapedMessage</p>
+    <div class="divider"></div>
+    <div class="footer">You can safely close this window.</div>
+  </div>
+</body>
+</html>
+''';
+  }
+
+  String? _resolveAgenixLogoDataUrl() {
+    final candidates = <String>[
+      r'E:\02 Soft Dev\Flutter Development\Nuvex Flow\assets\logo\agenix-windows.png',
+      'assets/logo/agenix-windows.png',
+      '${File(Platform.resolvedExecutable).parent.path}\\data\\flutter_assets\\assets\\logo\\agenix-windows.png',
+    ];
+
+    for (final path in candidates) {
+      try {
+        final file = File(path);
+        if (!file.existsSync()) continue;
+        final bytes = file.readAsBytesSync();
+        if (bytes.isEmpty) continue;
+        return 'data:image/png;base64,${base64Encode(bytes)}';
+      } catch (_) {
+        // Try next path.
+      }
+    }
+
+    return null;
+  }
+
+  /// Escapes HTML special characters to prevent XSS and parsing errors
+  String _escapeHtml(String text) {
+    return text
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+  }
+}
+
+/// Very small auth-wrapping HTTP client that attaches an Authorization header.
+/// Used for simple GoogleSignIn-based calls where only a short-lived access
+/// token is available.
+class _SimpleAuthClient extends http.BaseClient {
+  final String _accessToken;
+  final http.Client _inner = http.Client();
+
+  _SimpleAuthClient(this._accessToken);
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) {
+    request.headers['Authorization'] = 'Bearer $_accessToken';
+    return _inner.send(request);
+  }
+}

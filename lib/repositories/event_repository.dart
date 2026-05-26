@@ -1,0 +1,198 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+
+import '../data/local/local_event_store.dart';
+import '../models/calendar_event.dart';
+import '../services/background_event_sync.dart';
+import '../services/debug_perf_logger.dart';
+import '../services/event_sync_activity_tracker.dart';
+
+class EventRepository {
+  EventRepository(this._localStore);
+
+  final LocalEventStore _localStore;
+
+  Stream<List<CalendarEvent>> watchEvents(DateTimeRange range) {
+    return _localStore.watchEvents(range);
+  }
+
+  Future<CalendarEvent> createEvent(CalendarEvent event) async {
+    final watch = DebugPerfLogger.start('EventRepository', 'createEvent');
+    final localId = event.id.isNotEmpty
+        ? event.id
+        : DateTime.now().microsecondsSinceEpoch.toString();
+
+    final record = event.copyWith(
+      id: localId,
+      dirty: true,
+      deleted: false,
+      pendingAction: PendingAction.create,
+      updatedAtRemote: null,
+    );
+
+    try {
+      await _localStore.upsertEvent(record);
+      _triggerReliableBackgroundSync();
+      DebugPerfLogger.end(
+        'EventRepository',
+        watch,
+        'createEvent',
+        data: {
+          'id': record.id,
+          'calendarId': record.calendarId,
+          'pendingAction': record.pendingAction.name,
+        },
+      );
+      return record;
+    } catch (error, stackTrace) {
+      DebugPerfLogger.error(
+        'EventRepository',
+        'createEvent',
+        error: error,
+        stackTrace: stackTrace,
+        data: {'id': record.id},
+      );
+      rethrow;
+    }
+  }
+
+  Future<CalendarEvent> updateEvent(CalendarEvent event) async {
+    final watch = DebugPerfLogger.start('EventRepository', 'updateEvent');
+    final canonicalEvent = await _resolveCanonicalIdentity(event);
+    final existing = await _localStore.getById(canonicalEvent.id);
+    final currentPending =
+        existing?.pendingAction ?? canonicalEvent.pendingAction;
+    final nextPending = _mergePendingAction(currentPending);
+
+    final record = canonicalEvent.copyWith(
+      gEventId: canonicalEvent.gEventId ?? existing?.gEventId,
+      dirty: true,
+      pendingAction: nextPending,
+    );
+    try {
+      await _upsertWithIdentityTransition(oldId: event.id, event: record);
+      _triggerReliableBackgroundSync();
+      DebugPerfLogger.end(
+        'EventRepository',
+        watch,
+        'updateEvent',
+        data: {
+          'oldId': event.id,
+          'newId': record.id,
+          'pendingAction': record.pendingAction.name,
+        },
+      );
+      return record;
+    } catch (error, stackTrace) {
+      DebugPerfLogger.error(
+        'EventRepository',
+        'updateEvent',
+        error: error,
+        stackTrace: stackTrace,
+        data: {'id': event.id},
+      );
+      rethrow;
+    }
+  }
+
+  Future<void> deleteEvent(String eventId) async {
+    final watch = DebugPerfLogger.start('EventRepository', 'deleteEvent');
+    final existing = await _localStore.getById(eventId);
+    if (existing == null) {
+      DebugPerfLogger.end(
+        'EventRepository',
+        watch,
+        'deleteEvent.noop',
+        data: {'id': eventId},
+      );
+      return;
+    }
+
+    if (existing.pendingAction == PendingAction.create &&
+        existing.gEventId == null) {
+      await _localStore.deleteEventById(eventId);
+      DebugPerfLogger.end(
+        'EventRepository',
+        watch,
+        'deleteEvent.removeLocalOnly',
+        data: {'id': eventId},
+      );
+      return;
+    }
+
+    final record = existing.copyWith(
+      deleted: true,
+      dirty: true,
+      pendingAction: PendingAction.delete,
+    );
+    try {
+      await _localStore.upsertEvent(record);
+      _triggerReliableBackgroundSync();
+      DebugPerfLogger.end(
+        'EventRepository',
+        watch,
+        'deleteEvent',
+        data: {'id': eventId, 'pendingAction': record.pendingAction.name},
+      );
+    } catch (error, stackTrace) {
+      DebugPerfLogger.error(
+        'EventRepository',
+        'deleteEvent',
+        error: error,
+        stackTrace: stackTrace,
+        data: {'id': eventId},
+      );
+      rethrow;
+    }
+  }
+
+  PendingAction _mergePendingAction(PendingAction current) {
+    if (current == PendingAction.create) {
+      return PendingAction.create;
+    }
+    if (current == PendingAction.delete) {
+      return PendingAction.delete;
+    }
+    return PendingAction.update;
+  }
+
+  Future<CalendarEvent> _resolveCanonicalIdentity(CalendarEvent event) async {
+    final gEventId = event.gEventId;
+    if (gEventId == null || gEventId.isEmpty) {
+      return event;
+    }
+
+    final canonical = await _localStore.getAnyByGoogleId(gEventId);
+    if (canonical == null || canonical.id == event.id) {
+      return event;
+    }
+
+    return event.copyWith(id: canonical.id);
+  }
+
+  Future<void> _upsertWithIdentityTransition({
+    required String oldId,
+    required CalendarEvent event,
+  }) async {
+    if (oldId != event.id) {
+      await _localStore.replaceEventId(oldId: oldId, eventWithNewId: event);
+      return;
+    }
+    await _localStore.upsertEvent(event);
+  }
+
+  void _triggerReliableBackgroundSync() {
+    DebugPerfLogger.info('EventRepository', 'scheduleBackgroundSync');
+    unawaited(
+      EventSyncActivityTracker.markLocalChange().catchError((Object error) {
+        debugPrint('Sync activity tracking failed: $error');
+      }),
+    );
+    unawaited(
+      BackgroundEventSync.scheduleOneOffSync().catchError((Object error) {
+        debugPrint('Background sync scheduling failed: $error');
+      }),
+    );
+  }
+}
