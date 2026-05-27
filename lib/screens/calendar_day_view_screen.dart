@@ -14,7 +14,6 @@ import '../services/sync_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import 'widgets/event_creation_modal.dart';
-import 'create_event_screen.dart';
 import 'settings_screen.dart';
 import '../widgets/context_menu.dart';
 import '../navigation/app_route_observer.dart';
@@ -1538,10 +1537,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                         borderRadius: BorderRadius.circular(15),
                       ),
                       onPressed: () {
-                        Navigator.pushNamed(
-                          context,
-                          CreateEventScreen.routeName,
-                        );
+                        unawaited(_showCreateEventModal());
                       },
                       child: const Icon(
                         Icons.add_rounded,

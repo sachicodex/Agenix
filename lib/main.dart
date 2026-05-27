@@ -14,7 +14,6 @@ import 'providers/event_providers.dart';
 import 'providers/notification_providers.dart';
 import 'screens/auth_wrapper.dart';
 import 'screens/calendar_day_view_screen.dart';
-import 'screens/create_event_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/sync_feedback_screen.dart';
 import 'services/google_calendar_service.dart';
@@ -77,6 +76,8 @@ class MyApp extends ConsumerStatefulWidget {
 class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
   ProviderSubscription<AsyncValue<SyncStatus>>? _syncStatusSub;
   Future<void>? _windowsExitPushInFlight;
+  Future<void>? _windowsExitNotificationRescheduleInFlight;
+  bool _windowsExitNeedsNotificationFlush = false;
 
   void _logWindowsExit(String message) {
     if (kDebugMode && Platform.isWindows) {
@@ -89,22 +90,73 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     final syncService = ref.read(syncServiceProvider);
+    final notificationCoordinator = ref.read(
+      notificationRescheduleCoordinatorProvider,
+    );
     SystemTrayService.instance.setExitGuard(() async {
       final pendingEvents = await LocalEventStore.instance.getPendingEvents();
       _logWindowsExit(
         'guard check pendingCount=${pendingEvents.length} '
-        'inFlight=${_windowsExitPushInFlight != null}',
+        'pushInFlight=${_windowsExitPushInFlight != null} '
+        'notifInFlight=${_windowsExitNotificationRescheduleInFlight != null} '
+        'needsNotifFlush=$_windowsExitNeedsNotificationFlush '
+        'notifPending=${notificationCoordinator.hasPendingWork}',
       );
-      if (pendingEvents.isEmpty) {
-        _logWindowsExit('guard allows exit: no pending local changes');
-        return false;
-      }
       if (_windowsExitPushInFlight != null) {
         _logWindowsExit(
           'guard blocks exit: close-triggered push still running',
         );
         return true;
       }
+      if (_windowsExitNotificationRescheduleInFlight != null) {
+        _logWindowsExit(
+          'guard blocks exit: close-triggered notification reschedule still running',
+        );
+        return true;
+      }
+      if (pendingEvents.isEmpty) {
+        final shouldFlushNotifications =
+            _windowsExitNeedsNotificationFlush ||
+            notificationCoordinator.hasPendingWork;
+        if (!shouldFlushNotifications) {
+          _logWindowsExit(
+            'guard allows exit: no pending local changes or notification work',
+          );
+          return false;
+        }
+        _logWindowsExit('starting close-triggered notification reschedule');
+        _windowsExitNeedsNotificationFlush = false;
+        unawaited(
+          (() async {
+            final notificationFuture = notificationCoordinator.flushPendingWork(
+              force: true,
+            );
+            _windowsExitNotificationRescheduleInFlight = notificationFuture;
+            try {
+              await notificationFuture;
+              _logWindowsExit(
+                'close-triggered notification reschedule finished',
+              );
+            } catch (error) {
+              _logWindowsExit(
+                'close-triggered notification reschedule failed error=$error',
+              );
+            } finally {
+              if (identical(
+                _windowsExitNotificationRescheduleInFlight,
+                notificationFuture,
+              )) {
+                _windowsExitNotificationRescheduleInFlight = null;
+              }
+              _logWindowsExit(
+                'close-triggered notification reschedule in-flight flag cleared',
+              );
+            }
+          })(),
+        );
+        return true;
+      }
+      _windowsExitNeedsNotificationFlush = true;
       _logWindowsExit('starting close-triggered pushLocalChanges');
       unawaited(
         (() async {
@@ -118,6 +170,9 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
             _logWindowsExit(
               'close-triggered push finished remainingPending=${remaining.length}',
             );
+            if (remaining.isNotEmpty) {
+              _windowsExitNeedsNotificationFlush = true;
+            }
           } catch (error) {
             _logWindowsExit('close-triggered push failed error=$error');
           } finally {
@@ -168,6 +223,7 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      _windowsExitNeedsNotificationFlush = false;
       if (!(kDebugMode && Platform.isWindows)) {
         ref.read(notificationRescheduleCoordinatorProvider).rescheduleNow();
       }
@@ -214,7 +270,6 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
         home: const AuthWrapper(),
         navigatorObservers: [appRouteObserver],
         routes: {
-          CreateEventScreen.routeName: (_) => const CreateEventScreen(),
           SyncFeedbackScreen.routeName: (_) => const SyncFeedbackScreen(),
           SettingsScreen.routeName: (_) => const SettingsScreen(),
           '/calendar': (_) => const CalendarDayViewScreen(),

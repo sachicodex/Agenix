@@ -35,6 +35,12 @@ class NotificationRescheduleCoordinator {
   bool _rescheduleAfterSync = false;
   SyncState? _lastSyncState;
 
+  bool get hasPendingWork =>
+      _debounceTimer != null ||
+      _rescheduleInFlight ||
+      _needsAnotherPass ||
+      _rescheduleAfterSync;
+
   Future<void> start() async {
     if (_started) {
       return;
@@ -68,6 +74,12 @@ class NotificationRescheduleCoordinator {
   /// [force] is reserved for lifecycle exits where delayed notification
   /// scheduling is riskier than doing the work while the app is still alive.
   Future<void> rescheduleNow({bool force = false}) async {
+    await _runQueuedReschedule(force: force);
+  }
+
+  Future<void> flushPendingWork({bool force = true}) async {
+    _debounceTimer?.cancel();
+    _debounceTimer = null;
     await _runQueuedReschedule(force: force);
   }
 
