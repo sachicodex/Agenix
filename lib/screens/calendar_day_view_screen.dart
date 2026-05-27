@@ -14,7 +14,6 @@ import '../services/sync_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import 'widgets/event_creation_modal.dart';
-import 'settings_screen.dart';
 import '../widgets/context_menu.dart';
 import '../navigation/app_route_observer.dart';
 import '../widgets/app_animations.dart';
@@ -1121,82 +1120,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     return visibleDuration >= fullDayThreshold;
   }
 
-  String _timeBasedGreeting() {
-    final hour = DateTime.now().hour;
-    if (hour >= 5 && hour < 12) return 'Good Morning';
-    if (hour >= 12 && hour < 21) return 'Good Evening';
-    return 'Good Night';
-  }
-
-  IconData _timeBasedGreetingIcon() {
-    final hour = DateTime.now().hour;
-    if (hour >= 5 && hour < 12) return Icons.sunny;
-    if (hour >= 12 && hour < 21) return Icons.sunny_snowing;
-    return Icons.nightlight;
-  }
-
-  String _firstNameForGreeting() {
-    final profileName = _userDisplayName?.trim();
-    if (profileName != null && profileName.isNotEmpty) {
-      final firstToken = profileName
-          .split(RegExp(r'\s+'))
-          .firstWhere(
-            (part) => part.trim().isNotEmpty,
-            orElse: () => profileName,
-          )
-          .trim();
-      if (firstToken.isNotEmpty) {
-        final lower = firstToken.toLowerCase();
-        return '${lower[0].toUpperCase()}${lower.substring(1)}';
-      }
-    }
-
-    final email = _userEmail;
-    if (email == null || email.trim().isEmpty) return 'there';
-    final localPart = email.split('@').first;
-    if (localPart.isEmpty) return 'there';
-    final tokens = localPart
-        .split(RegExp(r'[._\-]+'))
-        .where((part) => part.trim().isNotEmpty)
-        .toList();
-    const genericPrefixes = <String>{
-      'hello',
-      'hi',
-      'hey',
-      'mail',
-      'email',
-      'contact',
-      'info',
-      'support',
-      'admin',
-      'team',
-      'official',
-      'noreply',
-      'no-reply',
-    };
-
-    String candidate = '';
-    for (final token in tokens) {
-      final normalized = token.trim().toLowerCase();
-      if (normalized.isEmpty || genericPrefixes.contains(normalized)) {
-        continue;
-      }
-      candidate = token.trim();
-      break;
-    }
-
-    if (candidate.isEmpty) return 'there';
-
-    // Avoid showing low-confidence guesses from long concatenated email text.
-    if (RegExp(r'\d').hasMatch(candidate)) return 'there';
-    if (candidate.length > 12 && !RegExp(r'[A-Z]').hasMatch(candidate)) {
-      return 'there';
-    }
-
-    final lower = candidate.toLowerCase();
-    return '${lower[0].toUpperCase()}${lower.substring(1)}';
-  }
-
   Future<int?> _showYearPicker({required int initialYear}) async {
     const startYear = 1970;
     const endYear = 2100;
@@ -1550,7 +1473,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                 body: SafeArea(
                   child: Column(
                     children: [
-                      _buildTopBar(),
+                      if (_isMobileLayout(context)) _buildTopBar(),
                       Expanded(
                         child: AppFadeSlideIn(
                           child: Stack(
@@ -1592,7 +1515,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   }
 
   Widget _buildTopBar() {
-    final isMobile = _isMobileLayout(context);
     final dateString = DateFormat('d MMM y').format(_currentDate);
     Future<void> handlePickDate() async {
       await _showMobileCalendarPicker();
@@ -1603,8 +1525,8 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     }
 
     return Container(
-      height: isMobile ? 60 : 64,
-      padding: EdgeInsets.symmetric(horizontal: isMobile ? 4 : 20),
+      height: 60,
+      padding: const EdgeInsets.symmetric(horizontal: 4),
       decoration: BoxDecoration(
         color: AppColors.surface,
         border: Border(bottom: BorderSide(color: AppColors.borderColor)),
@@ -1613,116 +1535,57 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
         children: [
           Align(
             alignment: Alignment.centerLeft,
-            child: isMobile
-                ? AppPressFeedback(
-                    child: IconButton(
-                      icon: _buildSyncIcon(
-                        size: 18,
-                        color: AppColors.onBackground,
-                      ),
-                      visualDensity: VisualDensity.compact,
-                      onPressed: handleSync,
-                    ),
-                  )
-                : Padding(
-                    padding: const EdgeInsets.only(left: 6),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          _timeBasedGreetingIcon(),
-                          size: 20,
-                          color: Colors.amber,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '${_timeBasedGreeting()}, ${_firstNameForGreeting()}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: AppColors.onSurface,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.3,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+            child: AppPressFeedback(
+              child: IconButton(
+                icon: _buildSyncIcon(size: 18, color: AppColors.onBackground),
+                visualDensity: VisualDensity.compact,
+                onPressed: handleSync,
+              ),
+            ),
           ),
           Align(
             alignment: Alignment.center,
-            child: isMobile
-                ? Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SizedBox(
-                        child: AppPressFeedback(
-                          child: TextButton(
-                            onPressed: handlePickDate,
-                            style:
-                                TextButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 40,
-                                    vertical: 17,
-                                  ),
-                                  minimumSize: const Size(0, 36),
-                                  tapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                ).copyWith(
-                                  overlayColor:
-                                      WidgetStateProperty.resolveWith<Color?>((
-                                        states,
-                                      ) {
-                                        if (states.contains(
-                                          WidgetState.hovered,
-                                        )) {
-                                          return Colors.transparent;
-                                        }
-                                        return null;
-                                      }),
-                                ),
-                            child: Text(
-                              dateString,
-                              textAlign: TextAlign.center,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w400,
-                                color: AppColors.onBackground,
-                                letterSpacing: 0,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  )
-                : const SizedBox.shrink(),
-          ),
-          Align(
-            alignment: Alignment.centerRight,
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                AppPressFeedback(
-                  child: IconButton(
-                    icon: _buildHeaderAvatarIcon(),
-                    visualDensity: isMobile ? VisualDensity.compact : null,
-                    tooltip: '',
-                    onPressed: () async {
-                      await Navigator.pushNamed(
-                        context,
-                        SettingsScreen.routeName,
-                      );
-                      if (!mounted) return;
-                      await _refreshDefaultCalendarSelection();
-                      unawaited(_loadCalendarColors());
-                    },
+                SizedBox(
+                  child: AppPressFeedback(
+                    child: TextButton(
+                      onPressed: handlePickDate,
+                      style:
+                          TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 40,
+                              vertical: 17,
+                            ),
+                            minimumSize: const Size(0, 36),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ).copyWith(
+                            overlayColor:
+                                WidgetStateProperty.resolveWith<Color?>((
+                                  states,
+                                ) {
+                                  if (states.contains(WidgetState.hovered)) {
+                                    return Colors.transparent;
+                                  }
+                                  return null;
+                                }),
+                          ),
+                      child: Text(
+                        dateString,
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w400,
+                          color: AppColors.onBackground,
+                          letterSpacing: 0,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-                if (!isMobile) const SizedBox(width: 8),
               ],
             ),
           ),
@@ -1733,50 +1596,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
 
   Widget _buildCalendarContent() {
     return _buildDayView();
-  }
-
-  Widget _buildHeaderAvatarIcon() {
-    final photoUrl = _userPhotoUrl;
-    if (photoUrl == null || photoUrl.isEmpty) {
-      return const Icon(Icons.account_circle, size: 32);
-    }
-
-    ImageProvider<Object>? imageProvider;
-    if (photoUrl.startsWith('http://') || photoUrl.startsWith('https://')) {
-      imageProvider = NetworkImage(
-        photoUrl,
-        headers: const {'Cache-Control': 'max-age=3600'},
-      );
-    } else {
-      try {
-        final file = File(photoUrl);
-        if (file.existsSync()) {
-          imageProvider = FileImage(file);
-        }
-      } catch (_) {
-        // Fallback to default icon below.
-      }
-    }
-
-    if (imageProvider == null) {
-      return const Icon(Icons.account_circle, size: 32);
-    }
-
-    return CircleAvatar(
-      radius: 16,
-      backgroundColor: Colors.transparent,
-      child: ClipOval(
-        child: Image(
-          image: imageProvider,
-          width: 32,
-          height: 32,
-          fit: BoxFit.cover,
-          errorBuilder: (_, _, _) {
-            return const Icon(Icons.account_circle, size: 32);
-          },
-        ),
-      ),
-    );
   }
 
   Widget _buildDayView() {

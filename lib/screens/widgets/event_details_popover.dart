@@ -326,6 +326,8 @@ class _EventEditModalState extends ConsumerState<EventEditModal> {
               // Title
               TextFormField(
                 controller: _titleController,
+                minLines: 1,
+                maxLines: 3,
                 decoration: const InputDecoration(
                   labelText: 'Title',
                   hintText: 'Add title',
@@ -389,11 +391,12 @@ class _EventEditModalState extends ConsumerState<EventEditModal> {
               // Description
               TextFormField(
                 controller: _descriptionController,
+                minLines: 1,
                 decoration: const InputDecoration(
                   labelText: 'Description',
                   hintText: 'Add description',
                 ),
-                maxLines: 3,
+                maxLines: 5,
               ),
               const SizedBox(height: 16),
               // Color picker

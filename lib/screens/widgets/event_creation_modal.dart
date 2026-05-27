@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/calendar_event.dart';
@@ -590,7 +591,11 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
                         height: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(Icons.delete_outline_rounded),
+                    : const Icon(
+                        CupertinoIcons.delete_simple,
+                        fontWeight: FontWeight.w700,
+                        size: 20,
+                      ),
               ),
           ],
         ),
@@ -600,6 +605,8 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
           autofocus: false,
           hint: 'Event title',
           label: 'Title',
+          minLines: 1,
+          maxLines: 3,
           requiredField: true,
           onAIClick: _optimizeTitle,
           aiLoading: _titleAILoading,
@@ -686,6 +693,8 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
         ExpandableDescription(
           controller: _descriptionController,
           hint: 'Description ( Optional )',
+          minLines: 1,
+          maxLines: 5,
           onAIClick: _optimizeOrGenerateDescription,
           aiLoading: _descriptionAILoading,
         ),

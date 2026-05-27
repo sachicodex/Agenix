@@ -8,6 +8,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'notifications/firebase_push_service.dart';
+import 'navigation/app_navigator.dart';
 import 'navigation/app_route_observer.dart';
 import 'data/local/local_event_store.dart';
 import 'providers/event_providers.dart';
@@ -26,6 +27,7 @@ import 'services/sync_service.dart';
 import 'theme/app_theme.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+import 'widgets/windows_title_bar.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -36,6 +38,13 @@ Future<void> main() async {
   }
   if (Platform.isWindows) {
     await windowManager.ensureInitialized();
+    await windowManager.waitUntilReadyToShow(
+      WindowOptions(
+        titleBarStyle: TitleBarStyle.hidden,
+        backgroundColor: Colors.transparent,
+      ),
+      () async {},
+    );
   }
   initForegroundEventSync();
 
@@ -262,8 +271,13 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
     return WithForegroundTask(
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
+        navigatorKey: appNavigatorKey,
         title: 'Agenix',
         theme: AppTheme.build(),
+        builder: (context, child) {
+          final appChild = child ?? const SizedBox.shrink();
+          return WindowsAppFrame(child: appChild);
+        },
         scrollBehavior: const MaterialScrollBehavior().copyWith(
           scrollbars: false,
         ),

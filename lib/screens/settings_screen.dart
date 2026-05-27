@@ -898,16 +898,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     }
   }
 
-  Widget _animatedSection(int index, Widget child) {
-    if (_isOffline) {
-      return child;
-    }
-    return AppFadeSlideIn(
-      delay: Duration(milliseconds: 50 * index),
-      child: child,
-    );
-  }
-
   Future<bool> _hasInternetConnection() async {
     try {
       final result = await InternetAddress.lookup(
@@ -923,25 +913,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     final content = ListView(
       padding: EdgeInsets.all(isWide ? 24 : 16),
       children: [
-        _animatedSection(0, _buildAccountSection()),
+        _buildAccountSection(),
         const SizedBox(height: 16),
-        _animatedSection(1, _buildAiSection()),
+        _buildAiSection(),
         if (Platform.isAndroid || Platform.isWindows) ...[
           const SizedBox(height: 16),
         ],
-        _animatedSection(2, _buildNotificationsSection()),
+        _buildNotificationsSection(),
         const SizedBox(height: 16),
-        if (_signedIn) ...[
-          _animatedSection(3, _buildCalendarSection()),
-          const SizedBox(height: 16),
-        ],
+        if (_signedIn) ...[_buildCalendarSection(), const SizedBox(height: 16)],
         if (Platform.isAndroid || Platform.isWindows) ...[
-          _animatedSection(4, _buildPlatformSection()),
+          _buildPlatformSection(),
           const SizedBox(height: 16),
         ],
-        _animatedSection(5, _buildAboutSection()),
+        _buildAboutSection(),
         const SizedBox(height: 16),
-        _animatedSection(6, _buildLogoutSection()),
+        _buildLogoutSection(),
       ],
     );
 
