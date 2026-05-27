@@ -560,7 +560,7 @@ class SyncService {
           );
         }
       } catch (e) {
-        if (_isRemoteNotFoundError(e)) {
+        if (_isMissingRemoteError(e)) {
           try {
             final resolved = await _resolveMissingRemoteDuringPush(
               normalizedEvent,
@@ -615,10 +615,14 @@ class SyncService {
     await _localStore.upsertEvent(event);
   }
 
-  bool _isRemoteNotFoundError(Object error) {
+  bool _isMissingRemoteError(Object error) {
     final text = error.toString().toLowerCase();
     return text.contains('status: 404') ||
+        text.contains('status: 410') ||
+        text.contains('410, message: resource has been deleted') ||
         text.contains('404, message: not found') ||
+        text.contains('message: resource has been deleted') ||
+        text.contains('resource has been deleted') ||
         text.contains('message: not found');
   }
 
