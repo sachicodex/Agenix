@@ -25,6 +25,7 @@ import '../controllers/timeline_zoom_controller.dart';
 import '../widgets/timeline_event_block_content.dart';
 import '../widgets/timeline_hour_ruler.dart';
 import '../widgets/timeline_zoom_viewport.dart';
+import 'settings_screen.dart';
 
 class _NoStretchScrollBehavior extends MaterialScrollBehavior {
   const _NoStretchScrollBehavior();
@@ -388,6 +389,63 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     final icon = Icon(Icons.sync_rounded, size: size, color: color);
     if (!_isUserTriggeredSyncActive) return icon;
     return RotationTransition(turns: _syncRotationController, child: icon);
+  }
+
+  Future<void> _openSettings() async {
+    await Navigator.of(context).pushNamed(SettingsScreen.routeName);
+    if (!mounted) return;
+    await _refreshUserInfo();
+  }
+
+  Widget _buildProfileButton() {
+    ImageProvider<Object>? imageProvider;
+    final photoUrl = _userPhotoUrl;
+    if (photoUrl != null && photoUrl.isNotEmpty) {
+      if (photoUrl.startsWith('http://') || photoUrl.startsWith('https://')) {
+        imageProvider = NetworkImage(
+          photoUrl,
+          headers: const {'Cache-Control': 'max-age=3600'},
+        );
+      } else {
+        try {
+          final file = File(photoUrl);
+          if (file.existsSync()) {
+            imageProvider = FileImage(file);
+          }
+        } catch (_) {}
+      }
+    }
+
+    return AppPressFeedback(
+      child: IconButton(
+        icon: SizedBox(
+          width: 32,
+          height: 32,
+          child: imageProvider == null
+              ? const Icon(Icons.account_circle, size: 32)
+              : CircleAvatar(
+                  radius: 16,
+                  backgroundColor: Colors.transparent,
+                  child: ClipOval(
+                    child: Image(
+                      image: imageProvider,
+                      width: 32,
+                      height: 32,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) {
+                        return const Icon(Icons.account_circle, size: 32);
+                      },
+                    ),
+                  ),
+                ),
+        ),
+        tooltip: 'Settings',
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+        splashRadius: 18,
+        onPressed: _openSettings,
+      ),
+    );
   }
 
   Future<void> _runUserTriggeredSync() async {
@@ -1589,6 +1647,11 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
               ],
             ),
           ),
+          if (Platform.isAndroid)
+            Align(
+              alignment: Alignment.centerRight,
+              child: _buildProfileButton(),
+            ),
         ],
       ),
     );
