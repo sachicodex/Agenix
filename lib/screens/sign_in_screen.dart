@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/google_calendar_service.dart';
+import '../services/google_sign_in_error.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_animations.dart';
 import '../widgets/primary_action_button.dart';
@@ -47,7 +48,7 @@ class _SignInScreenState extends State<SignInScreen> {
       widget.onSignInSuccess?.call();
     } catch (err) {
       if (mounted) {
-        _showErrorDialog(err.toString());
+        _showErrorDialog(googleSignInErrorMessage(err));
       }
     } finally {
       if (mounted) setState(() => _loading = false);

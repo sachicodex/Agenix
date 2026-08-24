@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  AI-powered Google Calendar planner with local-first sync, smart reminders, and fast day-view scheduling on Android and Windows.
+  An AI-powered Google Calendar planner with local-first sync, smart reminders, and fast day-view scheduling for Android and Windows.
 </p>
 
 <p align="center">
@@ -20,14 +20,15 @@
 | Platform | Package | Link | Notes |
 |---|---|---|---|
 | Android | APK | [Latest Release](https://github.com/sachicodex/Agenix/releases/latest) | Install the release APK on your Android device. |
-| Windows | MSIX | [Latest Release](https://github.com/sachicodex/Agenix/releases/latest) | MSIX is recommended for the best Windows notification/startup experience. |
-| Linux / macOS / iOS | Build from source | [Run From Source](#run-from-source) | Source builds are possible with Flutter tooling, but Android and Windows are the main polished targets in this repo. |
+| Windows | EXE | [Latest Release](https://github.com/sachicodex/Agenix/releases/latest) | Recommended Windows install; uses the Inno Setup installer. |
+| Linux / macOS / iOS | Build from source | [Run From Source](#run-from-source) | Desktop and mobile code paths exist, but Android and Windows are the configured release targets. |
+| Web | Not supported | - | The app uses native platform APIs and does not support web builds. |
 
 ## About
 
 Agenix is a Google Calendar planner focused on fast scheduling and reliable syncing:
 - Sign in with Google and work directly with your calendars.
-- Create, edit, drag, move, and resize events in a day-view timeline.
+- Create, edit, drag, move, and resize events in an interactive day-view timeline.
 - Save events locally first, then push changes back to Google Calendar.
 - Use AI tools to improve event titles and descriptions with a Groq API key.
 - Configure daily agenda notifications, event reminders, startup behavior, and account settings from one settings screen.
@@ -35,23 +36,23 @@ Agenix is a Google Calendar planner focused on fast scheduling and reliable sync
 ## Preview
 
 <p align="center">
-  <img src="assets/img/preview-desktop.png" alt="Agenix Desktop Preview" width="560" />
+  <img src="assets/img/ai.png" alt="Agenix AI Tools Preview" width="560" />
 </p>
 
 <p align="center">
-  <img src="assets/img/preview-mobile.png" alt="Agenix Mobile Preview" width="320" />
+  <img src="assets/img/verify.png" alt="Agenix Verification Preview" width="320" />
 </p>
 
 ## Features
 
 | Icon | Feature | What you get |
 |---|---|---|
-| &#127760; | Google Calendar integration | Google sign-in, calendar listing, create/update/delete support, and sync token based refresh. |
-| &#128197; | Interactive day view | Timeline scheduling with drag, resize, double-tap edit, all-day row, and multi-day support on desktop. |
-| &#128190; | Local-first storage | Local event database, cached profile data, sync retry behavior, and offline-friendly edits. |
-| &#128276; | Notifications | Daily agenda alerts, per-event reminders, Android background notification support, and Windows-friendly packaging support. |
-| &#10024; | AI writing tools | Title optimization and description generation/editing powered by Groq API. |
-| &#128295; | Platform utilities | Windows startup toggle, system tray behavior, Android background/foreground sync helpers, and synced settings. |
+| &#127760; | Google Calendar integration | Google sign-in, calendar listing, default calendar selection, event management, reminders, and sync-token refresh. |
+| &#128197; | Interactive day view | Timeline scheduling with date navigation, an all-day row, event creation, drag-and-drop movement, and resize interactions. |
+| &#128190; | Local-first storage | SQLite event, calendar, and profile caches with pending-change tracking and sync retries. |
+| &#128276; | Notifications | Daily agenda alerts, configurable event reminders, Android scheduled notifications, and Windows-friendly notification support. |
+| &#10024; | AI writing tools | Event title optimization and description generation or editing powered by Groq. |
+| &#128295; | Platform utilities | Windows startup and system tray controls, Android background sync, and synchronized settings. |
 
 ## Mobile Gestures (Day View)
 
@@ -60,7 +61,7 @@ Agenix is a Google Calendar planner focused on fast scheduling and reliable sync
 | Swipe left/right on the timeline | Change day. |
 | Long-press empty timeline, then drag | Create a new event range. |
 | Long-press an event, then drag | Move an event. |
-| Long-press event resize handle, then drag | Resize event duration. |
+| Long-press the event resize handle, then drag | Resize event duration. |
 | Double-tap an event | Open the edit modal. |
 | Tap the top-bar sync icon | Run a manual sync and animate the sync icon until it finishes. |
 
@@ -82,34 +83,28 @@ Agenix is a Google Calendar planner focused on fast scheduling and reliable sync
 2. Choose a default calendar in `Settings`.
 3. Create or edit events from the day view.
 4. Use drag-and-drop or resize gestures to adjust timing quickly.
-5. Open `Settings` to manage:
-   - Account
-   - AI tools
-   - Notifications
-   - Default calendar
-   - Startup / background behavior
-6. Tap the sync button any time you want a manual sync.
+5. Open `Settings` to manage your account, AI tools, notifications, calendar, and startup behavior.
+6. Tap the sync button whenever you want a manual sync.
 
-## How to Get Groq API Key
+## How to Get a Groq API Key
 
 1. Go to [Groq Console](https://console.groq.com/).
 2. Create an API key.
 3. Open `Settings` -> `AI Tools`.
-4. Paste the key.
-5. Tap the check icon to validate and save it.
+4. Paste the key and validate it.
 
-If no key is configured, AI actions inside the create/edit event forms will guide the user back to Settings.
+If no key is configured, AI actions inside the create and edit event forms guide you back to Settings.
 
 ## Run From Source
 
 ### Prerequisites
 
-- Flutter SDK with Dart `3.10+`
-- Google Cloud project with Google Calendar API enabled
-- Google OAuth credentials for desktop and mobile/web flows
+- Flutter SDK with Dart `3.10.3+`
+- Google Cloud project with the Google Calendar API enabled
+- Google OAuth credentials for desktop and mobile flows
 - Cloudflare Worker setup for desktop OAuth token exchange
 - Optional: Groq API key for AI features
-- Optional: Firebase project for Android messaging and cloud-backed settings sync
+- Optional: Firebase project and `google-services.json` for Android messaging and cloud-backed settings sync
 
 ### Setup
 
@@ -133,12 +128,11 @@ flutter run -d macos
 
 ### 1. Create Google OAuth credentials
 
-In Google Cloud Console:
-1. Enable `Google Calendar API`.
-2. Create an OAuth client for `Desktop app`.
-3. Create an OAuth client for `Web application`.
-4. Keep the desktop client ID and client secret.
-5. Keep the web client ID.
+In [Google Cloud Console](https://console.cloud.google.com/):
+1. Enable the `Google Calendar API`.
+2. Create an OAuth client for a desktop application.
+3. Create an OAuth client for a web application.
+4. Keep the desktop client ID and secret, plus the web client ID.
 
 ### 2. Configure Flutter OAuth values
 
@@ -149,7 +143,7 @@ const String kDesktopClientId = 'YOUR_DESKTOP_CLIENT_ID.apps.googleusercontent.c
 const String kGoogleOauthProxyTokenUrl = 'https://YOUR_WORKER_SUBDOMAIN.workers.dev/oauth/token';
 ```
 
-Update `web/index.html`:
+Update `web/index.html` with the web client ID:
 
 ```html
 <meta name="google-signin-client_id" content="YOUR_WEB_CLIENT_ID.apps.googleusercontent.com">
@@ -157,101 +151,138 @@ Update `web/index.html`:
 
 ### 3. Configure the Cloudflare Worker OAuth proxy
 
-From repo root:
+From the repository root:
 
 ```bash
 cd oauth-proxy
+npm install
 ```
 
-Set `GOOGLE_CLIENT_ID` in `oauth-proxy/wrangler.jsonc`:
-
-```jsonc
-"vars": {
-  "GOOGLE_CLIENT_ID": "YOUR_DESKTOP_CLIENT_ID.apps.googleusercontent.com"
-}
-```
-
-Add the desktop client secret:
+Set `GOOGLE_CLIENT_ID` in `oauth-proxy/wrangler.jsonc`, then add the desktop client secret:
 
 ```bash
 wrangler secret put GOOGLE_CLIENT_SECRET
 ```
 
-Deploy:
+Deploy the worker:
 
 ```bash
 npm run deploy
 ```
 
-Important:
-- The Flutter desktop client ID and worker `GOOGLE_CLIENT_ID` must match.
-- Never place the desktop client secret inside Flutter source files.
+The Flutter desktop client ID and worker `GOOGLE_CLIENT_ID` must match. Never place the desktop client secret in Flutter source files.
 
-### 4. Configure Firebase (optional but recommended for Android)
+### 4. Configure Firebase (optional)
 
-In Firebase Console:
+In [Firebase Console](https://console.firebase.google.com/):
 1. Create or reuse a project.
 2. Add your Android app.
 3. Download `google-services.json`.
 4. Place it in `android/app/google-services.json`.
-5. Ensure the project is configured for Firebase Messaging if you need it.
+5. Enable Firebase Messaging if Android notifications are required.
 
-Desktop Firebase values can be loaded from `.env` through the app bootstrap path.
+For desktop Firebase settings sync, configure `FIREBASE_API_KEY`, `FIREBASE_APP_ID`, `FIREBASE_PROJECT_ID`, and `FIREBASE_MESSAGING_SENDER_ID` in `.env`.
 
 ### 5. Test the sign-in flow
 
-1. Run the app on Windows or Android.
+1. Run Agenix on Windows or Android.
 2. Tap `Sign in with Google`.
 3. Complete browser consent.
-4. Let Agenix exchange the auth code through the worker.
-5. Return to the app and verify calendars load correctly.
+4. Let Agenix exchange the authorization code through the worker.
+5. Return to the app and verify that calendars load correctly.
 
-If desktop sign-in fails with OAuth-related errors:
-- Recheck the desktop client ID.
-- Recheck the worker secret and deployment.
-- Recheck the redirect/token proxy URL in `google_oauth_config.dart`.
-
-## Build
-
-### Android APK
+## Build Release Packages
 
 ```bash
-flutter build apk
+# Android APK
+flutter build apk --release
+
+# Windows release
+flutter build windows --release
 ```
 
-### Windows EXE
+The Android build currently uses the debug signing key unless release signing is configured separately. Configure production signing before distributing an APK publicly.
 
-```bash
-flutter build windows
+## Windows Installer (Inno Setup)
+
+Agenix uses a normal Inno Setup EXE installer for Windows distribution.
+
+Prerequisites:
+- Install the Flutter Windows desktop tooling.
+- Build the Windows release first with `flutter build windows --release`.
+
+The installer script is saved at:
+
+```text
+installer\Agenix.iss
 ```
 
-### Windows MSIX package
+To compile from VS Code:
 
-```bash
-dart run msix:create
+1. Press `Ctrl + Shift + B`.
+2. Choose `Release: Build Windows Installer`.
+3. VS Code runs the Flutter Windows release build, then compiles `installer\Agenix.iss`.
+4. The setup EXE is created at `installer\Output\Agenix-Setup.exe`.
+
+To compile from Inno Setup:
+
+1. Open `installer\Agenix.iss` in Inno Setup Compiler.
+2. Click **Compile**.
+3. The setup EXE is created at `installer\Output\Agenix-Setup.exe`.
+
+Script Wizard settings used for Agenix:
+
+| Wizard page | Value |
+|---|---|
+| Application name | `Agenix` |
+| Application version | `4.3.17` |
+| Publisher | `Sachicodex` |
+| Destination base folder | `(Custom)` |
+| Custom destination folder | `{localappdata}\Programs` |
+| Application folder name | `Agenix` |
+| Main executable | `build\windows\x64\runner\Release\Agenix.exe` |
+| Other application files | Add the full `build\windows\x64\runner\Release` folder |
+| File association | Disabled |
+| Start Menu shortcut | Enabled |
+| Desktop shortcut option | Enabled |
+| Documentation files | Blank |
+| Install mode | Non administrative install mode, current user only |
+| Registry import file | Blank |
+| Project root folder | installer |
+| Installer subfolder | Output |
+| Compiler output folder | Output |
+| Output base file name | `Agenix-Setup` |
+| Setup password | Blank |
+| Preprocessor directives | Enabled |
+| ISS file location | installer |
+
+This installs to:
+
+```text
+%LOCALAPPDATA%\Programs\Agenix
 ```
 
-Notes:
-- The repo now uses a valid four-part MSIX version format in `pubspec.yaml`.
-- If you previously used `flutter pub run msix:create`, that still works in older flows, but `dart run msix:create` is the modern command.
+That keeps installation user-friendly and avoids requiring admin rights.
+
+
 
 ## Notifications
 
-- Daily agenda notifications can be enabled and timed from Settings.
-- Event reminders are configured from a single selector, including an `Off` state.
+- Daily agenda notifications can be enabled and scheduled from Settings.
+- Event reminders support `Off`, 5, 10, 15, 30, and 60 minute options.
 - Android uses local notifications, WorkManager, and optional foreground sync helpers.
-- Windows works best with an MSIX install if you want the most reliable closed-app notification behavior.
+- Windows works best with an Inno Setup install for closed-app notification behavior.
 
 ## Sync Behavior
 
 - Local edits are written first, then synced to Google Calendar.
 - Manual sync is available from the main calendar screen.
-- Background sync can still run without animating the manual sync button.
+- Background sync can run without animating the manual sync button.
 - Android can schedule additional upload work when the app moves to the background.
 
 ## Settings Overview
 
-The current settings screen is organized as:
+The Settings screen includes:
 - Account
 - AI Tools
 - Notifications
@@ -271,10 +302,16 @@ lib/
   notifications/  Reminder scheduling, local notifications, Firebase messaging
   providers/      Riverpod providers
   repositories/   Event repository and sync orchestration
-  screens/        Auth, calendar, settings, create/edit flows
-  services/       Google auth, sync, AI, startup, tray, background services
+  screens/        Auth, calendar, settings, and create/edit flows
+  services/       Google auth, sync, AI, startup, tray, and background services
   theme/          App colors and theme
   widgets/        Shared UI widgets
+oauth-proxy/
+  src/            Cloudflare Worker OAuth token exchange
+assets/
+  fonts/          Montserrat font family
+  img/            AI and verification artwork
+  logo/           Agenix application logos and icons
 ```
 
 ## Tech Stack
@@ -283,14 +320,26 @@ lib/
 |---|---|
 | App | Flutter |
 | State management | Riverpod |
-| Local DB | `sqflite`, `sqflite_common_ffi` |
+| Local database | `sqflite`, `sqflite_common_ffi` |
 | Calendar API | `googleapis`, `google_sign_in`, `googleapis_auth` |
 | AI | Groq API |
 | Notifications | `flutter_local_notifications`, `firebase_messaging`, `workmanager`, `flutter_foreground_task` |
-| Desktop utilities | `window_manager`, `tray_manager`, `msix` |
+| Desktop utilities | `window_manager`, `tray_manager` |
+| Windows packaging | Inno Setup |
 | Cloud sync | Firebase Auth + Cloud Firestore |
+| OAuth proxy | Cloudflare Workers |
+
+## Publisher
+
+| Field | Value |
+|---|---|
+| Display name | Agenix |
+| Publisher | Sachicodex |
+| Package ID | `com.sachicodex.agenix` |
+| Version | `6.3.25+5` |
 
 ## Support
 
 - Issues: [GitHub Issues](https://github.com/sachicodex/Agenix/issues)
 - Releases: [GitHub Releases](https://github.com/sachicodex/Agenix/releases)
+- Repository: [github.com/sachicodex/Agenix](https://github.com/sachicodex/Agenix)
