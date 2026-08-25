@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/google_calendar_service.dart';
 import '../services/google_sign_in_error.dart';
+import '../widgets/app_popup.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_animations.dart';
 import '../widgets/primary_action_button.dart';
@@ -18,7 +19,7 @@ class _SignInScreenState extends State<SignInScreen> {
   bool _loading = false;
 
   void _showErrorDialog(String message) {
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Error'),

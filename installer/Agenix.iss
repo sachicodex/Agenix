@@ -32,6 +32,8 @@ ArchitecturesInstallIn64BitMode=x64compatible
 DisableProgramGroupPage=yes
 ; Remove the following line to run in administrative install mode (install for all users).
 PrivilegesRequired=lowest
+CloseApplications=yes
+RestartApplications=no
 OutputDir=F:\02 Soft Dev\Flutter Development\Agenix-main\installer\output
 OutputBaseFilename=Agenix-Setup
 SetupIconFile=F:\02 Soft Dev\Flutter Development\Agenix-main\assets\logo\agenix.ico

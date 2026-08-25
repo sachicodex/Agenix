@@ -6,16 +6,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class SettingsEncryptionService {
-  SettingsEncryptionService({
-    AesGcm? cipher,
-    Hkdf? hkdf,
-  }) : _cipher = cipher ?? AesGcm.with256bits(),
-       _hkdf =
-           hkdf ??
-           Hkdf(
-             hmac: Hmac.sha256(),
-             outputLength: 32,
-           );
+  SettingsEncryptionService({AesGcm? cipher, Hkdf? hkdf})
+    : _cipher = cipher ?? AesGcm.with256bits(),
+      _hkdf = hkdf ?? Hkdf(hmac: Hmac.sha256(), outputLength: 32);
 
   final AesGcm _cipher;
   final Hkdf _hkdf;
@@ -40,9 +33,7 @@ class SettingsEncryptionService {
   }) async {
     final secret = _readSecret();
     if (secret == null) {
-      debugPrint(
-        'SETTINGS_ENC_SECRET missing/short; API key sync disabled.',
-      );
+      debugPrint('SETTINGS_ENC_SECRET missing/short; API key sync disabled.');
       return null;
     }
 
@@ -69,9 +60,7 @@ class SettingsEncryptionService {
   }) async {
     final secret = _readSecret();
     if (secret == null) {
-      debugPrint(
-        'SETTINGS_ENC_SECRET missing/short; API key sync disabled.',
-      );
+      debugPrint('SETTINGS_ENC_SECRET missing/short; API key sync disabled.');
       return null;
     }
 
@@ -102,11 +91,7 @@ class SettingsEncryptionService {
     final key = await _deriveKey(uid: uid, secret: secret);
     try {
       final clear = await _cipher.decrypt(
-        SecretBox(
-          cipherText,
-          nonce: nonce,
-          mac: Mac(macBytes),
-        ),
+        SecretBox(cipherText, nonce: nonce, mac: Mac(macBytes)),
         secretKey: key,
       );
       return utf8.decode(clear);

@@ -7,6 +7,7 @@ import '../../models/calendar_event.dart';
 import '../../theme/app_colors.dart';
 import '../../providers/event_providers.dart';
 import '../../widgets/app_snackbar.dart';
+import '../../widgets/app_popup.dart';
 import '../../widgets/delete_event_dialog.dart';
 import '../../widgets/primary_action_button.dart';
 import 'event_creation_modal.dart';
@@ -49,7 +50,7 @@ class EventDetailsPopover extends ConsumerWidget {
     Navigator.pop(context);
     final isMobile = MediaQuery.of(context).size.width < 700;
     if (isMobile) {
-      await showModalBottomSheet<void>(
+      await showAppModalBottomSheet<void>(
         context: context,
         isScrollControlled: true,
         useSafeArea: true,
@@ -63,7 +64,7 @@ class EventDetailsPopover extends ConsumerWidget {
         ),
       );
     } else {
-      await showDialog(
+      await showAppDialog(
         context: context,
         builder: (context) => EventCreationModal(
           existingEvent: event,
@@ -173,7 +174,6 @@ class _EventEditModalState extends ConsumerState<EventEditModal> {
   late DateTime _endTime;
   late bool _allDay;
   late Color _selectedColor;
-  final List<int> _reminders = [];
 
   final List<Color> _colorOptions = [
     Colors.blue,
@@ -197,7 +197,6 @@ class _EventEditModalState extends ConsumerState<EventEditModal> {
     _endTime = widget.event.endDateTime;
     _allDay = widget.event.allDay;
     _selectedColor = widget.event.color;
-    _reminders.addAll(widget.event.reminders);
   }
 
   @override
@@ -288,7 +287,6 @@ class _EventEditModalState extends ConsumerState<EventEditModal> {
       allDay: _allDay,
       color: _selectedColor,
       description: _descriptionController.text.trim(),
-      reminders: _reminders,
     );
 
     try {

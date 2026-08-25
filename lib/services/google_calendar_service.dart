@@ -24,6 +24,7 @@ import '../google_oauth_config.dart';
 import 'app_data_service.dart';
 import 'auth_storage_service.dart';
 import '../data/local/local_event_store.dart';
+import '../widgets/app_popup.dart';
 import 'firebase_bootstrap.dart';
 
 /// Lightweight service to sign in and insert events into Google Calendar.
@@ -227,6 +228,54 @@ class GoogleCalendarService {
       _logDebug('Failed to read cached calendars: $e');
       return const [];
     }
+  }
+
+  /// Creates a secondary Google calendar and assigns its display colour.
+  /// Calendar colour belongs to the user's calendar-list entry, therefore it
+  /// is applied in a second API call after the calendar itself is created.
+  Future<Map<String, dynamic>> createCalendar({
+    required String name,
+    required int color,
+  }) async {
+    final trimmedName = name.trim();
+    if (trimmedName.isEmpty) {
+      throw ArgumentError.value(name, 'name', 'Calendar name cannot be empty');
+    }
+
+    final client = await _getAuthenticatedClient();
+    final calApi = calendar.CalendarApi(client);
+    final created = await calApi.calendars.insert(
+      calendar.Calendar(summary: trimmedName),
+    );
+    final id = created.id;
+    if (id == null || id.isEmpty) {
+      throw StateError('Google Calendar did not return an ID for the calendar');
+    }
+
+    final hexColor = _calendarColorToHex(color);
+    await calApi.calendarList.patch(
+      calendar.CalendarListEntry(backgroundColor: hexColor),
+      id,
+      colorRgbFormat: true,
+    );
+
+    // Return and cache the confirmed Google resource immediately. Do not wait
+    // for a second list request: the event selector must switch to the new
+    // calendar as soon as Save succeeds, even on a slow connection.
+    final result = <String, dynamic>{
+      'id': id,
+      'name': trimmedName,
+      'color': color,
+      'backgroundColor': hexColor,
+      'selected': true,
+    };
+    await LocalEventStore.instance.upsertCalendars([result]);
+    return result;
+  }
+
+  String _calendarColorToHex(int color) {
+    final rgb = color & 0x00FFFFFF;
+    return '#${rgb.toRadixString(16).padLeft(6, '0')}';
   }
 
   GoogleCalendarService._privateConstructor();
@@ -694,7 +743,7 @@ class GoogleCalendarService {
         kGoogleOauthProxyTokenUrl.startsWith('YOUR_') ||
         kGoogleOauthProxyTokenUrl.isEmpty) {
       if (!context.mounted) return;
-      await showDialog<void>(
+      await showAppDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('OAuth client not configured'),
@@ -798,7 +847,7 @@ class GoogleCalendarService {
       final errStr = err.toString();
       if (errStr.contains('invalid_client')) {
         if (!context.mounted) rethrow;
-        await showDialog<void>(
+        await showAppDialog<void>(
           context: context,
           builder: (ctx) => AlertDialog(
             title: const Text('OAuth client error'),
@@ -827,7 +876,7 @@ class GoogleCalendarService {
 
       // Show a helpful dialog with the actual error and actionable steps.
       if (!context.mounted) rethrow;
-      await showDialog<void>(
+      await showAppDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('Sign-in failed'),
@@ -860,7 +909,7 @@ class GoogleCalendarService {
             TextButton(
               onPressed: () {
                 Navigator.of(ctx).pop();
-                showDialog<void>(
+                showAppDialog<void>(
                   context: context,
                   builder: (dCtx) => AlertDialog(
                     title: const Text('Error details'),
@@ -922,7 +971,6 @@ class GoogleCalendarService {
     required DateTime end,
     String calendarId = 'primary',
     String? customEventId,
-    List<Map<String, dynamic>>? reminders,
   }) async {
     final client = await _getAuthenticatedClient();
 
@@ -938,20 +986,6 @@ class GoogleCalendarService {
 
     if (customEventId != null && customEventId.isNotEmpty) {
       event.id = customEventId;
-    }
-
-    if (reminders != null && reminders.isNotEmpty) {
-      event.reminders = calendar.EventReminders(
-        useDefault: false,
-        overrides: reminders
-            .map(
-              (r) => calendar.EventReminder(
-                method: r['method'],
-                minutes: r['minutes'],
-              ),
-            )
-            .toList(),
-      );
     }
 
     try {
@@ -1294,7 +1328,6 @@ class GoogleCalendarService {
         'color': calendarColor ?? 0xFF039BE5,
         'description': event.description ?? '',
         'location': event.location ?? '',
-        'reminders': const <int>[],
         'googleCalendarId': event.id,
         'calendarId': calendarId,
         'timezone': '',
@@ -1370,8 +1403,6 @@ class GoogleCalendarService {
       'color': eventColorValue,
       'description': event.description ?? '',
       'location': event.location ?? '',
-      'reminders':
-          event.reminders?.overrides?.map((r) => r.minutes ?? 0).toList() ?? [],
       'googleCalendarId': event.id,
       'calendarId': calendarId,
       'timezone': event.start?.timeZone ?? '',
@@ -1434,7 +1465,6 @@ class GoogleCalendarService {
     required DateTime start,
     required DateTime end,
     String calendarId = 'primary',
-    List<Map<String, dynamic>>? reminders,
     Color? color,
   }) async {
     final client = await _getAuthenticatedClient();
@@ -1454,20 +1484,6 @@ class GoogleCalendarService {
       dateTime: end.toUtc(),
       timeZone: 'UTC',
     );
-
-    if (reminders != null && reminders.isNotEmpty) {
-      existingEvent.reminders = calendar.EventReminders(
-        useDefault: false,
-        overrides: reminders
-            .map(
-              (r) => calendar.EventReminder(
-                method: r['method'],
-                minutes: r['minutes'],
-              ),
-            )
-            .toList(),
-      );
-    }
 
     if (color != null) {
       // Map color to Google Calendar colorId (simplified)
@@ -2232,7 +2248,7 @@ class GoogleCalendarService {
   ) {
     final controller = TextEditingController();
 
-    return showDialog<String?>(
+    return showAppDialog<String?>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(

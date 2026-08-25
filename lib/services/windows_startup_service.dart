@@ -40,8 +40,9 @@ class WindowsStartupService {
     }
 
     try {
-      final path = await WindowsAppDataService.instance
-          .getLocalStateFilePath(_configFileName);
+      final path = await WindowsAppDataService.instance.getLocalStateFilePath(
+        _configFileName,
+      );
       final file = File(path);
       if (!await file.exists()) {
         _cachedEnabled = false;
@@ -81,16 +82,12 @@ class WindowsStartupService {
         _cachedEnabled = await _isStartupRegistered();
       } catch (_) {}
 
-      final path = await WindowsAppDataService.instance
-          .getLocalStateFilePath(_configFileName);
-      final file = File(path);
-      final json = <String, dynamic>{
-        'launchOnStartup': enabled,
-      };
-      await file.writeAsString(
-        jsonEncode(json),
-        flush: true,
+      final path = await WindowsAppDataService.instance.getLocalStateFilePath(
+        _configFileName,
       );
+      final file = File(path);
+      final json = <String, dynamic>{'launchOnStartup': enabled};
+      await file.writeAsString(jsonEncode(json), flush: true);
     } catch (_) {
       // Ignore failures; preference will fall back to false next run.
     }
@@ -168,4 +165,3 @@ class WindowsStartupService {
     return '"$executablePath" --from-startup';
   }
 }
-

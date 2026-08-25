@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_animations.dart';
+import '../widgets/app_popup.dart';
 import '../widgets/primary_action_button.dart';
 
 class SyncFeedbackScreen extends StatefulWidget {
@@ -32,7 +33,7 @@ class _SyncFeedbackScreenState extends State<SyncFeedbackScreen> {
   void _maybeShowErrorDialog() {
     if (state == 'error') {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        showDialog(
+        showAppDialog(
           context: context,
           builder: (context) => AlertDialog(
             title: const Text('Sync Failed'),

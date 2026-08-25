@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/calendar_event.dart';
@@ -11,8 +10,9 @@ import '../../theme/app_colors.dart';
 import '../../widgets/app_snackbar.dart';
 import '../../widgets/form_fields.dart';
 import '../../widgets/date_time_field.dart';
-import '../../widgets/reminder_field.dart';
 import '../../widgets/primary_action_button.dart';
+import '../../widgets/app_select_field.dart';
+import '../../widgets/app_popup.dart';
 import '../../widgets/delete_event_dialog.dart';
 import '../settings_screen.dart';
 import '../../providers/event_providers.dart';
@@ -47,13 +47,11 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
   List<Map<String, dynamic>> _availableCalendars = [];
   bool _userHasSelectedCalendar = false;
 
-  bool reminderOn = true;
-  String reminderValue = ReminderOptions.values[0]; // '10 minutes'
-
   bool _titleAILoading = false;
   bool _descriptionAILoading = false;
   bool _deleting = false;
   bool _saving = false;
+  bool _creatingCalendar = false;
   String? _originalUserTitle;
   final GroqService _groqService = GroqService();
   final ApiKeyStorageService _apiKeyStorage = ApiKeyStorageService();
@@ -72,12 +70,6 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
       _titleController.text = existing.title;
       _descriptionController.text = existing.description;
       _selectedCalendarId = existing.calendarId;
-      if (existing.reminders.isNotEmpty) {
-        reminderOn = true;
-        reminderValue = _reminderLabelFromMinutes(existing.reminders.first);
-      } else {
-        reminderOn = false;
-      }
     }
     _initialSnapshot = _buildSnapshot();
 
@@ -111,7 +103,10 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
 
       if (mounted) {
         setState(() {
-          _availableCalendars = filteredCalendars;
+          _availableCalendars = _mergeCalendars(
+            _availableCalendars,
+            filteredCalendars,
+          );
           if (widget.existingEvent != null) {
             return;
           }
@@ -172,6 +167,22 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
     }
   }
 
+  List<Map<String, dynamic>> _mergeCalendars(
+    List<Map<String, dynamic>> current,
+    List<Map<String, dynamic>> incoming,
+  ) {
+    final byId = <String, Map<String, dynamic>>{};
+    for (final calendar in current) {
+      final id = calendar['id'] as String?;
+      if (id != null && id.isNotEmpty) byId[id] = calendar;
+    }
+    for (final calendar in incoming) {
+      final id = calendar['id'] as String?;
+      if (id != null && id.isNotEmpty) byId[id] = calendar;
+    }
+    return byId.values.toList();
+  }
+
   Future<void> _loadDefaultCalendar() async {
     // In edit mode, keep the event's current calendar selection.
     if (widget.existingEvent != null) {
@@ -200,7 +211,7 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
   }
 
   void _showErrorDialog(String message) {
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Error'),
@@ -215,8 +226,72 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
     );
   }
 
+  Future<void> _createCalendar() async {
+    final draft = await showAppDialog<_CalendarDraft>(
+      context: context,
+      // The parent event popup becomes transparent while this is shown.
+      barrierColor: Colors.transparent,
+      builder: (context) => const _CreateCalendarDialog(),
+    );
+    if (draft == null || _creatingCalendar) return;
+
+    final temporaryId =
+        'pending-calendar-${DateTime.now().microsecondsSinceEpoch}';
+    final optimisticCalendar = <String, dynamic>{
+      'id': temporaryId,
+      'name': draft.name,
+      'color': draft.color.toARGB32(),
+    };
+    setState(() {
+      _creatingCalendar = true;
+      _availableCalendars = [..._availableCalendars, optimisticCalendar];
+      _selectedCalendarId = temporaryId;
+      _userHasSelectedCalendar = true;
+    });
+    try {
+      final calendar = await GoogleCalendarService.instance.createCalendar(
+        name: draft.name,
+        color: draft.color.toARGB32(),
+      );
+      final calendarId = calendar['id'] as String?;
+      if (calendarId == null || calendarId.isEmpty) {
+        throw StateError('Created calendar is missing its ID');
+      }
+      if (!mounted) return;
+      setState(() {
+        _availableCalendars = [
+          ..._availableCalendars.where((item) => item['id'] != temporaryId),
+          calendar,
+        ];
+        _selectedCalendarId = calendarId;
+        _userHasSelectedCalendar = true;
+      });
+      showAppSnackBar(
+        context,
+        'Calendar "${draft.name}" was created in Google Calendar.',
+        type: AppSnackBarType.success,
+      );
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _availableCalendars = _availableCalendars
+              .where((item) => item['id'] != temporaryId)
+              .toList();
+          _selectedCalendarId = widget.existingEvent?.calendarId;
+        });
+        showAppSnackBar(
+          context,
+          'Could not create Google Calendar: $error',
+          type: AppSnackBarType.error,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _creatingCalendar = false);
+    }
+  }
+
   void _showAISetupPopup() {
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('AI Features Not Configured'),
@@ -411,7 +486,6 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
     });
     final watch = DebugPerfLogger.start('EventCreationModal', 'saveEvent');
     try {
-      final minutes = reminderOn ? _parseReminderMinutes(reminderValue) : null;
       final calendarId = _selectedCalendarId ?? 'primary';
       final selected = _availableCalendars
           .cast<Map<String, dynamic>>()
@@ -427,7 +501,6 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
           color: Color(colorValue ?? AppColors.primary.toARGB32()),
           description: _descriptionController.text.trim(),
           timezone: DateTime.now().timeZoneName,
-          reminders: minutes == null ? const [] : [minutes],
         );
         await ref.read(eventRepositoryProvider).updateEvent(updatedEvent);
       } else {
@@ -442,7 +515,6 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
           description: _descriptionController.text.trim(),
           location: '',
           timezone: DateTime.now().timeZoneName,
-          reminders: minutes == null ? const [] : [minutes],
         );
         await ref.read(eventRepositoryProvider).createEvent(event);
       }
@@ -522,27 +594,6 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
     }
   }
 
-  int _parseReminderMinutes(String value) {
-    switch (value) {
-      case '30 minutes':
-        return 30;
-      case '1 hour':
-        return 60;
-      case '1 day':
-        return 24 * 60;
-      case '10 minutes':
-      default:
-        return 10;
-    }
-  }
-
-  String _reminderLabelFromMinutes(int minutes) {
-    if (minutes >= 24 * 60) return '1 day';
-    if (minutes >= 60) return '1 hour';
-    if (minutes >= 30) return '30 minutes';
-    return '10 minutes';
-  }
-
   _EventFormSnapshot _buildSnapshot() {
     return _EventFormSnapshot(
       title: _titleController.text.trim(),
@@ -550,8 +601,6 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
       startTime: _startTime,
       endTime: _endTime,
       calendarId: _selectedCalendarId ?? '',
-      reminderOn: reminderOn,
-      reminderValue: reminderOn ? reminderValue : '',
     );
   }
 
@@ -592,7 +641,7 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(
-                        CupertinoIcons.delete_simple,
+                        Icons.delete_outlined,
                         fontWeight: FontWeight.w700,
                         size: 20,
                       ),
@@ -632,61 +681,31 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
           ],
         ),
         const SizedBox(height: 12),
-        DropdownButtonFormField<String>(
-          initialValue: _selectedCalendarId,
-          hint: Text(
-            _availableCalendars.isEmpty
-                ? 'Loading calendars...'
-                : 'Select calendar',
-            style: AppTextStyles.bodyText1.copyWith(
-              color: AppColors.onSurface.withValues(alpha: 0.7),
+        AppSelectField<String>(
+          label: 'Select calendar',
+          value: _selectedCalendarId,
+          hint: _availableCalendars.isEmpty
+              ? 'Loading calendars...'
+              : 'Select calendar',
+          options: [
+            ..._availableCalendars.map(
+              (calendar) => AppSelectOption(
+                value: calendar['id'] as String,
+                label: calendar['name'] as String? ?? '',
+                color: calendar['color'] is int
+                    ? Color(calendar['color'] as int)
+                    : null,
+              ),
             ),
-          ),
-          decoration: InputDecoration(
-            labelText: 'Select Calendar',
-            labelStyle: AppTextStyles.bodyText1.copyWith(
-              color: AppColors.onSurface.withValues(alpha: 0.7),
-            ),
-            filled: true,
-            fillColor: AppColors.surface,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
-            ),
-          ),
-          style: AppTextStyles.bodyText1,
-          dropdownColor: AppColors.surface,
-          isExpanded: true,
-          items: _availableCalendars
-              .map(
-                (cal) => DropdownMenuItem<String>(
-                  value: cal['id'] as String?,
-                  child: Text(
-                    (cal['name'] as String?) ?? '',
-                    style: AppTextStyles.bodyText1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              )
-              .toList(),
-          selectedItemBuilder: (BuildContext context) {
-            return _availableCalendars
-                .map<Widget>(
-                  (cal) => Text(
-                    (cal['name'] as String?) ?? '',
-                    style: AppTextStyles.bodyText1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                )
-                .toList();
-          },
-          onChanged: (val) {
-            if (val != null && val != _selectedCalendarId) {
-              setState(() {
-                _selectedCalendarId = val;
-                _userHasSelectedCalendar = true;
-              });
-            }
+          ],
+          onAddPressed: _creatingCalendar ? null : _createCalendar,
+          showAddInField: false,
+
+          onChanged: (value) {
+            setState(() {
+              _selectedCalendarId = value;
+              _userHasSelectedCalendar = true;
+            });
           },
         ),
         const SizedBox(height: 12),
@@ -699,26 +718,11 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
           aiLoading: _descriptionAILoading,
         ),
         const SizedBox(height: 24),
-        ReminderField(
-          reminderOn: reminderOn,
-          reminderValue: reminderValue,
-          onToggle: (v) {
-            if (v != reminderOn) {
-              setState(() => reminderOn = v);
-            }
-          },
-          onTimeSelected: (v) {
-            if (v != reminderValue) {
-              setState(() => reminderValue = v);
-            }
-          },
-        ),
-        const SizedBox(height: 24),
         Row(
           children: [
             Expanded(
               child: PrimaryActionButton(
-                onPressed: _saving ? null : _saveEvent,
+                onPressed: _saving || _creatingCalendar ? null : _saveEvent,
                 minimumSize: const Size.fromHeight(44),
                 label: Text(_saving ? 'Saving...' : 'Save'),
               ),
@@ -781,25 +785,154 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
       );
     }
 
-    if (widget.renderAsBottomSheetContent) {
-      return mobilePanel(includeHandle: true);
-    }
+    final popup = widget.renderAsBottomSheetContent
+        ? mobilePanel(includeHandle: true)
+        : isMobile
+        ? Align(
+            alignment: Alignment.bottomCenter,
+            child: mobilePanel(includeHandle: true),
+          )
+        : Dialog(
+            backgroundColor: AppColors.surface,
+            child: Container(
+              width: 500,
+              padding: const EdgeInsets.all(24),
+              child: _buildFormContent(context),
+            ),
+          );
 
-    if (isMobile) {
-      return Align(
-        alignment: Alignment.bottomCenter,
-        child: mobilePanel(includeHandle: true),
-      );
-    }
+    return popup;
+  }
+}
 
-    return Dialog(
-      backgroundColor: AppColors.surface,
-      child: Container(
-        width: 500,
-        padding: const EdgeInsets.all(24),
-        child: _buildFormContent(context),
+class _CalendarDraft {
+  const _CalendarDraft({required this.name, required this.color});
+
+  final String name;
+  final Color color;
+}
+
+class _CreateCalendarDialog extends StatefulWidget {
+  const _CreateCalendarDialog();
+
+  @override
+  State<_CreateCalendarDialog> createState() => _CreateCalendarDialogState();
+}
+
+class _CreateCalendarDialogState extends State<_CreateCalendarDialog> {
+  final _nameController = TextEditingController();
+  final _colors = const [
+    Color(0xFFD65A82),
+    Color(0xFFF07A3E),
+    Color(0xFFE8BF54),
+    Color(0xFF68B98D),
+    Color(0xFF5D9ED5),
+    Color(0xFF9186D8),
+    Color(0xFFAE64C7),
+    Color(0xFFD96F68),
+    Color(0xFFB7A896),
+    Color(0xFFCB5479),
+    Color(0xFFF08A42),
+    Color(0xFFD5A646),
+    Color(0xFF58A67C),
+    Color(0xFF508ECA),
+    Color(0xFF7D78C8),
+    Color(0xFF974EB9),
+    Color(0xFFCB6963),
+    Color(0xFF8A8A8A),
+    Color(0xFFDF877B),
+    Color(0xFFE8B550),
+    Color(0xFF72C59B),
+    Color(0xFF7EABDB),
+    Color(0xFFAD9BDF),
+    Color(0xFFAF9D8A),
+  ];
+  Color _selectedColor = const Color(0xFF5D9ED5);
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      content: SizedBox(
+        width: 360,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: _nameController,
+              autofocus: true,
+              textCapitalization: TextCapitalization.sentences,
+              style: AppTextStyles.bodyText1,
+              decoration: InputDecoration(
+                labelText: 'Calendar name',
+                labelStyle: AppTextStyles.bodyText1.copyWith(
+                  color: AppColors.onSurface.withValues(alpha: 0.7),
+                ),
+                hintStyle: AppTextStyles.bodyText1.copyWith(
+                  color: AppColors.onSurface.withValues(alpha: 0.5),
+                ),
+                filled: true,
+                fillColor: AppColors.surface,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+              onSubmitted: (_) => _save(),
+            ),
+            const SizedBox(height: 20),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: _colors.map((color) {
+                final selected = color == _selectedColor;
+                return InkWell(
+                  borderRadius: BorderRadius.circular(20),
+                  onTap: () => setState(() => _selectedColor = color),
+                  child: Container(
+                    width: 30,
+                    height: 30,
+                    decoration: BoxDecoration(
+                      color: color,
+                      shape: BoxShape.circle,
+                      border: selected
+                          ? Border.all(color: Colors.white, width: 3)
+                          : null,
+                    ),
+                    child: selected
+                        ? const Icon(
+                            Icons.check,
+                            size: 18,
+                            color: Colors.black87,
+                          )
+                        : null,
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
+        ),
       ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(onPressed: _save, child: const Text('Save')),
+      ],
     );
+  }
+
+  void _save() {
+    final name = _nameController.text.trim();
+    if (name.isEmpty) return;
+    Navigator.pop(context, _CalendarDraft(name: name, color: _selectedColor));
   }
 }
 
@@ -810,8 +943,6 @@ class _EventFormSnapshot {
     required this.startTime,
     required this.endTime,
     required this.calendarId,
-    required this.reminderOn,
-    required this.reminderValue,
   });
 
   final String title;
@@ -819,8 +950,6 @@ class _EventFormSnapshot {
   final DateTime startTime;
   final DateTime endTime;
   final String calendarId;
-  final bool reminderOn;
-  final String reminderValue;
 
   @override
   bool operator ==(Object other) {
@@ -830,19 +959,10 @@ class _EventFormSnapshot {
         other.description == description &&
         other.startTime == startTime &&
         other.endTime == endTime &&
-        other.calendarId == calendarId &&
-        other.reminderOn == reminderOn &&
-        other.reminderValue == reminderValue;
+        other.calendarId == calendarId;
   }
 
   @override
-  int get hashCode => Object.hash(
-    title,
-    description,
-    startTime,
-    endTime,
-    calendarId,
-    reminderOn,
-    reminderValue,
-  );
+  int get hashCode =>
+      Object.hash(title, description, startTime, endTime, calendarId);
 }

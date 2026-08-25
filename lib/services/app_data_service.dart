@@ -111,9 +111,7 @@ class AppDataService {
     final localAppData = Platform.environment['LOCALAPPDATA'];
     if (localAppData == null || localAppData.isEmpty) return;
 
-    final legacyDir = Directory(
-      p.join(localAppData, folderName),
-    );
+    final legacyDir = Directory(p.join(localAppData, folderName));
     if (!await legacyDir.exists()) return;
 
     for (final entry in legacyDir.listSync(followLinks: false)) {

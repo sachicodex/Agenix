@@ -6,7 +6,6 @@ import '../data/local/local_event_store.dart';
 import '../models/calendar_event.dart';
 import '../services/background_event_sync.dart';
 import '../services/debug_perf_logger.dart';
-import '../services/event_sync_activity_tracker.dart';
 
 class EventRepository {
   EventRepository(this._localStore);
@@ -184,11 +183,6 @@ class EventRepository {
 
   void _triggerReliableBackgroundSync() {
     DebugPerfLogger.info('EventRepository', 'scheduleBackgroundSync');
-    unawaited(
-      EventSyncActivityTracker.markLocalChange().catchError((Object error) {
-        debugPrint('Sync activity tracking failed: $error');
-      }),
-    );
     unawaited(
       BackgroundEventSync.scheduleOneOffSync().catchError((Object error) {
         debugPrint('Background sync scheduling failed: $error');

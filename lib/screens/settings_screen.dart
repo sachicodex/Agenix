@@ -2,11 +2,10 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:open_settings_plus/open_settings_plus.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' show Timestamp;
-import 'package:flutter/services.dart';
 import '../theme/app_colors.dart';
 import '../services/api_key_storage_service.dart';
 import '../services/google_calendar_service.dart';
@@ -14,13 +13,12 @@ import '../services/groq_service.dart';
 import '../services/settings_sync_service.dart';
 import '../services/settings_encryption_service.dart';
 import '../services/settings_sync_state_store.dart';
-import '../notifications/notification_models.dart';
-import '../notifications/notification_settings_repository.dart';
-import '../providers/notification_providers.dart';
 import '../services/windows_startup_service.dart';
 import 'auth_wrapper.dart';
 import '../widgets/app_animations.dart';
 import '../widgets/modern_splash_screen.dart';
+import '../widgets/app_select_field.dart';
+import '../widgets/app_popup.dart';
 import '../navigation/app_route_observer.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -51,16 +49,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   String? _selectedCalendarId;
   String? _defaultCalendarName;
   bool _loadingCalendars = false;
-  late final NotificationSettingsRepository _notificationSettingsRepository;
-  bool _dailyAgendaEnabled = true;
-  bool _eventRemindersEnabled = true;
-  int _defaultReminderMinutes = 15;
-  int _dailyAgendaMinutesAfterMidnight = 6 * 60;
-  bool _isSavingNotificationSettings = false;
+  bool _creatingCalendar = false;
   bool _windowsHasPackageIdentity = true;
   bool _launchOnStartup = false;
-  bool _batteryOptimizationDisabled = false;
-  bool _checkingBatteryOptimization = false;
   bool _isOffline = false;
   bool _routeSubscribed = false;
 
@@ -68,10 +59,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _windowsHasPackageIdentity = _detectWindowsPackageIdentity();
-    _notificationSettingsRepository = ref.read(
-      notificationSettingsRepositoryProvider,
-    );
+    _windowsHasPackageIdentity = Platform.isWindows;
     _loadSettings();
   }
 
@@ -86,24 +74,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   }
 
   @override
-  void didPopNext() {
-    unawaited(_refreshBatteryOptimizationStatus());
-  }
+  void didPopNext() {}
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      unawaited(_refreshBatteryOptimizationStatus());
-    }
-  }
-
-  bool _detectWindowsPackageIdentity() {
-    if (!Platform.isWindows) {
-      return true;
-    }
-    // Heuristic: treat as having package identity; detailed detection is not
-    // critical for user-facing behavior here.
-    return true;
+    if (state == AppLifecycleState.resumed) {}
   }
 
   @override
@@ -157,8 +132,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       await _loadDefaultCalendar();
     }
 
-    await _loadNotificationSettings();
-
     // Load Windows startup preference (Windows only)
     if (mounted && Platform.isWindows) {
       try {
@@ -176,56 +149,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       setState(() => _isLoading = false);
     }
 
-    unawaited(_refreshBatteryOptimizationStatus());
-
     if (signedIn) {
       unawaited(_loadCalendars());
       if (online) {
         unawaited(_syncSettingsWithCloud());
-      }
-    }
-  }
-
-  Future<void> _loadNotificationSettings() async {
-    try {
-      final settings = await _notificationSettingsRepository.getSettings();
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _dailyAgendaEnabled = settings.dailyAgendaEnabled;
-        _eventRemindersEnabled = settings.eventRemindersEnabled;
-        _defaultReminderMinutes = settings.defaultReminderMinutes;
-        _dailyAgendaMinutesAfterMidnight =
-            settings.dailyAgendaMinutesAfterMidnight;
-      });
-    } catch (e) {
-      debugPrint('Error loading notification settings: $e');
-    }
-  }
-
-  Future<void> _saveNotificationSettings() async {
-    setState(() => _isSavingNotificationSettings = true);
-    try {
-      await _notificationSettingsRepository.saveSettings(
-        NotificationUserSettings(
-          defaultReminderMinutes: _defaultReminderMinutes,
-          dailyAgendaEnabled: _dailyAgendaEnabled,
-          eventRemindersEnabled: _eventRemindersEnabled,
-          dailyAgendaMinutesAfterMidnight: _dailyAgendaMinutesAfterMidnight,
-        ),
-      );
-      await _markSettingsDirty();
-      await _pushSettingsToCloud();
-    } catch (e) {
-      if (mounted) {
-        _showErrorPopup(
-          'Failed to save notification settings: ${e.toString()}',
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isSavingNotificationSettings = false);
       }
     }
   }
@@ -242,83 +169,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     await _pushSettingsToCloud();
   }
 
-  Future<void> _openBatteryOptimizationSettings() async {
-    if (!Platform.isAndroid) {
-      return;
-    }
-    try {
-      final opened = await const OpenSettingsPlusAndroid()
-          .ignoreBatteryOptimization();
-      if (!opened && mounted) {
-        _showErrorPopup(
-          'Unable to open battery optimization settings. '
-          'Open Settings > Battery > Battery Optimization and set Agenix to "Not optimized".',
-        );
-      }
-    } catch (_) {
-      if (mounted) {
-        _showErrorPopup(
-          'Unable to open battery optimization settings. '
-          'Open Settings > Battery > Battery Optimization and set Agenix to "Not optimized".',
-        );
-      }
-    }
-  }
-
-  Future<void> _refreshBatteryOptimizationStatus() async {
-    if (!Platform.isAndroid) return;
-    if (_checkingBatteryOptimization) return;
-    setState(() => _checkingBatteryOptimization = true);
-    try {
-      const channel = MethodChannel('agenix/battery_optimization');
-      final ignored = await channel.invokeMethod<bool>(
-        'isIgnoringBatteryOptimizations',
-      );
-      if (mounted) {
-        setState(() {
-          _batteryOptimizationDisabled = ignored ?? false;
-        });
-      }
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _batteryOptimizationDisabled = false;
-        });
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _checkingBatteryOptimization = false);
-      }
-    }
-  }
-
-  TimeOfDay _agendaTimeOfDay() {
-    final hour = (_dailyAgendaMinutesAfterMidnight ~/ 60).clamp(0, 23);
-    final minute = (_dailyAgendaMinutesAfterMidnight % 60).clamp(0, 59);
-    return TimeOfDay(hour: hour, minute: minute);
-  }
-
-  String _formatTimeOfDay(BuildContext context, TimeOfDay time) {
-    final localizations = MaterialLocalizations.of(context);
-    return localizations.formatTimeOfDay(time, alwaysUse24HourFormat: false);
-  }
-
-  Future<void> _pickAgendaTime() async {
-    final initialTime = _agendaTimeOfDay();
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: initialTime,
-    );
-    if (picked == null) {
-      return;
-    }
-    final minutes = picked.hour * 60 + picked.minute;
-    setState(() {
-      _dailyAgendaMinutesAfterMidnight = minutes;
-    });
-    await _saveNotificationSettings();
-  }
-
   Future<void> _saveApiKey() async {
     final apiKey = _apiKeyController.text.trim();
 
@@ -327,7 +177,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       // Only show confirmation popup if there was an API key before
       if (_previousApiKey != null && _previousApiKey!.isNotEmpty) {
         // Show confirmation popup before removing
-        final shouldRemove = await showDialog<bool>(
+        final shouldRemove = await showAppDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
             title: const Text('Remove API Key'),
@@ -490,7 +340,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       final cached = await GoogleCalendarService.instance.getCachedCalendars();
       if (mounted && cached.isNotEmpty) {
         setState(() {
-          _availableCalendars = cached;
+          _availableCalendars = _mergeCalendars(_availableCalendars, cached);
           if (_selectedCalendarId == null && cached.isNotEmpty) {
             _selectedCalendarId = cached.first['id'] as String?;
           }
@@ -508,7 +358,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       final calendars = await GoogleCalendarService.instance.getUserCalendars();
       if (mounted) {
         setState(() {
-          _availableCalendars = calendars;
+          _availableCalendars = _mergeCalendars(_availableCalendars, calendars);
           // If no calendar is selected, select the first one
           if (_selectedCalendarId == null && calendars.isNotEmpty) {
             _selectedCalendarId = calendars.first['id'];
@@ -525,6 +375,98 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
         }
         _showErrorPopup('Failed to load calendars: ${e.toString()}');
       }
+    }
+  }
+
+  /// Keeps an optimistic calendar visible while Google Calendar refreshes.
+  List<Map<String, dynamic>> _mergeCalendars(
+    List<Map<String, dynamic>> current,
+    List<Map<String, dynamic>> incoming,
+  ) {
+    final byId = <String, Map<String, dynamic>>{};
+    for (final calendar in current) {
+      final id = calendar['id'] as String?;
+      if (id != null && id.isNotEmpty) byId[id] = calendar;
+    }
+    for (final calendar in incoming) {
+      final id = calendar['id'] as String?;
+      if (id != null && id.isNotEmpty) byId[id] = calendar;
+    }
+    return byId.values.toList();
+  }
+
+  Future<void> _createCalendar() async {
+    final nameController = TextEditingController();
+    final name = await showAppDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Create calendar'),
+        content: TextField(
+          controller: nameController,
+          autofocus: true,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(labelText: 'Calendar name'),
+          onSubmitted: (value) => Navigator.pop(dialogContext, value.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, nameController.text.trim()),
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+    nameController.dispose();
+    if (name == null || name.isEmpty || _creatingCalendar) return;
+
+    final temporaryId =
+        'pending-calendar-${DateTime.now().microsecondsSinceEpoch}';
+    final previousId = _selectedCalendarId;
+    final optimisticCalendar = <String, dynamic>{
+      'id': temporaryId,
+      'name': name,
+      'color': 0xFF5D9ED5,
+    };
+    setState(() {
+      _creatingCalendar = true;
+      _availableCalendars = [..._availableCalendars, optimisticCalendar];
+      _selectedCalendarId = temporaryId;
+    });
+
+    try {
+      final calendar = await GoogleCalendarService.instance.createCalendar(
+        name: name,
+        color: 0xFF5D9ED5,
+      );
+      final calendarId = calendar['id'] as String?;
+      if (calendarId == null || calendarId.isEmpty) {
+        throw StateError('Created calendar is missing its ID');
+      }
+      if (!mounted) return;
+      setState(() {
+        _availableCalendars = [
+          ..._availableCalendars.where((item) => item['id'] != temporaryId),
+          calendar,
+        ];
+        _selectedCalendarId = calendarId;
+      });
+      await _saveDefaultCalendar();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _availableCalendars = _availableCalendars
+            .where((item) => item['id'] != temporaryId)
+            .toList();
+        _selectedCalendarId = previousId;
+      });
+      _showErrorPopup('Could not create calendar: $error');
+    } finally {
+      if (mounted) setState(() => _creatingCalendar = false);
     }
   }
 
@@ -680,12 +622,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
         'defaultCalendarId': calendarId,
         'defaultCalendarName': calendarName,
         'aiApiKey': await _apiKeyStorageService.getApiKey(),
-        'notificationSettings': {
-          'defaultReminderMinutes': _defaultReminderMinutes,
-          'dailyAgendaEnabled': _dailyAgendaEnabled,
-          'eventRemindersEnabled': _eventRemindersEnabled,
-          'dailyAgendaMinutesAfterMidnight': _dailyAgendaMinutesAfterMidnight,
-        },
         'launchOnStartup': Platform.isWindows ? _launchOnStartup : null,
       });
       if (ok) {
@@ -716,40 +652,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   }
 
   Future<void> _applyCloudSettings(Map<String, dynamic> data, User user) async {
-    final notif = data['notificationSettings'];
-    if (notif is Map) {
-      final current = await _notificationSettingsRepository.getSettings();
-      var next = current;
-      final reminder = notif['defaultReminderMinutes'];
-      if (reminder is num) {
-        next = next.copyWith(defaultReminderMinutes: reminder.toInt());
-      }
-      final agendaEnabled = notif['dailyAgendaEnabled'];
-      if (agendaEnabled is bool) {
-        next = next.copyWith(dailyAgendaEnabled: agendaEnabled);
-      }
-      final remindersEnabled = notif['eventRemindersEnabled'];
-      if (remindersEnabled is bool) {
-        next = next.copyWith(eventRemindersEnabled: remindersEnabled);
-      }
-      final agendaMinutes = notif['dailyAgendaMinutesAfterMidnight'];
-      if (agendaMinutes is num) {
-        next = next.copyWith(
-          dailyAgendaMinutesAfterMidnight: agendaMinutes.toInt(),
-        );
-      }
-      await _notificationSettingsRepository.saveSettings(next);
-      if (mounted) {
-        setState(() {
-          _dailyAgendaEnabled = next.dailyAgendaEnabled;
-          _eventRemindersEnabled = next.eventRemindersEnabled;
-          _defaultReminderMinutes = next.defaultReminderMinutes;
-          _dailyAgendaMinutesAfterMidnight =
-              next.dailyAgendaMinutesAfterMidnight;
-        });
-      }
-    }
-
     final calendarId = data['defaultCalendarId'];
     final calendarName = data['defaultCalendarName'];
     if (calendarId is String && calendarId.isNotEmpty) {
@@ -843,7 +745,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   }
 
   void _showErrorPopup(String message) {
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Error'),
@@ -860,7 +762,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
 
   Future<void> _handleLogout() async {
     // Show confirmation dialog
-    final shouldLogout = await showDialog<bool>(
+    final shouldLogout = await showAppDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Logout'),
@@ -919,8 +821,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
         if (Platform.isAndroid || Platform.isWindows) ...[
           const SizedBox(height: 16),
         ],
-        _buildNotificationsSection(),
-        const SizedBox(height: 16),
         if (_signedIn) ...[_buildCalendarSection(), const SizedBox(height: 16)],
         if (Platform.isAndroid || Platform.isWindows) ...[
           _buildPlatformSection(),
@@ -1045,13 +945,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     );
   }
 
-  int _eventReminderSelectionValue() {
-    if (!_eventRemindersEnabled) {
-      return 0;
-    }
-    return _defaultReminderMinutes;
-  }
-
   Widget _buildCalendarSection() {
     return _buildSectionCard(
       title: 'Default Calendar',
@@ -1072,121 +965,31 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
             ),
           )
         else
-          DropdownButtonFormField<String>(
-            initialValue: _selectedCalendarId,
-            decoration: InputDecoration(
-              labelStyle: AppTextStyles.bodyText1.copyWith(
-                color: AppColors.onSurface.withValues(alpha: 0.7),
-              ),
-              filled: true,
-              fillColor: AppColors.surface,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide.none,
-              ),
-            ),
-            style: AppTextStyles.bodyText1,
-            dropdownColor: AppColors.surface,
-            isExpanded: true,
-            items: _availableCalendars
+          AppSelectField<String>(
+            label: 'Default calendar',
+            value: _selectedCalendarId,
+            options: _availableCalendars
                 .map(
-                  (cal) => DropdownMenuItem<String>(
-                    value: cal['id'] as String?,
-                    child: Text(
-                      (cal['name'] as String?) ?? '',
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyles.bodyText1,
-                    ),
+                  (calendar) => AppSelectOption(
+                    value: calendar['id'] as String,
+                    label: calendar['name'] as String? ?? '',
+                    color: calendar['color'] is int
+                        ? Color(calendar['color'] as int)
+                        : null,
                   ),
                 )
                 .toList(),
+            onAddPressed: _creatingCalendar ? null : _createCalendar,
+            showAddInField: false,
+            addTooltip: _creatingCalendar
+                ? 'Creating calendar...'
+                : 'Create calendar',
             onChanged: (value) {
-              if (value == null || value == _selectedCalendarId) return;
-              setState(() {
-                _selectedCalendarId = value;
-              });
+              if (value == _selectedCalendarId) return;
+              setState(() => _selectedCalendarId = value);
               _saveDefaultCalendar();
             },
           ),
-      ],
-    );
-  }
-
-  Widget _buildNotificationsSection() {
-    return _buildSectionCard(
-      title: 'Notifications',
-      icon: Icons.notifications_none_rounded,
-      children: [
-        _buildSwitchRow(
-          title: 'Daily summary',
-          subtitle: 'Get one daily summary of your upcoming schedule.',
-          value: _dailyAgendaEnabled,
-          onChanged: _isSavingNotificationSettings
-              ? null
-              : (value) {
-                  setState(() {
-                    _dailyAgendaEnabled = value;
-                  });
-                  _saveNotificationSettings();
-                },
-        ),
-        _buildSectionDivider(),
-        _buildSettingRow(
-          title: 'Daily summary time',
-          subtitle: _formatTimeOfDay(context, _agendaTimeOfDay()),
-          trailing: TextButton(
-            onPressed: _isSavingNotificationSettings ? null : _pickAgendaTime,
-            child: const Text('Change'),
-          ),
-        ),
-        _buildSectionDivider(),
-        _buildSettingRow(
-          title: 'Event reminders',
-          subtitle: Platform.isAndroid
-              ? 'Default control reminders.'
-              : 'Default control reminders for events.',
-          trailing: SizedBox(
-            width: 115,
-            child: DropdownButtonFormField<int>(
-              initialValue: _eventReminderSelectionValue(),
-              decoration: InputDecoration(
-                isDense: true,
-                filled: true,
-                fillColor: AppColors.surface,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 12,
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-              style: AppTextStyles.bodyText1,
-              dropdownColor: AppColors.surface,
-              items: const [
-                DropdownMenuItem(value: 0, child: Text('Off')),
-                DropdownMenuItem(value: 5, child: Text('5 min')),
-                DropdownMenuItem(value: 10, child: Text('10 min')),
-                DropdownMenuItem(value: 15, child: Text('15 min')),
-                DropdownMenuItem(value: 30, child: Text('30 min')),
-                DropdownMenuItem(value: 60, child: Text('1 hour')),
-              ],
-              onChanged: _isSavingNotificationSettings
-                  ? null
-                  : (value) {
-                      if (value == null) return;
-                      setState(() {
-                        _eventRemindersEnabled = value != 0;
-                        if (value != 0) {
-                          _defaultReminderMinutes = value;
-                        }
-                      });
-                      _saveNotificationSettings();
-                    },
-            ),
-          ),
-        ),
       ],
     );
   }
@@ -1207,50 +1010,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       );
     }
 
-    if (Platform.isAndroid) {
-      if (children.isNotEmpty) {
-        children.add(_buildSectionDivider());
-      }
-      children.add(
-        _buildSettingRow(
-          title: 'Battery optimization',
-          subtitle: _batteryOptimizationDisabled
-              ? 'Disabled. Reminders can run more reliably in background.'
-              : 'Enable unrestricted background use if reminders are delayed.',
-          trailing: FilledButton(
-            onPressed: _checkingBatteryOptimization
-                ? null
-                : () async {
-                    await _openBatteryOptimizationSettings();
-                    await Future.delayed(const Duration(milliseconds: 600));
-                    await _refreshBatteryOptimizationStatus();
-                  },
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: AppColors.onPrimary,
-            ),
-            child: Text(
-              _checkingBatteryOptimization
-                  ? 'Checking...'
-                  : _batteryOptimizationDisabled
-                  ? 'Review'
-                  : 'Open',
-            ),
-          ),
-        ),
-      );
-    }
-
     if (children.isEmpty) {
       return const SizedBox.shrink();
     }
 
     return _buildSectionCard(
-      title: Platform.isWindows ? 'Startup' : 'Background',
-
-      icon: Platform.isWindows
-          ? Icons.rocket_launch_outlined
-          : Icons.battery_charging_full_rounded,
+      title: 'Startup',
+      icon: Icons.rocket_launch_outlined,
       children: children,
     );
   }

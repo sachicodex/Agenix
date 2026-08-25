@@ -4,6 +4,7 @@ import '../theme/app_colors.dart';
 import '../widgets/app_animations.dart';
 import '../widgets/modern_splash_screen.dart';
 import '../widgets/primary_action_button.dart';
+import '../widgets/app_popup.dart';
 
 /// Screen for selecting default calendar on first login
 class CalendarSelectionScreen extends StatefulWidget {
@@ -139,7 +140,7 @@ class _CalendarSelectionScreenState extends State<CalendarSelectionScreen> {
   }
 
   void _showErrorDialog(String message) {
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Error'),
@@ -255,8 +256,7 @@ class _CalendarSelectionScreenState extends State<CalendarSelectionScreen> {
                         child: RadioGroup<String>(
                           groupValue: _selectedCalendarId,
                           onChanged: (value) {
-                            if (value != null &&
-                                value != _selectedCalendarId) {
+                            if (value != null && value != _selectedCalendarId) {
                               setState(() {
                                 _selectedCalendarId = value;
                               });

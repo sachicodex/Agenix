@@ -49,7 +49,7 @@ class CalendarSyncService {
   Future<void> stopSync() async {
     _syncTimer?.cancel();
     _syncTimer = null;
-    
+
     if (_currentChannelId != null && _currentResourceId != null) {
       try {
         await GoogleCalendarService.instance.stopWatch(
@@ -60,7 +60,7 @@ class CalendarSyncService {
         debugPrint('Error stopping watch: $e');
       }
     }
-    
+
     _currentChannelId = null;
     _currentResourceId = null;
     _onEventsUpdated = null;
@@ -68,7 +68,9 @@ class CalendarSyncService {
 
   /// Perform sync
   Future<void> _performSync() async {
-    if (_currentCalendarId == null || _currentTimeMin == null || _currentTimeMax == null) {
+    if (_currentCalendarId == null ||
+        _currentTimeMin == null ||
+        _currentTimeMax == null) {
       return;
     }
 
@@ -76,8 +78,10 @@ class CalendarSyncService {
       // Always do full sync to ensure we get ALL events from Google Calendar
       // This ensures events created manually in Google Calendar always show up
       // We skip syncToken to get complete event list every time
-      debugPrint('Performing FULL sync: calendarId=$_currentCalendarId, timeMin=$_currentTimeMin, timeMax=$_currentTimeMax');
-      
+      debugPrint(
+        'Performing FULL sync: calendarId=$_currentCalendarId, timeMin=$_currentTimeMin, timeMax=$_currentTimeMax',
+      );
+
       final result = await GoogleCalendarService.instance.getEventsWithSync(
         start: _currentTimeMin!,
         end: _currentTimeMax!,
@@ -88,7 +92,7 @@ class CalendarSyncService {
       final events = result['events'] as List<Map<String, dynamic>>;
 
       debugPrint('Sync returned ${events.length} events from Google Calendar');
-      
+
       // Always return all events (full sync)
       if (_onEventsUpdated != null) {
         _onEventsUpdated!(events);
@@ -149,4 +153,3 @@ class CalendarSyncService {
     await _performSync();
   }
 }
-

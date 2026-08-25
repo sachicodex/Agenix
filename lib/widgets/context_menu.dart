@@ -77,10 +77,7 @@ class _ContextMenuItemWidget extends StatelessWidget {
   final ContextMenuItem item;
   final VoidCallback onDismiss;
 
-  const _ContextMenuItemWidget({
-    required this.item,
-    required this.onDismiss,
-  });
+  const _ContextMenuItemWidget({required this.item, required this.onDismiss});
 
   @override
   Widget build(BuildContext context) {

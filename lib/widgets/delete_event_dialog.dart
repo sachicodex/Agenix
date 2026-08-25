@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
+import 'app_popup.dart';
 
 Future<bool> showDeleteEventDialog(BuildContext context) async {
-  final confirmed = await showDialog<bool>(
+  final confirmed = await showAppDialog<bool>(
     context: context,
     barrierDismissible: true,
     builder: (context) {

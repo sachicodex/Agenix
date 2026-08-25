@@ -39,12 +39,6 @@ class RemoteCalendarDataSource {
   }
 
   Future<CalendarEvent> insertEvent({required CalendarEvent event}) async {
-    final reminders = event.reminders.isNotEmpty
-        ? [
-            {'method': 'popup', 'minutes': event.reminders.first},
-          ]
-        : null;
-
     final created = await _googleService.insertEvent(
       summary: event.title,
       description: event.description,
@@ -52,7 +46,6 @@ class RemoteCalendarDataSource {
       end: event.endDateTime,
       calendarId: event.calendarId,
       customEventId: _buildStableInsertEventId(event.id),
-      reminders: reminders,
     );
 
     return _mapFromApiEvent(
@@ -67,12 +60,6 @@ class RemoteCalendarDataSource {
       throw StateError('Cannot update event without gEventId');
     }
 
-    final reminders = event.reminders.isNotEmpty
-        ? [
-            {'method': 'popup', 'minutes': event.reminders.first},
-          ]
-        : null;
-
     final updated = await _googleService.updateEvent(
       eventId: event.gEventId!,
       summary: event.title,
@@ -80,7 +67,6 @@ class RemoteCalendarDataSource {
       start: event.startDateTime,
       end: event.endDateTime,
       calendarId: event.calendarId,
-      reminders: reminders,
     );
 
     return _mapFromApiEvent(
@@ -144,11 +130,6 @@ class RemoteCalendarDataSource {
       deleted: deleted,
       pendingAction: PendingAction.none,
       color: Color(colorValue),
-      reminders:
-          (data['reminders'] as List<dynamic>?)
-              ?.map((e) => e as int)
-              .toList() ??
-          [],
     );
   }
 
@@ -182,8 +163,6 @@ class RemoteCalendarDataSource {
       deleted: event.status == 'cancelled',
       pendingAction: PendingAction.none,
       color: fallbackColor,
-      reminders:
-          event.reminders?.overrides?.map((r) => r.minutes ?? 0).toList() ?? [],
     );
   }
 

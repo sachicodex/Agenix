@@ -40,11 +40,13 @@ class SystemTrayService with TrayListener, WindowListener {
       await trayManager.setIcon(iconPath);
     }
 
-    final menu = Menu(items: [
-      MenuItem(key: 'show', label: 'Show'),
-      MenuItem.separator(),
-      MenuItem(key: 'quit', label: 'Quit'),
-    ]);
+    final menu = Menu(
+      items: [
+        MenuItem(key: 'show', label: 'Show'),
+        MenuItem.separator(),
+        MenuItem(key: 'quit', label: 'Quit'),
+      ],
+    );
     await trayManager.setContextMenu(menu);
     trayManager.addListener(this);
   }
@@ -99,7 +101,9 @@ class SystemTrayService with TrayListener, WindowListener {
   void updateSyncStatus(SyncStatus status) {
     if (!Platform.isWindows) return;
     _syncing = status.state == SyncState.syncing;
-    _log('sync status updated syncing=$_syncing pendingExit=$_pendingExitAfterSync');
+    _log(
+      'sync status updated syncing=$_syncing pendingExit=$_pendingExitAfterSync',
+    );
     if (_pendingExitAfterSync && !_syncing) {
       _checkExitGuardOnce();
       _startExitGuardTimer();

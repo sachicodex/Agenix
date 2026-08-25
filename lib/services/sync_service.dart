@@ -753,7 +753,6 @@ class SyncService {
       allDay: remoteEvent.allDay,
       timezone: remoteEvent.timezone,
       color: remoteEvent.color,
-      reminders: remoteEvent.reminders,
       gEventId: remoteEvent.gEventId,
       calendarId: remoteEvent.calendarId,
       updatedAtRemote: remoteEvent.updatedAtRemote,
@@ -809,10 +808,6 @@ class SyncService {
     if (a.color.toARGB32() != b.color.toARGB32()) return false;
     if (a.calendarId != b.calendarId) return false;
     if (a.deleted != b.deleted) return false;
-    if (a.reminders.length != b.reminders.length) return false;
-    for (var i = 0; i < a.reminders.length; i++) {
-      if (a.reminders[i] != b.reminders[i]) return false;
-    }
     return true;
   }
 
@@ -876,10 +871,6 @@ class SyncService {
     if (a.color.toARGB32() != b.color.toARGB32()) return false;
     if (a.calendarId != b.calendarId) return false;
     if (a.gEventId != b.gEventId) return false;
-    if (a.reminders.length != b.reminders.length) return false;
-    for (var i = 0; i < a.reminders.length; i++) {
-      if (a.reminders[i] != b.reminders[i]) return false;
-    }
     return true;
   }
 

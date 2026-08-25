@@ -15,9 +15,9 @@ class TimelineZoomController {
     this.maxHourHeight = maxHourHeightDefault,
     this.wheelZoomSensitivity = wheelZoomSensitivityDefault,
     this.interpolationSpeed = interpolationSpeedDefault,
-  })  : hourHeight = ValueNotifier(initialHourHeight),
-        _targetHourHeight = initialHourHeight,
-        _smoothedHourHeight = initialHourHeight {
+  }) : hourHeight = ValueNotifier(initialHourHeight),
+       _targetHourHeight = initialHourHeight,
+       _smoothedHourHeight = initialHourHeight {
     _ticker = vsync.createTicker(_onTick);
   }
 
@@ -66,7 +66,10 @@ class TimelineZoomController {
   }
 
   /// Resolves viewport-local Y from a global pointer position on the scroll view.
-  double focalViewportYFromGlobal(Offset globalPosition, BuildContext? context) {
+  double focalViewportYFromGlobal(
+    Offset globalPosition,
+    BuildContext? context,
+  ) {
     if (context == null) return 0;
     final renderBox = context.findRenderObject() as RenderBox?;
     if (renderBox == null || !renderBox.hasSize) return 0;
@@ -142,10 +145,7 @@ class TimelineZoomController {
     final diff = _targetHourHeight - _smoothedHourHeight;
     if (diff.abs() < 0.04) {
       if ((_smoothedHourHeight - _targetHourHeight).abs() >= 0.04) {
-        _applyHourHeightImmediate(
-          _targetHourHeight,
-          focalY: _focalViewportY,
-        );
+        _applyHourHeightImmediate(_targetHourHeight, focalY: _focalViewportY);
       }
       _stopTickerIfIdle();
       return;
@@ -176,10 +176,7 @@ class TimelineZoomController {
     }
   }
 
-  void updatePinch({
-    required double scale,
-    required double focalViewportY,
-  }) {
+  void updatePinch({required double scale, required double focalViewportY}) {
     if (!_pinchActive) return;
     final baseline = _pinchBaselineHourHeight ?? hourHeight.value;
     if (scale <= 0) return;

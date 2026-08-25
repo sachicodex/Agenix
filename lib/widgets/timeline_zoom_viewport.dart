@@ -48,7 +48,11 @@ class TimelineZoomViewport extends StatefulWidget {
   final ScrollBehavior scrollBehavior;
 
   /// Builds the timeline body for a given [hourHeight] and total [gridHeight].
-  final Widget Function(BuildContext context, double hourHeight, double gridHeight)
+  final Widget Function(
+    BuildContext context,
+    double hourHeight,
+    double gridHeight,
+  )
   timelineBuilder;
 
   final bool enablePinchZoom;

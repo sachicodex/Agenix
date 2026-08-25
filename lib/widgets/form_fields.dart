@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
+import 'app_popup.dart';
 
 class LargeTextField extends StatelessWidget {
   final TextEditingController? controller;
@@ -198,7 +199,7 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
     final controller = widget.controller;
     if (controller == null) return;
 
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
       builder: (dialogContext) {
         return Dialog(

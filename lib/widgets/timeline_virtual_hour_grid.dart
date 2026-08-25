@@ -4,10 +4,7 @@ import '../theme/app_colors.dart';
 
 /// Hour grid lines for the day timeline — single [CustomPaint] repaint per zoom.
 class TimelineVirtualHourGrid extends StatelessWidget {
-  const TimelineVirtualHourGrid({
-    super.key,
-    required this.hourHeight,
-  });
+  const TimelineVirtualHourGrid({super.key, required this.hourHeight});
 
   final double hourHeight;
 

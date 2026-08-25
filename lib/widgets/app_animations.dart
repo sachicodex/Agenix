@@ -40,12 +40,13 @@ class _AppFadeSlideInState extends State<AppFadeSlideIn>
     parent: _controller,
     curve: AppAnimationCurves.entrance,
   );
-  late final Animation<Offset> _slide = Tween<Offset>(
-    begin: widget.beginOffset,
-    end: Offset.zero,
-  ).animate(
-    CurvedAnimation(parent: _controller, curve: AppAnimationCurves.entrance),
-  );
+  late final Animation<Offset> _slide =
+      Tween<Offset>(begin: widget.beginOffset, end: Offset.zero).animate(
+        CurvedAnimation(
+          parent: _controller,
+          curve: AppAnimationCurves.entrance,
+        ),
+      );
 
   @override
   void initState() {

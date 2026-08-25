@@ -17,6 +17,7 @@ import 'widgets/event_creation_modal.dart';
 import '../widgets/context_menu.dart';
 import '../navigation/app_route_observer.dart';
 import '../widgets/app_animations.dart';
+import '../widgets/app_popup.dart';
 import '../widgets/app_snackbar.dart';
 import '../widgets/modern_splash_screen.dart';
 import '../widgets/delete_event_dialog.dart';
@@ -1146,12 +1147,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     if (a.deleted != b.deleted) return false;
     if (a.pendingAction != b.pendingAction) return false;
     if (a.color.toARGB32() != b.color.toARGB32()) return false;
-    if (a.reminders.length != b.reminders.length) return false;
-    for (var i = 0; i < a.reminders.length; i++) {
-      if (a.reminders[i] != b.reminders[i]) {
-        return false;
-      }
-    }
     return true;
   }
 
@@ -1196,7 +1191,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       initialScrollOffset: initialOffset,
     );
 
-    return showDialog<int>(
+    return showAppDialog<int>(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
@@ -1282,7 +1277,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       _currentDate.month,
       _currentDate.day,
     );
-    final picked = await showDialog<DateTime>(
+    final picked = await showAppDialog<DateTime>(
       context: context,
       builder: (dialogContext) {
         return StatefulBuilder(
@@ -2461,7 +2456,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       return;
     }
 
-    final selected = await showDialog<CalendarEvent>(
+    final selected = await showAppDialog<CalendarEvent>(
       context: context,
       builder: (dialogContext) {
         final controller = TextEditingController();
@@ -3762,7 +3757,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   }) async {
     final isMobile = MediaQuery.of(context).size.width < 700;
     if (isMobile) {
-      await showModalBottomSheet<void>(
+      await showAppModalBottomSheet<void>(
         context: context,
         isScrollControlled: true,
         useSafeArea: true,
@@ -3777,7 +3772,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
         ),
       );
     } else {
-      await showDialog(
+      await showAppDialog(
         context: context,
         builder: (context) => EventCreationModal(
           startTime: startTime,
@@ -3801,7 +3796,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   Future<void> _showEditEventModal(CalendarEvent event) async {
     final isMobile = MediaQuery.of(context).size.width < 700;
     if (isMobile) {
-      await showModalBottomSheet<void>(
+      await showAppModalBottomSheet<void>(
         context: context,
         isScrollControlled: true,
         useSafeArea: true,
@@ -3815,7 +3810,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
         ),
       );
     } else {
-      await showDialog(
+      await showAppDialog(
         context: context,
         builder: (context) =>
             EventCreationModal(existingEvent: event, onEventCreated: () {}),

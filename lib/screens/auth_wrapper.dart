@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 
 import '../services/google_calendar_service.dart';
 import '../widgets/app_snackbar.dart';
+import '../widgets/app_popup.dart';
 import '../widgets/modern_splash_screen.dart';
 import 'calendar_day_view_screen.dart';
 import 'calendar_selection_screen.dart';
@@ -152,7 +153,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
     if (!mounted || online || _offlineDialogActive) return;
 
     _offlineDialogActive = true;
-    final choice = await showDialog<String>(
+    final choice = await showAppDialog<String>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(

@@ -88,4 +88,3 @@ class EventStorageService {
     }).toList();
   }
 }
-

@@ -12,7 +12,9 @@ final localEventStoreProvider = Provider<LocalEventStore>((ref) {
   return LocalEventStore.instance;
 });
 
-final remoteCalendarDataSourceProvider = Provider<RemoteCalendarDataSource>((ref) {
+final remoteCalendarDataSourceProvider = Provider<RemoteCalendarDataSource>((
+  ref,
+) {
   return RemoteCalendarDataSource(GoogleCalendarService.instance);
 });
 
@@ -29,9 +31,9 @@ final syncServiceProvider = Provider<SyncService>((ref) {
 
 final eventsProvider =
     StreamProvider.family<List<CalendarEvent>, DateTimeRange>((ref, range) {
-  final repo = ref.watch(eventRepositoryProvider);
-  return repo.watchEvents(range);
-});
+      final repo = ref.watch(eventRepositoryProvider);
+      return repo.watchEvents(range);
+    });
 
 final syncStatusProvider = StreamProvider<SyncStatus>((ref) {
   final sync = ref.watch(syncServiceProvider);

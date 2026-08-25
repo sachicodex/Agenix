@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:sqflite/sqflite.dart';
@@ -554,18 +553,10 @@ CREATE TABLE IF NOT EXISTS user_profile (
       'deleted': event.deleted ? 1 : 0,
       'pending_action': event.pendingAction.name,
       'color': event.color.toARGB32(),
-      'reminders': jsonEncode(event.reminders),
     };
   }
 
   CalendarEvent _fromRow(Map<String, Object?> row) {
-    final remindersRaw = row['reminders'] as String?;
-    final reminders = remindersRaw == null
-        ? <int>[]
-        : (jsonDecode(remindersRaw) as List<dynamic>)
-              .map((e) => e as int)
-              .toList();
-
     return CalendarEvent(
       id: row['id'] as String,
       gEventId: row['g_event_id'] as String?,
@@ -593,7 +584,6 @@ CREATE TABLE IF NOT EXISTS user_profile (
       deleted: (row['deleted'] as int? ?? 0) == 1,
       pendingAction: _pendingActionFromRow(row['pending_action'] as String?),
       color: Color((row['color'] as int?) ?? Colors.blue.toARGB32()),
-      reminders: reminders,
     );
   }
 

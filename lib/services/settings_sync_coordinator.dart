@@ -4,9 +4,6 @@ import 'dart:io';
 import 'package:flutter/widgets.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' show Timestamp;
-import 'package:shared_preferences/shared_preferences.dart';
-
-import '../notifications/notification_settings_repository.dart';
 import '../services/api_key_storage_service.dart';
 import '../services/google_calendar_service.dart';
 import '../services/settings_encryption_service.dart';
@@ -63,8 +60,8 @@ class SettingsSyncCoordinator with WidgetsBindingObserver {
       final signedIn = await GoogleCalendarService.instance.isSignedIn();
       if (!signedIn) return;
 
-      final user =
-          await GoogleCalendarService.instance.ensureFirebaseAuthSignedInSilently();
+      final user = await GoogleCalendarService.instance
+          .ensureFirebaseAuthSignedInSilently();
       if (user == null) return;
 
       final state = await _syncStateStore.load(user.uid);
@@ -104,27 +101,14 @@ class SettingsSyncCoordinator with WidgetsBindingObserver {
       final storage = GoogleCalendarService.instance.storage;
       final calendarId = await storage.getDefaultCalendarId();
       final calendarName = await storage.getDefaultCalendarName();
-      final notificationSettings = await NotificationSettingsRepository(
-        SharedPreferences.getInstance,
-      ).getSettings();
-
       final ok = await _settingsSyncService.saveForUser(user.uid, {
         'userEmail': user.email,
         'defaultCalendarId': calendarId,
         'defaultCalendarName': calendarName,
         'aiApiKey': await _apiKeyStorageService.getApiKey(),
-        'notificationSettings': {
-          'defaultReminderMinutes': notificationSettings.defaultReminderMinutes,
-          'dailyAgendaEnabled': notificationSettings.dailyAgendaEnabled,
-          'eventRemindersEnabled': notificationSettings.eventRemindersEnabled,
-          'dailyAgendaMinutesAfterMidnight':
-              notificationSettings.dailyAgendaMinutesAfterMidnight,
-        },
-        'launchOnStartup':
-            Platform.isWindows
-                ? await WindowsStartupService.instance
-                    .getLaunchOnStartupEnabled()
-                : null,
+        'launchOnStartup': Platform.isWindows
+            ? await WindowsStartupService.instance.getLaunchOnStartupEnabled()
+            : null,
       });
 
       if (ok) {
@@ -153,45 +137,13 @@ class SettingsSyncCoordinator with WidgetsBindingObserver {
     return null;
   }
 
-  Future<void> _applyCloudSettings(
-    Map<String, dynamic> data,
-    User user,
-  ) async {
-    final notif = data['notificationSettings'];
-    if (notif is Map) {
-      final repository = NotificationSettingsRepository(
-        SharedPreferences.getInstance,
-      );
-      final current = await repository.getSettings();
-      var next = current;
-      final reminder = notif['defaultReminderMinutes'];
-      if (reminder is num) {
-        next = next.copyWith(defaultReminderMinutes: reminder.toInt());
-      }
-      final agendaEnabled = notif['dailyAgendaEnabled'];
-      if (agendaEnabled is bool) {
-        next = next.copyWith(dailyAgendaEnabled: agendaEnabled);
-      }
-      final remindersEnabled = notif['eventRemindersEnabled'];
-      if (remindersEnabled is bool) {
-        next = next.copyWith(eventRemindersEnabled: remindersEnabled);
-      }
-      final agendaMinutes = notif['dailyAgendaMinutesAfterMidnight'];
-      if (agendaMinutes is num) {
-        next = next.copyWith(
-          dailyAgendaMinutesAfterMidnight: agendaMinutes.toInt(),
-        );
-      }
-      await repository.saveSettings(next);
-    }
-
+  Future<void> _applyCloudSettings(Map<String, dynamic> data, User user) async {
     final calendarId = data['defaultCalendarId'];
     final calendarName = data['defaultCalendarName'];
     if (calendarId is String && calendarId.isNotEmpty) {
-      final name =
-          calendarName is String && calendarName.isNotEmpty
-              ? calendarName
-              : 'Unknown';
+      final name = calendarName is String && calendarName.isNotEmpty
+          ? calendarName
+          : 'Unknown';
       await GoogleCalendarService.instance.storage.saveDefaultCalendar(
         calendarId,
         name,

@@ -3,8 +3,9 @@ import 'package:flutter/services.dart';
 /// Converts platform sign-in failures into messages a user can act on.
 String googleSignInErrorMessage(Object error) {
   if (error is PlatformException) {
-    final details = '${error.code} ${error.message ?? ''} ${error.details ?? ''}'
-        .toLowerCase();
+    final details =
+        '${error.code} ${error.message ?? ''} ${error.details ?? ''}'
+            .toLowerCase();
     final isAndroidConfigurationError =
         error.code == 'sign_in_failed' &&
         (details.contains('apiexcption: 10') ||

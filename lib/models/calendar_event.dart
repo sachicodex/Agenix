@@ -18,7 +18,6 @@ class CalendarEvent {
   final bool deleted;
   final PendingAction pendingAction;
   final Color color;
-  final List<int> reminders; // minutes before event
 
   CalendarEvent({
     required this.id,
@@ -35,7 +34,6 @@ class CalendarEvent {
     this.dirty = false,
     this.deleted = false,
     this.pendingAction = PendingAction.none,
-    this.reminders = const [],
     this.gEventId,
   }) : color = color ?? Colors.blue;
 
@@ -57,7 +55,6 @@ class CalendarEvent {
       'deleted': deleted,
       'pendingAction': pendingAction.name,
       'color': color.toARGB32(),
-      'reminders': reminders,
     };
   }
 
@@ -79,14 +76,8 @@ class CalendarEvent {
           : null,
       dirty: json['dirty'] as bool? ?? false,
       deleted: json['deleted'] as bool? ?? false,
-      pendingAction: _pendingActionFromJson(
-        json['pendingAction'] as String?,
-      ),
+      pendingAction: _pendingActionFromJson(json['pendingAction'] as String?),
       color: Color(json['color'] as int),
-      reminders: (json['reminders'] as List<dynamic>?)
-              ?.map((e) => e as int)
-              .toList() ??
-          [],
     );
   }
 
@@ -120,7 +111,6 @@ class CalendarEvent {
     bool? deleted,
     PendingAction? pendingAction,
     Color? color,
-    List<int>? reminders,
   }) {
     return CalendarEvent(
       id: id ?? this.id,
@@ -138,7 +128,6 @@ class CalendarEvent {
       deleted: deleted ?? this.deleted,
       pendingAction: pendingAction ?? this.pendingAction,
       color: color ?? this.color,
-      reminders: reminders ?? this.reminders,
     );
   }
 
@@ -154,4 +143,3 @@ class CalendarEvent {
         endDateTime.isAfter(other.startDateTime);
   }
 }
-

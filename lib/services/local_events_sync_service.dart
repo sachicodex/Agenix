@@ -15,8 +15,9 @@ class LocalEventsSyncService {
   LocalEventsSyncService._();
 
   final LocalEventStore _localStore = LocalEventStore.instance;
-  final RemoteCalendarDataSource _remoteSource =
-      RemoteCalendarDataSource(GoogleCalendarService.instance);
+  final RemoteCalendarDataSource _remoteSource = RemoteCalendarDataSource(
+    GoogleCalendarService.instance,
+  );
 
   /// Upload all local events to Google Calendar
   Future<void> syncLocalEventsToGoogle({
@@ -38,4 +39,3 @@ class LocalEventsSyncService {
     return pending.isNotEmpty;
   }
 }
-
