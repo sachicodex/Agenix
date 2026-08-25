@@ -192,7 +192,11 @@ class GoogleCalendarService {
 
           return {
             'id': c.id ?? '',
-            'name': c.summary ?? c.id ?? '',
+            // Google often uses the account email as the primary calendar
+            // summary. Keep that technical label out of the app UI.
+            'name': c.primary == true
+                ? 'Default Calendar'
+                : c.summary ?? c.id ?? '',
             'color': calendarColor,
             'backgroundColor': c.backgroundColor,
             'colorId': c.colorId,
@@ -271,6 +275,52 @@ class GoogleCalendarService {
     };
     await LocalEventStore.instance.upsertCalendars([result]);
     return result;
+  }
+
+  Future<void> deleteCalendar(String calendarId) async {
+    if (calendarId.isEmpty || calendarId == 'primary') {
+      throw ArgumentError('The default calendar cannot be deleted.');
+    }
+    final client = await _getAuthenticatedClient();
+    await calendar.CalendarApi(client).calendars.delete(calendarId);
+    await LocalEventStore.instance.deleteCalendar(calendarId);
+  }
+
+  /// Updates the display colour selected by the user for a calendar.
+  Future<void> updateCalendarColor({
+    required String calendarId,
+    required int color,
+  }) async {
+    final client = await _getAuthenticatedClient();
+    final hexColor = _calendarColorToHex(color);
+    final updated = await calendar.CalendarApi(client).calendarList.patch(
+      calendar.CalendarListEntry(
+        backgroundColor: hexColor,
+        foregroundColor: '#000000',
+      ),
+      calendarId,
+      colorRgbFormat: true,
+    );
+    final remoteColor = updated.backgroundColor ?? hexColor;
+    final cached = await LocalEventStore.instance.getCachedCalendars();
+    final cachedCalendar = cached
+        .where((item) => item['id'] == calendarId)
+        .firstOrNull;
+    if (cachedCalendar != null) {
+      await LocalEventStore.instance.upsertCalendars([
+        {...cachedCalendar, 'color': color, 'backgroundColor': remoteColor},
+      ]);
+    }
+  }
+
+  Future<void> updateCalendarName({
+    required String calendarId,
+    required String name,
+  }) async {
+    final client = await _getAuthenticatedClient();
+    await calendar.CalendarApi(
+      client,
+    ).calendars.patch(calendar.Calendar(summary: name), calendarId);
   }
 
   String _calendarColorToHex(int color) {

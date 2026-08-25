@@ -40,21 +40,6 @@ class AppColors {
     end: Alignment.bottomRight,
     colors: [Color(0x99F97015), Color(0x99FF9500)],
   );
-
-  // Event colors (kept varied while aligned with warm dark UI)
-  static const List<Color> eventColors = [
-    Color(0xFFF97015), // Brand orange
-    Color(0xFFFFA04D), // Highlight orange
-    Color(0xFFCB4B0B), // Emphasis orange
-    Color(0xFFFF7729), // Hover orange
-    Color(0xFFE67E22), // Amber
-    Color(0xFFD35400), // Deep orange
-    Color(0xFF16A085), // Teal
-    Color(0xFF2E86C1), // Blue
-    Color(0xFF8E44AD), // Purple
-    Color(0xFF27AE60), // Green
-    Color(0xFFC0392B), // Red
-  ];
 }
 
 class AppTextStyles {

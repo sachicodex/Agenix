@@ -19,6 +19,7 @@ import '../widgets/app_animations.dart';
 import '../widgets/modern_splash_screen.dart';
 import '../widgets/app_select_field.dart';
 import '../widgets/app_popup.dart';
+import '../widgets/calendar_color_picker.dart';
 import '../navigation/app_route_observer.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -27,6 +28,115 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
   @override
   ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsCalendarDraft {
+  const _SettingsCalendarDraft({required this.name, required this.color});
+
+  final String name;
+  final Color color;
+}
+
+class _SettingsCreateCalendarDialog extends StatefulWidget {
+  const _SettingsCreateCalendarDialog();
+
+  @override
+  State<_SettingsCreateCalendarDialog> createState() =>
+      _SettingsCreateCalendarDialogState();
+}
+
+class _SettingsCreateCalendarDialogState
+    extends State<_SettingsCreateCalendarDialog> {
+  final _nameController = TextEditingController();
+  Color _selectedColor = const Color(0xFF5D9ED5);
+  Timer? _nameErrorTimer;
+  bool _showNameError = false;
+
+  @override
+  void dispose() {
+    _nameErrorTimer?.cancel();
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final name = _nameController.text.trim();
+    if (name.isEmpty) {
+      _nameErrorTimer?.cancel();
+      setState(() => _showNameError = true);
+      _nameErrorTimer = Timer(const Duration(seconds: 1), () {
+        if (mounted) setState(() => _showNameError = false);
+      });
+      return;
+    }
+    Navigator.pop(
+      context,
+      _SettingsCalendarDraft(name: name, color: _selectedColor),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    content: SizedBox(
+      width: 360,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: _nameController,
+            autofocus: true,
+            textCapitalization: TextCapitalization.sentences,
+            style: AppTextStyles.bodyText1,
+            decoration: InputDecoration(
+              labelText: 'Calendar name',
+              labelStyle: AppTextStyles.bodyText1.copyWith(
+                color: AppColors.onSurface.withValues(alpha: 0.7),
+              ),
+              filled: true,
+              fillColor: AppColors.surface,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: _nameBorder,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: _nameBorder,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: _focusedNameBorder,
+              ),
+            ),
+            onChanged: (_) {
+              if (_showNameError) setState(() => _showNameError = false);
+            },
+            onSubmitted: (_) => _save(),
+          ),
+          const SizedBox(height: 20),
+          CalendarColorPalette(
+            selectedColor: _selectedColor,
+            onChanged: (color) => setState(() => _selectedColor = color),
+          ),
+        ],
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(onPressed: _save, child: const Text('Save')),
+    ],
+  );
+
+  BorderSide get _nameBorder => _showNameError
+      ? const BorderSide(color: Colors.red, width: 1)
+      : const BorderSide(color: AppColors.borderColor);
+
+  BorderSide get _focusedNameBorder => _showNameError
+      ? const BorderSide(color: Colors.red, width: 1)
+      : const BorderSide(color: AppColors.borderFocusColor, width: 1.2);
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen>
@@ -396,41 +506,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   }
 
   Future<void> _createCalendar() async {
-    final nameController = TextEditingController();
-    final name = await showAppDialog<String>(
+    final draft = await showAppDialog<_SettingsCalendarDraft>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Create calendar'),
-        content: TextField(
-          controller: nameController,
-          autofocus: true,
-          textCapitalization: TextCapitalization.sentences,
-          decoration: const InputDecoration(labelText: 'Calendar name'),
-          onSubmitted: (value) => Navigator.pop(dialogContext, value.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () =>
-                Navigator.pop(dialogContext, nameController.text.trim()),
-            child: const Text('Create'),
-          ),
-        ],
-      ),
+      builder: (_) => const _SettingsCreateCalendarDialog(),
     );
-    nameController.dispose();
-    if (name == null || name.isEmpty || _creatingCalendar) return;
+    if (draft == null || _creatingCalendar) return;
 
     final temporaryId =
         'pending-calendar-${DateTime.now().microsecondsSinceEpoch}';
     final previousId = _selectedCalendarId;
     final optimisticCalendar = <String, dynamic>{
       'id': temporaryId,
-      'name': name,
-      'color': 0xFF5D9ED5,
+      'name': draft.name,
+      'color': draft.color.toARGB32(),
     };
     setState(() {
       _creatingCalendar = true;
@@ -440,8 +528,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
 
     try {
       final calendar = await GoogleCalendarService.instance.createCalendar(
-        name: name,
-        color: 0xFF5D9ED5,
+        name: draft.name,
+        color: draft.color.toARGB32(),
       );
       final calendarId = calendar['id'] as String?;
       if (calendarId == null || calendarId.isEmpty) {
@@ -467,6 +555,81 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       _showErrorPopup('Could not create calendar: $error');
     } finally {
       if (mounted) setState(() => _creatingCalendar = false);
+    }
+  }
+
+  Future<Color?> _changeCalendarColor(String calendarId, Color color) async {
+    try {
+      await GoogleCalendarService.instance.updateCalendarColor(
+        calendarId: calendarId,
+        color: color.toARGB32(),
+      );
+      if (!mounted) return null;
+      setState(() {
+        _availableCalendars = _availableCalendars
+            .map(
+              (calendar) => calendar['id'] == calendarId
+                  ? {...calendar, 'color': color.toARGB32()}
+                  : calendar,
+            )
+            .toList();
+      });
+      return color;
+    } catch (error) {
+      if (mounted) _showErrorPopup('Could not update calendar color: $error');
+      return null;
+    }
+  }
+
+  Future<void> _changeCalendarName(String calendarId, String name) async {
+    try {
+      await GoogleCalendarService.instance.updateCalendarName(
+        calendarId: calendarId,
+        name: name,
+      );
+      if (!mounted) return;
+      setState(() {
+        _availableCalendars = _availableCalendars
+            .map(
+              (calendar) => calendar['id'] == calendarId
+                  ? {...calendar, 'name': name}
+                  : calendar,
+            )
+            .toList();
+        if (_selectedCalendarId == calendarId) {
+          _defaultCalendarName = name;
+        }
+      });
+      if (_selectedCalendarId == calendarId) {
+        await _saveDefaultCalendar();
+      }
+    } catch (error) {
+      if (mounted) _showErrorPopup('Could not update calendar name: $error');
+    }
+  }
+
+  Future<bool> _deleteCalendar(String calendarId) async {
+    if (calendarId == 'primary') {
+      _showErrorPopup('Default Calendar cannot be deleted.');
+      return false;
+    }
+    try {
+      await GoogleCalendarService.instance.deleteCalendar(calendarId);
+      if (!mounted) return false;
+      setState(() {
+        _availableCalendars = _availableCalendars
+            .where((calendar) => calendar['id'] != calendarId)
+            .toList();
+        if (_selectedCalendarId == calendarId) {
+          _selectedCalendarId =
+              _availableCalendars.firstOrNull?['id'] as String?;
+        }
+      });
+      await _saveDefaultCalendar();
+      return true;
+    } catch (error) {
+      if (mounted) _showErrorPopup('Could not delete calendar: $error');
+      return false;
     }
   }
 
@@ -981,6 +1144,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 .toList(),
             onAddPressed: _creatingCalendar ? null : _createCalendar,
             showAddInField: false,
+            onDelete: _deleteCalendar,
+            onColorChanged: _changeCalendarColor,
+            onNameChanged: _changeCalendarName,
             addTooltip: _creatingCalendar
                 ? 'Creating calendar...'
                 : 'Create calendar',

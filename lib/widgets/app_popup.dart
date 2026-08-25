@@ -18,7 +18,14 @@ Future<T?> showAppDialog<T>({
       builder: (dialogContext) =>
           _AppPopupLayer(layer: layer, child: builder(dialogContext)),
       barrierDismissible: barrierDismissible,
-      barrierColor: barrierColor ?? (hasOlderPopup ? Colors.transparent : null),
+      // Specify the scrim explicitly. In particular, this keeps dialogs opened
+      // from a full screen (such as Settings) modal even if the app theme does
+      // not provide a dialog barrier color.
+      barrierColor:
+          barrierColor ??
+          (hasOlderPopup
+              ? Colors.transparent
+              : Colors.black.withValues(alpha: 0.58)),
       useRootNavigator: useRootNavigator,
       routeSettings: routeSettings,
     );
@@ -48,7 +55,11 @@ Future<T?> showAppModalBottomSheet<T>({
       enableDrag: enableDrag,
       showDragHandle: showDragHandle,
       backgroundColor: backgroundColor,
-      barrierColor: barrierColor ?? (hasOlderPopup ? Colors.transparent : null),
+      barrierColor:
+          barrierColor ??
+          (hasOlderPopup
+              ? Colors.transparent
+              : Colors.black.withValues(alpha: 0.58)),
       builder: (sheetContext) =>
           _AppPopupLayer(layer: layer, child: builder(sheetContext)),
     );

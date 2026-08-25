@@ -41,6 +41,112 @@ class _NoStretchScrollBehavior extends MaterialScrollBehavior {
   }
 }
 
+class _YearPickerDialog extends StatefulWidget {
+  const _YearPickerDialog({required this.years, required this.initialYear});
+
+  final List<int> years;
+  final int initialYear;
+
+  @override
+  State<_YearPickerDialog> createState() => _YearPickerDialogState();
+}
+
+class _YearPickerDialogState extends State<_YearPickerDialog> {
+  final ScrollController _scrollController = ScrollController();
+  String? _lastLayoutSignature;
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _centerSelectedYear(int columns, double viewportHeight) {
+    final signature = '$columns:${viewportHeight.round()}';
+    if (_lastLayoutSignature == signature) return;
+    _lastLayoutSignature = signature;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      const rowHeight = 48.0;
+      final selectedIndex = widget.years.indexOf(widget.initialYear);
+      if (selectedIndex < 0) return;
+      final selectedRow = selectedIndex ~/ columns;
+      final targetOffset =
+          selectedRow * rowHeight - viewportHeight / 2 + rowHeight / 2;
+      _scrollController.jumpTo(
+        targetOffset
+            .clamp(0.0, _scrollController.position.maxScrollExtent)
+            .toDouble(),
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => Dialog(
+    backgroundColor: AppColors.surface,
+    child: ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 520, maxHeight: 560),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 18, 24, 20),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text('Select year', style: AppTextStyles.headline2),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close, color: AppColors.onSurface),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final columns = (constraints.maxWidth ~/ 104)
+                      .clamp(1, 4)
+                      .toInt();
+                  _centerSelectedYear(columns, constraints.maxHeight);
+                  return GridView.builder(
+                    controller: _scrollController,
+                    padding: EdgeInsets.zero,
+                    itemCount: widget.years.length,
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: columns,
+                      mainAxisExtent: 48,
+                    ),
+                    itemBuilder: (context, index) {
+                      final year = widget.years[index];
+                      final selected = year == widget.initialYear;
+                      return TextButton(
+                        onPressed: () => Navigator.of(context).pop(year),
+                        child: Text(
+                          '$year',
+                          style: TextStyle(
+                            color: selected
+                                ? AppColors.primary
+                                : AppColors.onBackground,
+                            fontWeight: selected
+                                ? FontWeight.w700
+                                : FontWeight.w500,
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 class CalendarDayViewScreen extends ConsumerStatefulWidget {
   final VoidCallback? onSignOut;
   final VoidCallback? onInitialReady;
@@ -1176,65 +1282,14 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   Future<int?> _showYearPicker({required int initialYear}) async {
     const startYear = 1970;
     const endYear = 2100;
-    const itemExtent = 44.0;
-    const dialogListHeight = 360.0;
     final years = List<int>.generate(
       endYear - startYear + 1,
       (index) => endYear - index,
     );
-    final initialIndex = years.indexOf(initialYear);
-    final safeIndex = initialIndex < 0 ? 0 : initialIndex;
-    final maxOffset = (years.length * itemExtent) - dialogListHeight;
-    final rawOffset = (safeIndex * itemExtent) - (dialogListHeight / 2);
-    final initialOffset = rawOffset.clamp(0.0, maxOffset < 0 ? 0.0 : maxOffset);
-    final scrollController = ScrollController(
-      initialScrollOffset: initialOffset,
-    );
-
     return showAppDialog<int>(
       context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Select year'),
-          content: SizedBox(
-            width: 220,
-            height: dialogListHeight,
-            child: ListView.builder(
-              controller: scrollController,
-              itemExtent: itemExtent,
-              itemCount: years.length,
-              itemBuilder: (context, index) {
-                final year = years[index];
-                final isSelected = year == initialYear;
-                return ListTile(
-                  dense: true,
-                  selected: isSelected,
-                  selectedTileColor: AppColors.selectedColor,
-                  title: Text(
-                    '$year',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: isSelected
-                          ? AppColors.primary
-                          : AppColors.onBackground,
-                      fontWeight: isSelected
-                          ? FontWeight.w700
-                          : FontWeight.w500,
-                    ),
-                  ),
-                  onTap: () => Navigator.of(dialogContext).pop(year),
-                );
-              },
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
-            ),
-          ],
-        );
-      },
+      builder: (dialogContext) =>
+          _YearPickerDialog(years: years, initialYear: initialYear),
     );
   }
 
@@ -1813,6 +1868,17 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                       height: gridHeight + timelineTopGap,
                       child: Stack(
                         children: [
+                          // Full-day calendars are also visible in the time
+                          // grid: each receives a 2px color rail at its left.
+                          ..._allDayEvents.asMap().entries.map(
+                            (entry) => Positioned(
+                              top: timelineTopGap,
+                              bottom: 0,
+                              left: timeColumnWidth - 3 - (entry.key * 3),
+                              width: 2,
+                              child: ColoredBox(color: entry.value.color),
+                            ),
+                          ),
                           Positioned.fill(
                             top: timelineTopGap,
                             child: TimelineHourRuler(

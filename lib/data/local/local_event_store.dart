@@ -422,6 +422,11 @@ CREATE TABLE IF NOT EXISTS user_profile (
         .toList();
   }
 
+  Future<void> deleteCalendar(String calendarId) async {
+    final db = _requireDb();
+    await db.delete('calendars', where: 'id = ?', whereArgs: [calendarId]);
+  }
+
   Future<void> upsertUserProfile({
     required String? email,
     required String? photoUrl,

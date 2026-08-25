@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hugeicons/hugeicons.dart';
 import '../../models/calendar_event.dart';
 import '../../services/google_calendar_service.dart';
 import '../../services/groq_service.dart';
@@ -13,6 +14,7 @@ import '../../widgets/date_time_field.dart';
 import '../../widgets/primary_action_button.dart';
 import '../../widgets/app_select_field.dart';
 import '../../widgets/app_popup.dart';
+import '../../widgets/calendar_color_picker.dart';
 import '../../widgets/delete_event_dialog.dart';
 import '../settings_screen.dart';
 import '../../providers/event_providers.dart';
@@ -41,6 +43,7 @@ class EventCreationModal extends ConsumerStatefulWidget {
 class _EventCreationModalState extends ConsumerState<EventCreationModal> {
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
+  final _titleFocusNode = FocusNode();
   late DateTime _startTime;
   late DateTime _endTime;
   String? _selectedCalendarId;
@@ -52,6 +55,9 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
   bool _deleting = false;
   bool _saving = false;
   bool _creatingCalendar = false;
+  bool _showTitleError = false;
+  bool _showCalendarError = false;
+  Timer? _requiredFieldErrorTimer;
   String? _originalUserTitle;
   final GroqService _groqService = GroqService();
   final ApiKeyStorageService _apiKeyStorage = ApiKeyStorageService();
@@ -85,6 +91,8 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
   void dispose() {
     _titleController.dispose();
     _descriptionController.dispose();
+    _titleFocusNode.dispose();
+    _requiredFieldErrorTimer?.cancel();
     super.dispose();
   }
 
@@ -154,7 +162,7 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
             _availableCalendars = [
               {
                 'id': 'primary',
-                'name': 'Primary Calendar',
+                'name': 'Default Calendar',
                 'color': 0xFF039BE5,
               },
             ];
@@ -226,6 +234,22 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
     );
   }
 
+  void _flashRequiredFieldErrors({bool title = false, bool calendar = false}) {
+    _requiredFieldErrorTimer?.cancel();
+    setState(() {
+      _showTitleError = _showTitleError || title;
+      _showCalendarError = _showCalendarError || calendar;
+    });
+    _requiredFieldErrorTimer = Timer(const Duration(seconds: 1), () {
+      if (mounted) {
+        setState(() {
+          _showTitleError = false;
+          _showCalendarError = false;
+        });
+      }
+    });
+  }
+
   Future<void> _createCalendar() async {
     final draft = await showAppDialog<_CalendarDraft>(
       context: context,
@@ -290,6 +314,40 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
     }
   }
 
+  Future<bool> _deleteCalendar(String calendarId) async {
+    if (calendarId == 'primary') {
+      showAppSnackBar(
+        context,
+        'Default Calendar cannot be deleted.',
+        type: AppSnackBarType.error,
+      );
+      return false;
+    }
+    try {
+      await GoogleCalendarService.instance.deleteCalendar(calendarId);
+      if (!mounted) return false;
+      setState(() {
+        _availableCalendars = _availableCalendars
+            .where((calendar) => calendar['id'] != calendarId)
+            .toList();
+        if (_selectedCalendarId == calendarId) {
+          _selectedCalendarId =
+              _availableCalendars.firstOrNull?['id'] as String?;
+        }
+      });
+      return true;
+    } catch (error) {
+      if (mounted) {
+        showAppSnackBar(
+          context,
+          'Could not delete calendar: $error',
+          type: AppSnackBarType.error,
+        );
+      }
+      return false;
+    }
+  }
+
   void _showAISetupPopup() {
     showAppDialog(
       context: context,
@@ -324,7 +382,7 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
 
     final currentTitle = _titleController.text.trim();
     if (currentTitle.isEmpty) {
-      _showErrorDialog('Please enter a title first');
+      _flashRequiredFieldErrors(title: true);
       return;
     }
 
@@ -366,7 +424,7 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
 
     final currentTitle = _titleController.text.trim();
     if (currentTitle.isEmpty) {
-      _showErrorDialog('Please enter a title first');
+      _flashRequiredFieldErrors(title: true);
       return;
     }
 
@@ -468,12 +526,11 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
       }
       return;
     }
-    if (_titleController.text.trim().isEmpty) {
-      _showErrorDialog('Event title is required.');
-      return;
-    }
-    if (_selectedCalendarId == null || _selectedCalendarId!.isEmpty) {
-      _showErrorDialog('Please choose a calendar.');
+    final titleMissing = _titleController.text.trim().isEmpty;
+    final calendarMissing =
+        _selectedCalendarId == null || _selectedCalendarId!.isEmpty;
+    if (titleMissing || calendarMissing) {
+      _flashRequiredFieldErrors(title: titleMissing, calendar: calendarMissing);
       return;
     }
     if (!_endTime.isAfter(_startTime)) {
@@ -615,9 +672,16 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Expanded(
-              child: Text(
-                widget.existingEvent == null ? 'Create Event' : 'Edit Event',
-                style: AppTextStyles.headline2,
+              child: Row(
+                children: [
+                  SizedBox(width: 15),
+                  Text(
+                    widget.existingEvent == null
+                        ? 'Create Event'
+                        : 'Edit Event',
+                    style: AppTextStyles.headline2,
+                  ),
+                ],
               ),
             ),
             if (widget.existingEvent != null)
@@ -640,10 +704,10 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
                         height: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(
-                        Icons.delete_outlined,
-                        fontWeight: FontWeight.w700,
+                    : const HugeIcon(
+                        icon: HugeIcons.strokeRoundedDelete03,
                         size: 20,
+                        strokeWidth: 2.2,
                       ),
               ),
           ],
@@ -651,12 +715,17 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
         const SizedBox(height: 24),
         LargeTextField(
           controller: _titleController,
+          focusNode: _titleFocusNode,
           autofocus: false,
           hint: 'Event title',
           label: 'Title',
           minLines: 1,
           maxLines: 3,
           requiredField: true,
+          hasError: _showTitleError,
+          onChanged: (_) {
+            if (_showTitleError) setState(() => _showTitleError = false);
+          },
           onAIClick: _optimizeTitle,
           aiLoading: _titleAILoading,
         ),
@@ -700,11 +769,16 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
           ],
           onAddPressed: _creatingCalendar ? null : _createCalendar,
           showAddInField: false,
+          onDelete: _deleteCalendar,
+          hasError: _showCalendarError,
+          onColorChanged: _changeCalendarColor,
+          onNameChanged: _changeCalendarName,
 
           onChanged: (value) {
             setState(() {
               _selectedCalendarId = value;
               _userHasSelectedCalendar = true;
+              _showCalendarError = false;
             });
           },
         ),
@@ -731,6 +805,46 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
         ),
       ],
     );
+  }
+
+  Future<Color?> _changeCalendarColor(String calendarId, Color color) async {
+    try {
+      await GoogleCalendarService.instance.updateCalendarColor(
+        calendarId: calendarId,
+        color: color.toARGB32(),
+      );
+      if (!mounted) return null;
+      setState(() {
+        _availableCalendars = _availableCalendars
+            .map(
+              (calendar) => calendar['id'] == calendarId
+                  ? {...calendar, 'color': color.toARGB32()}
+                  : calendar,
+            )
+            .toList();
+      });
+      return color;
+    } catch (error) {
+      if (mounted) _showErrorDialog('Could not update calendar color: $error');
+      return null;
+    }
+  }
+
+  Future<void> _changeCalendarName(String calendarId, String name) async {
+    await GoogleCalendarService.instance.updateCalendarName(
+      calendarId: calendarId,
+      name: name,
+    );
+    if (!mounted) return;
+    setState(() {
+      _availableCalendars = _availableCalendars
+          .map(
+            (calendar) => calendar['id'] == calendarId
+                ? {...calendar, 'name': name}
+                : calendar,
+          )
+          .toList();
+    });
   }
 
   @override
@@ -821,36 +935,13 @@ class _CreateCalendarDialog extends StatefulWidget {
 
 class _CreateCalendarDialogState extends State<_CreateCalendarDialog> {
   final _nameController = TextEditingController();
-  final _colors = const [
-    Color(0xFFD65A82),
-    Color(0xFFF07A3E),
-    Color(0xFFE8BF54),
-    Color(0xFF68B98D),
-    Color(0xFF5D9ED5),
-    Color(0xFF9186D8),
-    Color(0xFFAE64C7),
-    Color(0xFFD96F68),
-    Color(0xFFB7A896),
-    Color(0xFFCB5479),
-    Color(0xFFF08A42),
-    Color(0xFFD5A646),
-    Color(0xFF58A67C),
-    Color(0xFF508ECA),
-    Color(0xFF7D78C8),
-    Color(0xFF974EB9),
-    Color(0xFFCB6963),
-    Color(0xFF8A8A8A),
-    Color(0xFFDF877B),
-    Color(0xFFE8B550),
-    Color(0xFF72C59B),
-    Color(0xFF7EABDB),
-    Color(0xFFAD9BDF),
-    Color(0xFFAF9D8A),
-  ];
   Color _selectedColor = const Color(0xFF5D9ED5);
+  Timer? _nameErrorTimer;
+  bool _showNameError = false;
 
   @override
   void dispose() {
+    _nameErrorTimer?.cancel();
     _nameController.dispose();
     super.dispose();
   }
@@ -881,40 +972,26 @@ class _CreateCalendarDialogState extends State<_CreateCalendarDialog> {
                 fillColor: AppColors.surface,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
+                  borderSide: _nameBorder,
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: _nameBorder,
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: _nameBorder,
                 ),
               ),
+              onChanged: (_) {
+                if (_showNameError) setState(() => _showNameError = false);
+              },
               onSubmitted: (_) => _save(),
             ),
             const SizedBox(height: 20),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: _colors.map((color) {
-                final selected = color == _selectedColor;
-                return InkWell(
-                  borderRadius: BorderRadius.circular(20),
-                  onTap: () => setState(() => _selectedColor = color),
-                  child: Container(
-                    width: 30,
-                    height: 30,
-                    decoration: BoxDecoration(
-                      color: color,
-                      shape: BoxShape.circle,
-                      border: selected
-                          ? Border.all(color: Colors.white, width: 3)
-                          : null,
-                    ),
-                    child: selected
-                        ? const Icon(
-                            Icons.check,
-                            size: 18,
-                            color: Colors.black87,
-                          )
-                        : null,
-                  ),
-                );
-              }).toList(),
+            CalendarColorPalette(
+              selectedColor: _selectedColor,
+              onChanged: (color) => setState(() => _selectedColor = color),
             ),
           ],
         ),
@@ -924,16 +1001,33 @@ class _CreateCalendarDialogState extends State<_CreateCalendarDialog> {
           onPressed: () => Navigator.pop(context),
           child: const Text('Cancel'),
         ),
-        FilledButton(onPressed: _save, child: const Text('Save')),
+        FilledButton(
+          onPressed: _save,
+          child: const Text(
+            'Save',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+        ),
       ],
     );
   }
 
   void _save() {
     final name = _nameController.text.trim();
-    if (name.isEmpty) return;
+    if (name.isEmpty) {
+      _nameErrorTimer?.cancel();
+      setState(() => _showNameError = true);
+      _nameErrorTimer = Timer(const Duration(seconds: 1), () {
+        if (mounted) setState(() => _showNameError = false);
+      });
+      return;
+    }
     Navigator.pop(context, _CalendarDraft(name: name, color: _selectedColor));
   }
+
+  BorderSide get _nameBorder => _showNameError
+      ? const BorderSide(color: Colors.red, width: 1)
+      : const BorderSide(color: AppColors.borderColor);
 }
 
 class _EventFormSnapshot {

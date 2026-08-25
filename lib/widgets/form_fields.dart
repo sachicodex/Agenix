@@ -3,6 +3,7 @@ import '../theme/app_colors.dart';
 import 'app_popup.dart';
 
 class LargeTextField extends StatelessWidget {
+  static final ValueNotifier<bool> _unfocused = ValueNotifier<bool>(false);
   final TextEditingController? controller;
   final FocusNode? focusNode;
   final bool autofocus;
@@ -13,6 +14,8 @@ class LargeTextField extends StatelessWidget {
   final bool requiredField;
   final VoidCallback? onAIClick;
   final bool aiLoading;
+  final bool hasError;
+  final ValueChanged<String>? onChanged;
 
   const LargeTextField({
     super.key,
@@ -26,6 +29,8 @@ class LargeTextField extends StatelessWidget {
     this.requiredField = false,
     this.onAIClick,
     this.aiLoading = false,
+    this.hasError = false,
+    this.onChanged,
   });
 
   Widget? _buildAiOverlayButton() {
@@ -76,30 +81,42 @@ class LargeTextField extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: Stack(
         children: [
-          TextField(
-            controller: controller,
-            focusNode: focusNode,
-            autofocus: autofocus,
-            minLines: minLines,
-            maxLines: maxLines,
-            decoration: InputDecoration(
-              hintText: hint,
-              labelText: label,
-              labelStyle: AppTextStyles.bodyText1.copyWith(
-                color: AppColors.onSurface.withValues(alpha: 0.7),
+          AnimatedBuilder(
+            animation: focusNode ?? _unfocused,
+            builder: (context, _) => TextField(
+              controller: controller,
+              focusNode: focusNode,
+              autofocus: autofocus,
+              minLines: minLines,
+              maxLines: maxLines,
+              onChanged: onChanged,
+              decoration: InputDecoration(
+                hintText: focusNode?.hasFocus == true ? null : hint,
+                labelText: label,
+                labelStyle: AppTextStyles.bodyText1.copyWith(
+                  color: AppColors.onSurface.withValues(alpha: 0.7),
+                ),
+                hintStyle: AppTextStyles.bodyText1.copyWith(
+                  color: AppColors.onSurface.withValues(alpha: 0.5),
+                ),
+                filled: true,
+                fillColor: AppColors.surface,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: hasError
+                      ? const BorderSide(color: Colors.red, width: 1)
+                      : const BorderSide(color: AppColors.borderColor),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: hasError
+                      ? const BorderSide(color: Colors.red, width: 1)
+                      : const BorderSide(color: AppColors.borderColor),
+                ),
+                contentPadding: EdgeInsets.fromLTRB(16, 16, rightPadding, 16),
               ),
-              hintStyle: AppTextStyles.bodyText1.copyWith(
-                color: AppColors.onSurface.withValues(alpha: 0.5),
-              ),
-              filled: true,
-              fillColor: AppColors.surface,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
-              ),
-              contentPadding: EdgeInsets.fromLTRB(16, 16, rightPadding, 16),
+              style: AppTextStyles.bodyText1,
             ),
-            style: AppTextStyles.bodyText1,
           ),
           if (aiOverlayButton != null) Positioned.fill(child: aiOverlayButton),
         ],
@@ -133,11 +150,13 @@ class ExpandableDescription extends StatefulWidget {
 class _ExpandableDescriptionState extends State<ExpandableDescription> {
   bool _showExpandAction = false;
   double _lastMeasuredWidth = 0;
+  final _focusNode = FocusNode();
 
   @override
   void initState() {
     super.initState();
     widget.controller?.addListener(_handleTextChanged);
+    _focusNode.addListener(_handleFocusChanged);
   }
 
   @override
@@ -153,8 +172,13 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
   @override
   void dispose() {
     widget.controller?.removeListener(_handleTextChanged);
+    _focusNode
+      ..removeListener(_handleFocusChanged)
+      ..dispose();
     super.dispose();
   }
+
+  void _handleFocusChanged() => setState(() {});
 
   void _handleTextChanged() {
     _scheduleOverflowCheck();
@@ -329,13 +353,17 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
             children: [
               TextField(
                 controller: widget.controller,
+                focusNode: _focusNode,
                 minLines: widget.minLines,
                 maxLines: widget.maxLines,
                 textInputAction: TextInputAction.newline,
                 keyboardType: TextInputType.multiline,
                 textAlignVertical: TextAlignVertical.top,
                 decoration: InputDecoration(
-                  hintText: widget.hint,
+                  // The floating label already identifies a focused field.
+                  // Hiding the duplicate inner hint keeps every form field
+                  // visually clean while the user types.
+                  hintText: _focusNode.hasFocus ? null : widget.hint,
                   labelText: widget.hint,
                   labelStyle: AppTextStyles.bodyText1.copyWith(
                     color: AppColors.onSurface.withValues(alpha: 0.7),
