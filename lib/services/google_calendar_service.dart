@@ -20,6 +20,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
+import '../utils/platform_focus.dart';
 import '../google_oauth_config.dart';
 import 'app_data_service.dart';
 import 'auth_storage_service.dart';
@@ -2316,6 +2317,7 @@ class GoogleCalendarService {
               const SizedBox(height: 8),
               TextField(
                 controller: controller,
+                autofocus: shouldAutofocusTextInput,
                 decoration: const InputDecoration(labelText: 'Paste code here'),
               ),
             ],

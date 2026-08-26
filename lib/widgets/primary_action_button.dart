@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 
 class PrimaryActionButton extends StatelessWidget {
   final VoidCallback? onPressed;
@@ -8,6 +9,8 @@ class PrimaryActionButton extends StatelessWidget {
   final EdgeInsetsGeometry? padding;
   final Size? minimumSize;
   final BorderRadius borderRadius;
+  final Gradient? gradient;
+  final Gradient? disabledGradient;
   final ButtonStyle? style;
 
   const PrimaryActionButton({
@@ -16,7 +19,9 @@ class PrimaryActionButton extends StatelessWidget {
     required this.label,
     this.padding,
     this.minimumSize,
-    this.borderRadius = const BorderRadius.all(Radius.circular(12)),
+    this.borderRadius = AppButtonStyles.radius,
+    this.gradient,
+    this.disabledGradient,
     this.style,
   }) : icon = null;
 
@@ -27,7 +32,9 @@ class PrimaryActionButton extends StatelessWidget {
     required this.label,
     this.padding,
     this.minimumSize,
-    this.borderRadius = const BorderRadius.all(Radius.circular(12)),
+    this.borderRadius = AppButtonStyles.radius,
+    this.gradient,
+    this.disabledGradient,
     this.style,
   });
 
@@ -63,8 +70,10 @@ class PrimaryActionButton extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         gradient: enabled
-            ? AppColors.primaryActionGradient
-            : AppColors.primaryActionGradientDisabled,
+            ? (gradient ?? AppColors.primaryActionGradient)
+            : (disabledGradient ??
+                  gradient ??
+                  AppColors.primaryActionGradientDisabled),
         borderRadius: borderRadius,
       ),
       child: icon == null

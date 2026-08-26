@@ -107,6 +107,17 @@ class RemoteCalendarDataSource {
     );
   }
 
+  /// Returns false when this account no longer has access to [calendarId].
+  /// A null result means the availability check itself could not be completed.
+  Future<bool?> canAccessCalendar(String calendarId) async {
+    try {
+      final calendars = await _googleService.getUserCalendars();
+      return calendars.any((calendar) => calendar['id'] == calendarId);
+    } catch (_) {
+      return null;
+    }
+  }
+
   CalendarEvent _mapToCalendarEvent(Map<String, dynamic> data) {
     final colorValue = data['color'] as int? ?? Colors.blue.toARGB32();
     final updatedAt = data['updatedAtRemote'] as DateTime?;

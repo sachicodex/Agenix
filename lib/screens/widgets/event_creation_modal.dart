@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hugeicons/hugeicons.dart';
 import '../../models/calendar_event.dart';
 import '../../services/google_calendar_service.dart';
 import '../../services/groq_service.dart';
@@ -16,9 +15,11 @@ import '../../widgets/app_select_field.dart';
 import '../../widgets/app_popup.dart';
 import '../../widgets/calendar_color_picker.dart';
 import '../../widgets/delete_event_dialog.dart';
+import '../../widgets/app_icon.dart';
 import '../settings_screen.dart';
 import '../../providers/event_providers.dart';
 import '../../services/debug_perf_logger.dart';
+import '../../utils/platform_focus.dart';
 
 class EventCreationModal extends ConsumerStatefulWidget {
   final DateTime? startTime;
@@ -704,8 +705,8 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
                         height: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const HugeIcon(
-                        icon: HugeIcons.strokeRoundedDelete03,
+                    : const AppIcon(
+                        icon: AppIconData.huge(HugeIcons.strokeRoundedDelete03),
                         size: 20,
                         strokeWidth: 2.2,
                       ),
@@ -716,7 +717,7 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
         LargeTextField(
           controller: _titleController,
           focusNode: _titleFocusNode,
-          autofocus: false,
+          autofocus: shouldAutofocusTextInput,
           hint: 'Event title',
           label: 'Title',
           minLines: 1,
@@ -950,14 +951,14 @@ class _CreateCalendarDialogState extends State<_CreateCalendarDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       content: SizedBox(
-        width: 360,
+        width: appPopupWidth(context, 360),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             TextField(
               controller: _nameController,
-              autofocus: true,
+              autofocus: shouldAutofocusTextInput,
               textCapitalization: TextCapitalization.sentences,
               style: AppTextStyles.bodyText1,
               decoration: InputDecoration(

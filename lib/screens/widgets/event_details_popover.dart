@@ -11,6 +11,7 @@ import '../../widgets/app_popup.dart';
 import '../../widgets/delete_event_dialog.dart';
 import '../../widgets/primary_action_button.dart';
 import 'event_creation_modal.dart';
+import '../../utils/platform_focus.dart';
 
 class EventDetailsPopover extends ConsumerWidget {
   final CalendarEvent event;
@@ -79,7 +80,7 @@ class EventDetailsPopover extends ConsumerWidget {
     return Dialog(
       backgroundColor: AppColors.surface,
       child: Container(
-        width: 400,
+        width: appPopupWidth(context, 400),
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -311,7 +312,7 @@ class _EventEditModalState extends ConsumerState<EventEditModal> {
     return Dialog(
       backgroundColor: AppColors.surface,
       child: Container(
-        width: 500,
+        width: appPopupWidth(context, 500),
         padding: const EdgeInsets.all(24),
         child: Form(
           key: _formKey,
@@ -324,6 +325,7 @@ class _EventEditModalState extends ConsumerState<EventEditModal> {
               // Title
               TextFormField(
                 controller: _titleController,
+                autofocus: shouldAutofocusTextInput,
                 minLines: 1,
                 maxLines: 3,
                 decoration: const InputDecoration(

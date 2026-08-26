@@ -62,6 +62,29 @@ class SyncService {
       _pushLocalChangesInFlight != null ||
       _deferredPushTimer != null;
 
+  /// Flushes local changes for a controlled app exit.
+  ///
+  /// A regular push can defer when another push owns the local sync lock. This
+  /// method waits for that work to settle, then reports whether every pending
+  /// change reached the remote calendar before [timeout].
+  Future<bool> flushPendingChangesForExit({
+    Duration timeout = const Duration(seconds: 30),
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    while (true) {
+      if ((await _localStore.getPendingEvents()).isEmpty) return true;
+
+      await pushLocalChanges(retryWhenLocked: true);
+      if ((await _localStore.getPendingEvents()).isEmpty) return true;
+
+      // If no sync is in flight, the last attempt failed rather than merely
+      // being delayed by a lock. Leave the application in the tray so the
+      // user can retry instead of dropping unsynced changes.
+      if (!isBusy || DateTime.now().isAfter(deadline)) return false;
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
+  }
+
   Future<void> start({
     required DateTimeRange range,
     required String calendarId,
@@ -232,6 +255,19 @@ class SyncService {
   Future<void> pushLocalChanges({bool retryWhenLocked = false}) async {
     final watch = DebugPerfLogger.start('SyncService', 'pushLocalChanges');
     if (!await _ensureSignedIn()) return;
+
+    // Join an active push before trying to acquire its lock. This is
+    // especially important when Windows is closing: the tray exit guard must
+    // wait for the already-running sync instead of scheduling a later retry
+    // and incorrectly deciding that pending work should keep the app alive.
+    final activePush = _pushLocalChangesInFlight;
+    if (activePush != null) {
+      _pushLocalChangesNeedsAnotherPass = true;
+      await activePush;
+      DebugPerfLogger.end('SyncService', watch, 'pushLocalChanges.joinActive');
+      return;
+    }
+
     if (!await _tryAcquireSyncLock()) {
       DebugPerfLogger.info('SyncService', 'pushLocalChanges.lockBusy');
       if (retryWhenLocked) {
@@ -261,18 +297,6 @@ class SyncService {
         }
       }
       _scheduleDeferredPush();
-      return;
-    }
-
-    if (_pushLocalChangesInFlight != null) {
-      _pushLocalChangesNeedsAnotherPass = true;
-      await _pushLocalChangesInFlight;
-      await _releaseSyncLock();
-      DebugPerfLogger.end(
-        'SyncService',
-        watch,
-        'pushLocalChanges.joinExisting',
-      );
       return;
     }
 
@@ -636,7 +660,28 @@ class SyncService {
       return false;
     }
 
-    final recreated = await _remoteSource.insertEvent(event: event);
+    CalendarEvent recreated;
+    try {
+      recreated = await _remoteSource.insertEvent(event: event);
+    } catch (error) {
+      // An events.insert 404 after an update 404 normally means that a shared
+      // calendar was removed or its permission was revoked. There is nowhere
+      // to recreate the event, so retaining this local record would block all
+      // future close-to-tray exits forever. Remove only when the calendar
+      // availability check confirms the account no longer has access.
+      final canAccessCalendar = await _remoteSource.canAccessCalendar(
+        event.calendarId,
+      );
+      if (_isMissingRemoteError(error) && canAccessCalendar == false) {
+        await _localStore.deleteEventById(event.id);
+        debugPrint(
+          'Discarded local event for inaccessible calendar: '
+          'calendarId=${event.calendarId}, eventId=${event.id}',
+        );
+        return true;
+      }
+      rethrow;
+    }
     final remoteUpdatedAt = recreated.updatedAtRemote ?? DateTime.now().toUtc();
     final remoteLocalId =
         recreated.gEventId != null && recreated.gEventId!.isNotEmpty

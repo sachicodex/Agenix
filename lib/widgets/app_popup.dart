@@ -1,5 +1,20 @@
 import 'package:flutter/material.dart';
 
+/// Uses the available screen width for Android dialogs while retaining the
+/// intentional fixed widths used by the desktop layout.
+double appPopupWidth(BuildContext context, double desktopWidth) {
+  if (Theme.of(context).platform != TargetPlatform.android) {
+    return desktopWidth;
+  }
+  return (MediaQuery.sizeOf(context).width - 32).clamp(0.0, double.infinity);
+}
+
+EdgeInsets appPopupInsetPadding(BuildContext context) {
+  return Theme.of(context).platform == TargetPlatform.android
+      ? const EdgeInsets.symmetric(horizontal: 16, vertical: 24)
+      : const EdgeInsets.symmetric(horizontal: 40, vertical: 24);
+}
+
 /// Shows a dialog that automatically hides any older Agenix dialog while it
 /// is on top. When this dialog closes, the older dialog is restored.
 Future<T?> showAppDialog<T>({

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../theme/app_colors.dart';
+import '../../utils/platform_focus.dart';
 
 class EventActionsPopover extends StatefulWidget {
   final Offset anchor;
@@ -32,7 +33,7 @@ class _EventActionsPopoverState extends State<EventActionsPopover> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
+      if (mounted && shouldAutofocusTextInput) {
         FocusScope.of(context).requestFocus(_editButtonFocusNode);
       }
     });

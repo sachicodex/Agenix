@@ -56,6 +56,13 @@ class AppTextStyles {
     color: AppColors.onBackground,
     letterSpacing: 1.1,
   );
+    static const TextStyle headline3 = TextStyle(
+    fontFamily: 'Montserrat',
+    fontSize: 18,
+    fontWeight: FontWeight.w600,
+    color: AppColors.onBackground,
+    letterSpacing: 1.1,
+  );
   static const TextStyle bodyText1 = TextStyle(
     fontFamily: 'Montserrat',
     fontSize: 16,

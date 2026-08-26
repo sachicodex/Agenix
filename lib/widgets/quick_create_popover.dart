@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../theme/app_colors.dart';
 import 'primary_action_button.dart';
+import '../utils/platform_focus.dart';
 
 /// Quick create popover that appears when clicking on empty time slot
 /// Matches Google Calendar's quick create behavior
@@ -35,10 +36,6 @@ class _QuickCreatePopoverState extends State<QuickCreatePopover> {
     super.initState();
     _startTime = widget.startTime;
     _endTime = widget.endTime ?? _startTime.add(const Duration(minutes: 30));
-    // Auto-focus title input
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      FocusScope.of(context).requestFocus(FocusNode());
-    });
   }
 
   @override
@@ -86,10 +83,11 @@ class _QuickCreatePopoverState extends State<QuickCreatePopover> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Title input (auto-focused)
+                    // Windows is ready for keyboard entry. Mobile keeps its
+                    // on-screen keyboard closed until the user taps this.
                     TextField(
                       controller: _titleController,
-                      autofocus: false,
+                      autofocus: shouldAutofocusTextInput,
                       decoration: const InputDecoration(
                         hintText: 'Add title',
                         border: InputBorder.none,

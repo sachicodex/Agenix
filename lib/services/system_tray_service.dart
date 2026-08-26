@@ -5,8 +5,6 @@ import 'package:flutter/foundation.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
-import 'sync_service.dart';
-
 class SystemTrayService with TrayListener, WindowListener {
   SystemTrayService._();
 
@@ -15,10 +13,8 @@ class SystemTrayService with TrayListener, WindowListener {
   bool _initialized = false;
   bool _allowClose = false;
   bool _pendingExitAfterSync = false;
-  bool _syncing = false;
   Future<bool> Function()? _exitGuard;
-  Timer? _exitGuardTimer;
-  bool _exitGuardCheckInFlight = false;
+  Future<void>? _exitAfterSyncInFlight;
   bool _quitting = false;
 
   void _log(String message) {
@@ -68,7 +64,6 @@ class SystemTrayService with TrayListener, WindowListener {
     if (key == 'quit') {
       _log('tray menu quit');
       _pendingExitAfterSync = false;
-      _cancelExitGuardTimer();
       unawaited(_quitApp());
     }
   }
@@ -81,15 +76,19 @@ class SystemTrayService with TrayListener, WindowListener {
     }
     _log('window close intercepted -> hide to tray and start exit guard');
     _pendingExitAfterSync = true;
-    await windowManager.hide();
-    await _checkExitGuardOnce();
-    _startExitGuardTimer();
+    try {
+      await windowManager.hide();
+    } catch (error) {
+      // A hide failure must not prevent the final sync/exit workflow.
+      _log('window hide failed: $error');
+    } finally {
+      unawaited(_exitAfterPendingSync());
+    }
   }
 
   Future<void> _showWindow() async {
     _log('show window and cancel pending exit');
     _pendingExitAfterSync = false;
-    _cancelExitGuardTimer();
     await windowManager.show();
     await windowManager.focus();
   }
@@ -98,25 +97,12 @@ class SystemTrayService with TrayListener, WindowListener {
     _exitGuard = guard;
   }
 
-  void updateSyncStatus(SyncStatus status) {
-    if (!Platform.isWindows) return;
-    _syncing = status.state == SyncState.syncing;
-    _log(
-      'sync status updated syncing=$_syncing pendingExit=$_pendingExitAfterSync',
-    );
-    if (_pendingExitAfterSync && !_syncing) {
-      _checkExitGuardOnce();
-      _startExitGuardTimer();
-    }
-  }
-
   Future<void> _quitApp() async {
     if (_quitting) return;
     _quitting = true;
     _log('quit app start');
     _allowClose = true;
     _pendingExitAfterSync = false;
-    _cancelExitGuardTimer();
 
     try {
       trayManager.removeListener(this);
@@ -139,70 +125,31 @@ class SystemTrayService with TrayListener, WindowListener {
     exit(0);
   }
 
-  void _startExitGuardTimer() {
-    if (!_pendingExitAfterSync) return;
-    if (_exitGuard == null) {
-      _log('no exit guard -> quit immediately');
-      _pendingExitAfterSync = false;
-      unawaited(_quitApp());
-      return;
-    }
-    if (_exitGuardTimer != null) return;
+  Future<void> _exitAfterPendingSync() async {
+    if (_exitAfterSyncInFlight != null) return _exitAfterSyncInFlight;
 
-    _exitGuardTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
-      if (!_pendingExitAfterSync) {
-        _cancelExitGuardTimer();
-        return;
-      }
-      if (_exitGuardCheckInFlight) return;
-      _log('periodic exit guard check');
-      _exitGuardCheckInFlight = true;
-      try {
-        final shouldBlockExit = await _exitGuard!.call();
-        _log('periodic exit guard result shouldBlockExit=$shouldBlockExit');
-        if (!shouldBlockExit) {
-          _pendingExitAfterSync = false;
-          _cancelExitGuardTimer();
-          unawaited(_quitApp());
-        }
-      } catch (_) {
-        // Keep waiting if guard fails.
-      } finally {
-        _exitGuardCheckInFlight = false;
-      }
-    });
-  }
-
-  Future<void> _checkExitGuardOnce() async {
-    if (!_pendingExitAfterSync) return;
-    if (_exitGuard == null) {
-      _log('single exit guard missing -> quit immediately');
-      _pendingExitAfterSync = false;
-      unawaited(_quitApp());
-      return;
-    }
-    if (_exitGuardCheckInFlight) return;
-    _log('single exit guard check');
-    _exitGuardCheckInFlight = true;
+    final workflow = _runExitAfterPendingSync();
+    _exitAfterSyncInFlight = workflow;
     try {
-      final shouldBlockExit = await _exitGuard!.call();
-      _log('single exit guard result shouldBlockExit=$shouldBlockExit');
-      if (!shouldBlockExit) {
-        _pendingExitAfterSync = false;
-        _cancelExitGuardTimer();
-        unawaited(_quitApp());
-      }
-    } catch (_) {
-      // Ignore and let periodic checks handle.
+      await workflow;
     } finally {
-      _exitGuardCheckInFlight = false;
+      if (identical(_exitAfterSyncInFlight, workflow)) {
+        _exitAfterSyncInFlight = null;
+      }
     }
   }
 
-  void _cancelExitGuardTimer() {
-    _exitGuardTimer?.cancel();
-    _exitGuardTimer = null;
-    _exitGuardCheckInFlight = false;
+  Future<void> _runExitAfterPendingSync() async {
+    if (!_pendingExitAfterSync) return;
+
+    // The guard performs and awaits the last local sync. A false result means
+    // there is no remaining work, so it is now safe to remove the tray icon
+    // and terminate the Windows process.
+    final shouldBlockExit = await _exitGuard?.call() ?? false;
+    _log('final sync completed shouldBlockExit=$shouldBlockExit');
+    if (!_pendingExitAfterSync || shouldBlockExit) return;
+
+    await _quitApp();
   }
 
   String? _resolveTrayIconPath() {

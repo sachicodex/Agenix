@@ -389,19 +389,56 @@ CREATE TABLE IF NOT EXISTS user_profile (
   Future<void> upsertCalendars(List<Map<String, dynamic>> calendars) async {
     final db = _requireDb();
     final nowMs = DateTime.now().millisecondsSinceEpoch;
+    // Events persist a display colour for offline rendering. Keep that value in
+    // sync with its calendar so changing a calendar colour also recolours
+    // events that were created before the change.
+    final changedCalendarColors = <String, int>{};
     await db.transaction((txn) async {
       for (final calendar in calendars) {
         final id = (calendar['id'] as String?) ?? '';
         if (id.isEmpty) continue;
+        final color = (calendar['color'] as int?) ?? 0xFF039BE5;
+        final existing = await txn.query(
+          'calendars',
+          columns: ['color'],
+          where: 'id = ?',
+          whereArgs: [id],
+          limit: 1,
+        );
+        final previousColor = existing.isEmpty
+            ? null
+            : existing.first['color'] as int?;
         await txn.insert('calendars', {
           'id': id,
           'name': (calendar['name'] as String?) ?? id,
-          'color': (calendar['color'] as int?) ?? 0xFF039BE5,
+          'color': color,
           'selected': ((calendar['selected'] as bool?) ?? true) ? 1 : 0,
           'updated_at': nowMs,
         }, conflictAlgorithm: ConflictAlgorithm.replace);
+        if (previousColor != null && previousColor != color) {
+          await txn.update(
+            'events',
+            {'color': color},
+            where: 'calendar_id = ?',
+            whereArgs: [id],
+          );
+          changedCalendarColors[id] = color;
+        }
       }
     });
+
+    if (changedCalendarColors.isEmpty) return;
+    if (_eventCacheLoaded) {
+      for (final entry in _eventCache.entries.toList()) {
+        final color = changedCalendarColors[entry.value.calendarId];
+        if (color != null) {
+          _eventCache[entry.key] = entry.value.copyWith(color: Color(color));
+        }
+      }
+    }
+    // Calendar colour changes are a local display update, not event edits: do
+    // not touch dirty/pending fields or queue uploads.
+    _emitChange();
   }
 
   Future<List<Map<String, dynamic>>> getCachedCalendars() async {

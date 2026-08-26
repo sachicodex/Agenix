@@ -33,6 +33,7 @@ migrate_working_dir/
 /build/
 /coverage/
 .env
+/installer/output/
 
 # Symbolication related
 app.*.symbols

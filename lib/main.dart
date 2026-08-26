@@ -19,7 +19,6 @@ import 'services/background_event_sync.dart';
 import 'services/firebase_bootstrap.dart';
 import 'services/google_calendar_service.dart';
 import 'services/settings_sync_coordinator.dart';
-import 'services/sync_service.dart';
 import 'services/system_tray_service.dart';
 import 'theme/app_theme.dart';
 import 'widgets/windows_title_bar.dart';
@@ -60,8 +59,7 @@ class MyApp extends ConsumerStatefulWidget {
 }
 
 class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
-  ProviderSubscription<AsyncValue<SyncStatus>>? _syncStatusSub;
-  Future<void>? _windowsExitPushInFlight;
+  Future<bool>? _windowsExitPushInFlight;
 
   @override
   void initState() {
@@ -69,23 +67,20 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     final syncService = ref.read(syncServiceProvider);
     SystemTrayService.instance.setExitGuard(() async {
-      if (_windowsExitPushInFlight != null) return true;
-      if ((await LocalEventStore.instance.getPendingEvents()).isEmpty) {
-        return false;
-      }
-      final push = syncService.pushLocalChanges(retryWhenLocked: true);
+      // The tray service awaits this future before it exits. This waits for an
+      // existing/deferred push as well as a newly requested one, so closing
+      // during a regular sync cannot strand the app in the system tray.
+      final push =
+          _windowsExitPushInFlight ?? syncService.flushPendingChangesForExit();
       _windowsExitPushInFlight = push;
-      unawaited(push.whenComplete(() => _windowsExitPushInFlight = null));
-      return true;
+      try {
+        return !(await push);
+      } finally {
+        if (identical(_windowsExitPushInFlight, push)) {
+          _windowsExitPushInFlight = null;
+        }
+      }
     });
-    _syncStatusSub = ref.listenManual<AsyncValue<SyncStatus>>(
-      syncStatusProvider,
-      (previous, next) {
-        final status = next.valueOrNull;
-        if (status != null) SystemTrayService.instance.updateSyncStatus(status);
-      },
-    );
-    SystemTrayService.instance.updateSyncStatus(syncService.status);
     Future.microtask(() async {
       SettingsSyncCoordinator.instance.start();
       await SystemTrayService.instance.initialize();
@@ -94,7 +89,6 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
 
   @override
   void dispose() {
-    _syncStatusSub?.close();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }

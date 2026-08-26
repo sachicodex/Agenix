@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'app_colors.dart';
 
@@ -23,8 +24,11 @@ class AppGradients {
 }
 
 class AppButtonStyles {
+  /// The default corner radius for all app buttons. Override this per button
+  /// when a denser or softer component is required.
+  static const BorderRadius radius = BorderRadius.all(Radius.circular(12));
   static const BorderRadius secondaryActionRadius = BorderRadius.all(
-    Radius.circular(16),
+    Radius.circular(12),
   );
   static const EdgeInsets secondaryActionPadding = EdgeInsets.symmetric(
     horizontal: 16,
@@ -34,7 +38,7 @@ class AppButtonStyles {
     fontFamily: 'Montserrat',
     color: AppColors.onSurface,
     fontSize: 15,
-    fontWeight: FontWeight.w600,
+    fontWeight: FontWeight.w700,
   );
 }
 
@@ -124,9 +128,7 @@ class AppTheme {
             fontFamily: 'Montserrat',
             fontWeight: FontWeight.w700,
           ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppRadius.control),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: AppButtonStyles.radius),
           minimumSize: const Size(120, 44),
         ),
       ),
@@ -136,12 +138,10 @@ class AppTheme {
           animationDuration: AppMotion.short,
           textStyle: const TextStyle(
             fontFamily: 'Montserrat',
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w700,
           ),
           side: const BorderSide(color: AppColors.borderColor),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppRadius.control),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: AppButtonStyles.radius),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
@@ -150,19 +150,34 @@ class AppTheme {
           animationDuration: AppMotion.short,
           textStyle: const TextStyle(
             fontFamily: 'Montserrat',
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w700,
+          ),
+          shape: const RoundedRectangleBorder(
+            borderRadius: AppButtonStyles.radius,
           ),
         ),
       ),
       iconButtonTheme: IconButtonThemeData(
-        style: IconButton.styleFrom(animationDuration: AppMotion.short),
+        style: IconButton.styleFrom(
+          animationDuration: AppMotion.short,
+          shape: const RoundedRectangleBorder(
+            borderRadius: AppButtonStyles.radius,
+          ),
+        ),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
+          backgroundColor: AppColors.primary,
+          foregroundColor: AppColors.onPrimary,
+          animationDuration: AppMotion.short,
           textStyle: const TextStyle(
             fontFamily: 'Montserrat',
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w700,
           ),
+          shape: const RoundedRectangleBorder(
+            borderRadius: AppButtonStyles.radius,
+          ),
+          minimumSize: const Size(120, 44),
         ),
       ),
       scrollbarTheme: ScrollbarThemeData(
@@ -190,6 +205,9 @@ class AppTheme {
       dialogTheme: DialogThemeData(
         backgroundColor: AppColors.surface,
         surfaceTintColor: Colors.transparent,
+        insetPadding: defaultTargetPlatform == TargetPlatform.android
+            ? const EdgeInsets.symmetric(horizontal: 16, vertical: 24)
+            : const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
         titleTextStyle: const TextStyle(
           fontFamily: 'Montserrat',
           color: AppColors.onBackground,

@@ -21,6 +21,7 @@ import '../widgets/app_select_field.dart';
 import '../widgets/app_popup.dart';
 import '../widgets/calendar_color_picker.dart';
 import '../navigation/app_route_observer.dart';
+import '../utils/platform_focus.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   static const routeName = '/settings';
@@ -78,14 +79,14 @@ class _SettingsCreateCalendarDialogState
   @override
   Widget build(BuildContext context) => AlertDialog(
     content: SizedBox(
-      width: 360,
+      width: appPopupWidth(context, 360),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           TextField(
             controller: _nameController,
-            autofocus: true,
+            autofocus: shouldAutofocusTextInput,
             textCapitalization: TextCapitalization.sentences,
             style: AppTextStyles.bodyText1,
             decoration: InputDecoration(
@@ -1194,6 +1195,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       children: [
         TextField(
           controller: _apiKeyController,
+          autofocus: shouldAutofocusTextInput,
           decoration: InputDecoration(
             hintText: 'Enter your AI API key',
             hintStyle: AppTextStyles.bodyText1.copyWith(

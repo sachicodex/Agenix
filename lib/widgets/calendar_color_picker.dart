@@ -3,7 +3,9 @@ import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'dart:async';
 
 import '../theme/app_colors.dart';
+import '../services/calendar_palette_sync_service.dart';
 import 'app_popup.dart';
+import '../utils/platform_focus.dart';
 
 const _baseCalendarColors = <Color>[
   Color(0xFFD65A82),
@@ -33,8 +35,13 @@ const _baseCalendarColors = <Color>[
 ];
 
 final _customCalendarColors = ValueNotifier<List<Color>>(<Color>[]);
+final _calendarPaletteSync = CalendarPaletteSyncService();
+String? _loadedPaletteUserId;
+Future<void>? _paletteLoadInFlight;
+StreamSubscription<CalendarPaletteData>? _paletteSubscription;
+List<int>? _pendingPaletteUpload;
 
-class CalendarColorPalette extends StatelessWidget {
+class CalendarColorPalette extends StatefulWidget {
   const CalendarColorPalette({
     super.key,
     required this.selectedColor,
@@ -43,6 +50,95 @@ class CalendarColorPalette extends StatelessWidget {
 
   final Color selectedColor;
   final ValueChanged<Color> onChanged;
+
+  @override
+  State<CalendarColorPalette> createState() => _CalendarColorPaletteState();
+}
+
+class _CalendarColorPaletteState extends State<CalendarColorPalette> {
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadCustomColors());
+  }
+
+  Future<void> _loadCustomColors() {
+    return _paletteLoadInFlight ??= () async {
+      try {
+        final cachedColors = await _calendarPaletteSync.loadCached();
+        if (cachedColors.isNotEmpty) {
+          _customCalendarColors.value = cachedColors.map(Color.new).toList();
+        }
+        final data = await _calendarPaletteSync.loadForCurrentUser();
+        if (data == null) return;
+        final subscribedUserId = _loadedPaletteUserId;
+        // Never discard a locally-created palette when this device comes
+        // online before it has had a chance to upload it.
+        final cloudColors = data.colors;
+        if (cloudColors.isEmpty && cachedColors.isNotEmpty) {
+          _pendingPaletteUpload = cachedColors;
+          unawaited(_calendarPaletteSync.saveForCurrentUser(cachedColors));
+        } else {
+          _applyCloudPalette(data);
+        }
+        if (subscribedUserId == data.userId && _paletteSubscription != null) {
+          return;
+        }
+        await _paletteSubscription?.cancel();
+        _loadedPaletteUserId = data.userId;
+        _paletteSubscription = _calendarPaletteSync
+            .watchForUser(data.userId)
+            .listen(
+              (data) {
+                final pending = _pendingPaletteUpload;
+                if (pending != null) {
+                  if (_sameColorValues(pending, data.colors)) {
+                    _pendingPaletteUpload = null;
+                  } else if (data.colors.isEmpty && pending.isNotEmpty) {
+                    // Ignore Firestore's initial empty snapshot while a local
+                    // offline palette is being uploaded.
+                    return;
+                  }
+                }
+                _applyCloudPalette(data);
+              },
+              onError: (_, _) {
+                // Keep the current local palette visible when offline.
+              },
+            );
+      } finally {
+        _paletteLoadInFlight = null;
+      }
+    }();
+  }
+
+  Future<void> _saveCustomColors(List<Color> colors) async {
+    final values = colors.map((color) => color.toARGB32()).toList();
+    _pendingPaletteUpload = values;
+    await _calendarPaletteSync.saveForCurrentUser(values);
+  }
+
+  void _applyCloudPalette(CalendarPaletteData data) {
+    _loadedPaletteUserId = data.userId;
+    final nextColors = data.colors.map(Color.new).toList();
+    if (_sameColors(_customCalendarColors.value, nextColors)) return;
+    _customCalendarColors.value = nextColors;
+  }
+
+  bool _sameColors(List<Color> first, List<Color> second) {
+    return _sameColorValues(
+      first.map((color) => color.toARGB32()).toList(),
+      second.map((color) => color.toARGB32()).toList(),
+    );
+  }
+
+  bool _sameColorValues(List<int> first, List<int> second) {
+    if (first.length != second.length) return false;
+    for (var index = 0; index < first.length; index++) {
+      if (first[index] != second[index]) return false;
+    }
+    return true;
+  }
 
   @override
   Widget build(BuildContext context) => ValueListenableBuilder<List<Color>>(
@@ -56,8 +152,8 @@ class CalendarColorPalette extends StatelessWidget {
           ...colors.map(
             (color) => _ColorSwatch(
               color: color,
-              selected: color.toARGB32() == selectedColor.toARGB32(),
-              onTap: () => onChanged(color),
+              selected: color.toARGB32() == widget.selectedColor.toARGB32(),
+              onTap: () => widget.onChanged(color),
               onHold: customColors.contains(color)
                   ? () async {
                       final confirmed = await showAppDialog<bool>(
@@ -80,12 +176,13 @@ class CalendarColorPalette extends StatelessWidget {
                         ),
                       );
                       if (confirmed == true) {
-                        _customCalendarColors.value = _customCalendarColors
-                            .value
+                        final nextColors = _customCalendarColors.value
                             .where(
                               (item) => item.toARGB32() != color.toARGB32(),
                             )
                             .toList();
+                        _customCalendarColors.value = nextColors;
+                        unawaited(_saveCustomColors(nextColors));
                       }
                     }
                   : null,
@@ -102,12 +199,11 @@ class CalendarColorPalette extends StatelessWidget {
               if (!_customCalendarColors.value.any(
                 (item) => item.toARGB32() == color.toARGB32(),
               )) {
-                _customCalendarColors.value = [
-                  ..._customCalendarColors.value,
-                  color,
-                ];
+                final nextColors = [..._customCalendarColors.value, color];
+                _customCalendarColors.value = nextColors;
+                unawaited(_saveCustomColors(nextColors));
               }
-              onChanged(color);
+              widget.onChanged(color);
             },
           ),
         ],
@@ -237,7 +333,7 @@ class _CustomColorDialogState extends State<_CustomColorDialog> {
         ],
       ),
       content: SizedBox(
-        width: 360,
+        width: appPopupWidth(context, 360),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -264,6 +360,7 @@ class _CustomColorDialogState extends State<_CustomColorDialog> {
                 Expanded(
                   child: TextField(
                     controller: _hex,
+                    autofocus: shouldAutofocusTextInput,
                     onChanged: _setHex,
                     maxLength: 6,
                     decoration: InputDecoration(

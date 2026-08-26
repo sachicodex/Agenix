@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import 'app_popup.dart';
+import '../utils/platform_focus.dart';
 
 class LargeTextField extends StatelessWidget {
   static final ValueNotifier<bool> _unfocused = ValueNotifier<bool>(false);
@@ -86,7 +87,7 @@ class LargeTextField extends StatelessWidget {
             builder: (context, _) => TextField(
               controller: controller,
               focusNode: focusNode,
-              autofocus: autofocus,
+              autofocus: autofocus && shouldAutofocusTextInput,
               minLines: minLines,
               maxLines: maxLines,
               onChanged: onChanged,
@@ -237,7 +238,7 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
                   Expanded(
                     child: TextField(
                       controller: controller,
-                      autofocus: true,
+                      autofocus: shouldAutofocusTextInput,
                       expands: true,
                       maxLines: null,
                       minLines: null,
@@ -354,6 +355,7 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
               TextField(
                 controller: widget.controller,
                 focusNode: _focusNode,
+                autofocus: shouldAutofocusTextInput,
                 minLines: widget.minLines,
                 maxLines: widget.maxLines,
                 textInputAction: TextInputAction.newline,

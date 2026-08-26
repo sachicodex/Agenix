@@ -23,6 +23,7 @@ import '../widgets/modern_splash_screen.dart';
 import '../widgets/delete_event_dialog.dart';
 import '../widgets/secondary_action_button.dart';
 import '../controllers/timeline_zoom_controller.dart';
+import '../utils/platform_focus.dart';
 import '../widgets/timeline_event_block_content.dart';
 import '../widgets/timeline_hour_ruler.dart';
 import '../widgets/timeline_zoom_viewport.dart';
@@ -94,7 +95,7 @@ class _YearPickerDialogState extends State<_YearPickerDialog> {
             Row(
               children: [
                 const Expanded(
-                  child: Text('Select year', style: AppTextStyles.headline2),
+                  child: Text('Select year', style: AppTextStyles.headline3),
                 ),
                 IconButton(
                   onPressed: () => Navigator.of(context).pop(),
@@ -341,7 +342,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     );
     _handleSyncStatusChanged(ref.read(syncStatusProvider));
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+      if (!mounted || !shouldAutofocusTextInput) return;
       _keyboardListenerFocusNode.requestFocus();
     });
   }
@@ -2544,12 +2545,13 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                 style: TextStyle(color: AppColors.onBackground),
               ),
               content: SizedBox(
-                width: 440,
+                width: appPopupWidth(context, 440),
                 height: 420,
                 child: Column(
                   children: [
                     TextField(
                       controller: controller,
+                      autofocus: shouldAutofocusTextInput,
                       style: const TextStyle(color: AppColors.onBackground),
                       decoration: InputDecoration(
                         hintText: 'Type title, location, description',

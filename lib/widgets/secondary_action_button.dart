@@ -2,24 +2,37 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import 'app_icon.dart';
 
 class SecondaryActionButton extends StatelessWidget {
   const SecondaryActionButton({
     super.key,
     required this.onPressed,
-    required this.icon,
+    this.icon,
+    this.appIcon,
     required this.label,
     this.iconBuilder,
     this.borderRadius = AppButtonStyles.secondaryActionRadius,
     this.padding = AppButtonStyles.secondaryActionPadding,
-  });
+    this.gradient,
+    this.disabledGradient,
+    this.labelStyle,
+  }) : assert(icon != null || appIcon != null, 'Provide icon or appIcon.');
 
   final VoidCallback? onPressed;
-  final IconData icon;
+
+  /// Legacy Material icon input. Prefer [appIcon] in new reusable UI.
+  final IconData? icon;
+  final AppIconData? appIcon;
   final String label;
   final Widget Function(BuildContext context, IconData icon)? iconBuilder;
   final BorderRadius borderRadius;
   final EdgeInsetsGeometry padding;
+  final Gradient? gradient;
+  final Gradient? disabledGradient;
+
+  /// Overrides the default bold label style for this button only.
+  final TextStyle? labelStyle;
 
   @override
   Widget build(BuildContext context) {
@@ -28,15 +41,17 @@ class SecondaryActionButton extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         gradient: enabled
-            ? AppGradients.secondaryActionButton
-            : LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  const Color(0xFF2A2A2A).withValues(alpha: 0.6),
-                  const Color(0xFF1E1E1E).withValues(alpha: 0.6),
-                ],
-              ),
+            ? (gradient ?? AppGradients.secondaryActionButton)
+            : (disabledGradient ??
+                  gradient ??
+                  LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      const Color(0xFF2A2A2A).withValues(alpha: 0.6),
+                      const Color(0xFF1E1E1E).withValues(alpha: 0.6),
+                    ],
+                  )),
         borderRadius: borderRadius,
       ),
       child: Material(
@@ -58,17 +73,26 @@ class SecondaryActionButton extends StatelessWidget {
             padding: padding,
             child: Row(
               children: [
-                iconBuilder?.call(context, icon) ??
-                    Icon(
-                      icon,
-                      size: AppButtonStyles.secondaryActionIconSize,
-                      color: AppColors.onSurface,
-                    ),
+                if (appIcon != null)
+                  AppIcon(
+                    icon: appIcon!,
+                    size: AppButtonStyles.secondaryActionIconSize,
+                    color: AppColors.onSurface,
+                  )
+                else
+                  iconBuilder?.call(context, icon!) ??
+                      Icon(
+                        icon!,
+                        size: AppButtonStyles.secondaryActionIconSize,
+                        color: AppColors.onSurface,
+                      ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     label,
-                    style: AppButtonStyles.secondaryActionLabel,
+                    style: AppButtonStyles.secondaryActionLabel.merge(
+                      labelStyle,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
