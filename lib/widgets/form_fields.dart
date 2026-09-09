@@ -487,17 +487,14 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
           _formatButton(
             Icons.format_bold,
             () => _format(Attribute.bold),
-            tooltip: 'Bold',
           ),
           _formatButton(
             Icons.format_italic,
             () => _format(Attribute.italic),
-            tooltip: 'Italic',
           ),
           _formatButton(
             Icons.format_underlined,
             () => _format(Attribute.underline),
-            tooltip: 'Underline',
           ),
           const SizedBox(width: 4),
           Container(width: 1, height: 22, color: AppColors.borderColor),
@@ -505,23 +502,25 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
           _formatButton(
             Icons.format_list_numbered,
             () => _format(Attribute.ol),
-            tooltip: 'Numbered list',
           ),
           _formatButton(
             Icons.format_list_bulleted,
             () => _format(Attribute.ul),
-            tooltip: 'Bulleted list',
           ),
           const SizedBox(width: 4),
           Container(width: 1, height: 22, color: AppColors.borderColor),
           const SizedBox(width: 4),
-          _formatButton(Icons.link, _addLink, tooltip: 'Add link'),
+          _formatButton(Icons.link, _addLink, ),
           _formatButton(
             Icons.format_clear,
             _clearFormatting,
             tooltip: 'Clear formatting',
           ),
           const Spacer(),
+          _formatButton(
+            Icons.keyboard_arrow_up,
+            _toggleExpanded,
+          ),
           if (widget.onAIClick != null)
             IconButton(
               tooltip: 'Improve with AI',
@@ -556,50 +555,48 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Column(
         children: [
-          Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: _toggleExpanded,
-              borderRadius: BorderRadius.circular(12),
-              child: Container(
-                height: 54,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.borderColor),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.notes_outlined,
-                      size: 19,
-                      color: AppColors.onSurface.withValues(alpha: 0.62),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        hasText ? 'Description added' : 'Add description',
-                        style: AppTextStyles.bodyText1.copyWith(
-                          color: AppColors.onSurface.withValues(
-                            alpha: hasText ? 0.9 : 0.62,
+          if (!_isExpanded)
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: _toggleExpanded,
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  height: 54,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.borderColor),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.notes_outlined,
+                        size: 19,
+                        color: AppColors.onSurface.withValues(alpha: 0.62),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          hasText ? 'Description added' : 'Add description',
+                          style: AppTextStyles.bodyText1.copyWith(
+                            color: AppColors.onSurface.withValues(
+                              alpha: hasText ? 0.9 : 0.62,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                    Icon(
-                      _isExpanded
-                          ? Icons.keyboard_arrow_up
-                          : Icons.keyboard_arrow_down,
-                      color: AppColors.onSurface.withValues(alpha: 0.72),
-                    ),
-                  ],
+                      Icon(
+                        Icons.keyboard_arrow_down,
+                        color: AppColors.onSurface.withValues(alpha: 0.72),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
           if (_isExpanded) ...[
-            const SizedBox(height: 8),
             Container(
               decoration: BoxDecoration(
                 color: AppColors.surface,

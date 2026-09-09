@@ -59,7 +59,6 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
   bool _creatingCalendar = false;
   bool _showTitleError = false;
   bool _showCalendarError = false;
-  bool _descriptionExpanded = false;
   Timer? _requiredFieldErrorTimer;
   String? _originalUserTitle;
   final GroqService _groqService = GroqService();
@@ -842,21 +841,20 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
           maxLines: 5,
           onAIClick: _optimizeOrGenerateDescription,
           aiLoading: _descriptionAILoading,
-          onExpansionChanged: (expanded) {
-            if (mounted) setState(() => _descriptionExpanded = expanded);
-          },
         ),
-        const SizedBox(height: 24),
-        Row(
-          children: [
-            Expanded(
-              child: PrimaryActionButton(
-                onPressed: _saving || _creatingCalendar ? null : _saveEvent,
-                minimumSize: const Size.fromHeight(44),
-                label: Text(_saving ? 'Saving...' : 'Save'),
-              ),
-            ),
-          ],
+      ],
+    );
+  }
+
+  Widget _buildSaveButton() {
+    return Row(
+      children: [
+        Expanded(
+          child: PrimaryActionButton(
+            onPressed: _saving || _creatingCalendar ? null : _saveEvent,
+            minimumSize: const Size.fromHeight(44),
+            label: Text(_saving ? 'Saving...' : 'Save'),
+          ),
         ),
       ],
     );
@@ -926,55 +924,35 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
                 maxWidth: media.size.width,
                 maxHeight: maxHeight,
               ),
-              child: _descriptionExpanded
-                  ? SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (includeHandle) ...[
-                            Center(
-                              child: Container(
-                                width: 38,
-                                height: 4,
-                                decoration: BoxDecoration(
-                                  color: AppColors.onSurface.withValues(
-                                    alpha: 0.24,
-                                  ),
-                                  borderRadius: BorderRadius.circular(2),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                          ],
-                          _buildFormContent(context),
-                        ],
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (includeHandle) ...[
+                      Center(
+                        child: Container(
+                          width: 38,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: AppColors.onSurface.withValues(alpha: 0.24),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
                       ),
-                    )
-                  : Padding(
-                      padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (includeHandle) ...[
-                            Center(
-                              child: Container(
-                                width: 38,
-                                height: 4,
-                                decoration: BoxDecoration(
-                                  color: AppColors.onSurface.withValues(
-                                    alpha: 0.24,
-                                  ),
-                                  borderRadius: BorderRadius.circular(2),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                          ],
-                          _buildFormContent(context),
-                        ],
+                      const SizedBox(height: 12),
+                    ],
+                    Flexible(
+                      child: SingleChildScrollView(
+                        physics: const ClampingScrollPhysics(),
+                        child: _buildFormContent(context),
                       ),
                     ),
+                    const SizedBox(height: 12),
+                    _buildSaveButton(),
+                  ],
+                ),
+              ),
             ),
           ),
         ),
@@ -993,17 +971,22 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
             child: Container(
               width: 500,
               padding: const EdgeInsets.all(24),
-              child: _descriptionExpanded
-                  ? ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxHeight: media.size.height * 0.9,
-                      ),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: media.size.height * 0.9),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
                       child: SingleChildScrollView(
                         physics: const ClampingScrollPhysics(),
                         child: _buildFormContent(context),
                       ),
-                    )
-                  : _buildFormContent(context),
+                    ),
+                    const SizedBox(height: 12),
+                    _buildSaveButton(),
+                  ],
+                ),
+              ),
             ),
           );
 
