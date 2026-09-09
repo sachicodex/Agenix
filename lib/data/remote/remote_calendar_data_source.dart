@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:googleapis/calendar/v3.dart' as calendar;
 import 'package:flutter/material.dart';
+import 'package:flutter_quill_delta_from_html/flutter_quill_delta_from_html.dart';
 
 import '../../models/calendar_event.dart';
 import '../../services/google_calendar_service.dart';
@@ -41,7 +42,7 @@ class RemoteCalendarDataSource {
   Future<CalendarEvent> insertEvent({required CalendarEvent event}) async {
     final created = await _googleService.insertEvent(
       summary: event.title,
-      description: event.description,
+      description: _descriptionForGoogle(event.description),
       recurrence: event.recurrence.isEmpty
           ? null
           : event.recurrence.split('\n'),
@@ -66,7 +67,7 @@ class RemoteCalendarDataSource {
     final updated = await _googleService.updateEvent(
       eventId: event.gEventId!,
       summary: event.title,
-      description: event.description,
+      description: _descriptionForGoogle(event.description),
       recurrence: event.recurrence.isEmpty
           ? null
           : event.recurrence.split('\n'),
@@ -80,6 +81,112 @@ class RemoteCalendarDataSource {
       calendarId: event.calendarId,
       fallbackColor: event.color,
     );
+  }
+
+  String _descriptionForGoogle(String value) {
+    if (!value.startsWith('quill:')) {
+      return _plainTextToHtml(value);
+    }
+    try {
+      final operations = jsonDecode(value.substring(6)) as List;
+      final html = StringBuffer();
+      final currentLine = StringBuffer();
+      String? openList;
+
+      void closeList() {
+        if (openList != null) {
+          html.write('</$openList>');
+          openList = null;
+        }
+      }
+
+      void writeLine(Map<String, dynamic> attributes) {
+        final list = attributes['list'] as String?;
+        if (list == 'ordered' || list == 'bullet') {
+          final tag = list == 'ordered' ? 'ol' : 'ul';
+          if (openList != tag) {
+            closeList();
+            html.write('<$tag>');
+            openList = tag;
+          }
+          html
+            ..write('<li>')
+            ..write(currentLine)
+            ..write('</li>');
+        } else {
+          closeList();
+          html
+            ..write('<p>')
+            ..write(currentLine.isEmpty ? '<br>' : currentLine)
+            ..write('</p>');
+        }
+        currentLine.clear();
+      }
+
+      for (final operation in operations) {
+        if (operation is! Map) continue;
+        final insert = operation['insert'];
+        final attributes = Map<String, dynamic>.from(
+          (operation['attributes'] as Map?) ?? const <String, dynamic>{},
+        );
+        if (insert is! String) continue;
+
+        final parts = insert.split('\n');
+        for (var index = 0; index < parts.length; index++) {
+          if (parts[index].isNotEmpty) {
+            currentLine.write(_inlineHtml(parts[index], attributes));
+          }
+          if (index < parts.length - 1) writeLine(attributes);
+        }
+      }
+      if (currentLine.isNotEmpty) writeLine(const <String, dynamic>{});
+      closeList();
+      return html.toString();
+    } catch (_) {
+      return _plainTextToHtml(value.substring(6));
+    }
+  }
+
+  String _plainTextToHtml(String value) {
+    return value
+        .split('\n')
+        .map((line) => '<p>${_escapeHtml(line.isEmpty ? '<br>' : line)}</p>')
+        .join();
+  }
+
+  String _inlineHtml(String value, Map<String, dynamic> attributes) {
+    var result = _escapeHtml(value);
+    if (attributes['bold'] == true) result = '<strong>$result</strong>';
+    if (attributes['italic'] == true) result = '<em>$result</em>';
+    if (attributes['underline'] == true) result = '<u>$result</u>';
+    if (attributes['strike'] == true) result = '<s>$result</s>';
+    final link = attributes['link'];
+    if (link is String && link.isNotEmpty) {
+      result = '<a href="${_escapeHtml(link)}">$result</a>';
+    }
+    return result;
+  }
+
+  String _escapeHtml(String value) => value
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
+
+  String _descriptionFromGoogle(String value) {
+    if (value.isEmpty || value.startsWith('quill:')) return value;
+    if (!RegExp(r'<[a-z][^>]*>', caseSensitive: false).hasMatch(value)) {
+      return value;
+    }
+    try {
+      final delta = HtmlToDelta().convert(value, transformTableAsEmbed: false);
+      return 'quill:${jsonEncode(delta.toJson())}';
+    } catch (_) {
+      // Preserve readable server content if the HTML contains an unsupported
+      // construct.
+      return value;
+    }
   }
 
   Future<CalendarEvent> moveEvent({
@@ -138,7 +245,7 @@ class RemoteCalendarDataSource {
       gEventId: data['id'] as String? ?? data['googleCalendarId'] as String?,
       calendarId: data['calendarId'] as String? ?? 'primary',
       title: data['title'] as String? ?? '(No Title)',
-      description: data['description'] as String? ?? '',
+      description: _descriptionFromGoogle(data['description'] as String? ?? ''),
       location: data['location'] as String? ?? '',
       startDateTime: data['startDateTime'] as DateTime,
       endDateTime: data['endDateTime'] as DateTime,
@@ -173,7 +280,7 @@ class RemoteCalendarDataSource {
       title: event.summary?.trim().isNotEmpty == true
           ? event.summary!.trim()
           : '(No Title)',
-      description: event.description ?? '',
+      description: _descriptionFromGoogle(event.description ?? ''),
       location: event.location ?? '',
       startDateTime: start,
       endDateTime: end,

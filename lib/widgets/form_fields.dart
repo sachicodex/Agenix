@@ -26,6 +26,10 @@ class _ToggleNumberListIntent extends Intent {
   const _ToggleNumberListIntent();
 }
 
+class _ToggleBoldIntent extends Intent {
+  const _ToggleBoldIntent();
+}
+
 class _AddLinkIntent extends Intent {
   const _AddLinkIntent();
 }
@@ -226,13 +230,16 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
   }
 
   void _handleQuillChanged() {
-    if (_syncingExternalText || widget.controller == null) return;
-    final encoded =
-        'quill:${jsonEncode(_quillController.document.toDelta().toJson())}';
-    if (widget.controller!.text == encoded) return;
-    _syncingExternalText = true;
-    widget.controller!.value = TextEditingValue(text: encoded);
-    _syncingExternalText = false;
+    if (_syncingExternalText) return;
+    if (widget.controller != null) {
+      final encoded =
+          'quill:${jsonEncode(_quillController.document.toDelta().toJson())}';
+      if (widget.controller!.text != encoded) {
+        _syncingExternalText = true;
+        widget.controller!.value = TextEditingValue(text: encoded);
+        _syncingExternalText = false;
+      }
+    }
     if (mounted) setState(() {});
   }
 
@@ -270,11 +277,62 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
   }
 
   void _format(Attribute attribute) {
-    if (attribute == Attribute.ul || attribute == Attribute.ol) {
+    final currentAttribute = _quillController
+        .getSelectionStyle()
+        .attributes[attribute.key];
+    final isActive = attribute == Attribute.ul || attribute == Attribute.ol
+        ? currentAttribute?.value == attribute.value
+        : currentAttribute != null;
+
+    if (!isActive && (attribute == Attribute.ul || attribute == Attribute.ol)) {
       _insertListSpacerIfNeeded();
     }
-    _quillController.formatSelection(attribute);
+
+    if (isActive &&
+        (attribute == Attribute.ul || attribute == Attribute.ol) &&
+        _exitEmptyListItemIfNeeded()) {
+      _focusNode.requestFocus();
+      return;
+    }
+
+    _quillController.formatSelection(
+      isActive ? Attribute.clone(attribute, null) : attribute,
+    );
     _focusNode.requestFocus();
+  }
+
+  bool _exitEmptyListItemIfNeeded() {
+    final selection = _quillController.selection;
+    if (!selection.isValid || !selection.isCollapsed) return false;
+
+    final plainText = _quillController.document.toPlainText();
+    final cursor = selection.start.clamp(0, plainText.length);
+    final lineStart = plainText.lastIndexOf('\n', cursor - 1) + 1;
+    final lineEnd = plainText.indexOf('\n', cursor);
+    final lineText = plainText.substring(
+      lineStart,
+      lineEnd == -1 ? plainText.length : lineEnd,
+    );
+    if (lineText.trim().isNotEmpty) return false;
+
+    final node = _quillController.document.queryChild(lineStart).node;
+    if (node is! Line ||
+        !node.style.attributes.containsKey(Attribute.list.key)) {
+      return false;
+    }
+
+    _quillController.formatText(
+      selection.start,
+      1,
+      Attribute.clone(Attribute.list, null),
+    );
+    _quillController.replaceText(
+      selection.start,
+      0,
+      '\n',
+      TextSelection.collapsed(offset: selection.start + 1),
+    );
+    return true;
   }
 
   void _insertListSpacerIfNeeded() {
@@ -395,15 +453,56 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
       scrollable: true,
       scrollPhysics: const ClampingScrollPhysics(),
       placeholder: null,
+      // Quill styles ordered-list markers from the line style, while bold is
+      // usually an inline style on the text. Mirror an all-bold list item on
+      // its marker so the number visually belongs to the formatted text.
+      // ignore: experimental_member_use
+      customLeadingBlockBuilder: (node, config) {
+        if (config.attribute != Attribute.ol || node is! Line) return null;
+
+        final textChildren = node.children
+            .where((child) => child.toPlainText().isNotEmpty)
+            .toList();
+        final isEntireLineBold =
+            textChildren.isNotEmpty &&
+            textChildren.every(
+              (child) => child.style.containsKey(Attribute.bold.key),
+            );
+        if (!isEntireLineBold) return null;
+
+        return QuillNumberPoint(
+          index: config.getIndexNumberByIndent!,
+          indentLevelCounts: config.indentLevelCounts,
+          count: config.count,
+          style: config.style!.copyWith(fontWeight: FontWeight.bold),
+          attrs: config.attrs,
+          width: config.width!,
+          padding: config.padding!,
+        );
+      },
       customShortcuts: {
         const SingleActivator(LogicalKeyboardKey.keyB, control: true):
-            const _ToggleBulletListIntent(),
-        const SingleActivator(LogicalKeyboardKey.keyN, control: true):
-            const _ToggleNumberListIntent(),
-        const SingleActivator(LogicalKeyboardKey.keyL, control: true):
+            const _ToggleBoldIntent(),
+        const SingleActivator(
+          LogicalKeyboardKey.keyU,
+          control: true,
+          shift: true,
+        ): const _ToggleBulletListIntent(),
+        const SingleActivator(
+          LogicalKeyboardKey.keyO,
+          control: true,
+          shift: true,
+        ): const _ToggleNumberListIntent(),
+        const SingleActivator(LogicalKeyboardKey.keyK, control: true):
             const _AddLinkIntent(),
       },
       customActions: {
+        _ToggleBoldIntent: CallbackAction<_ToggleBoldIntent>(
+          onInvoke: (_) {
+            _format(Attribute.bold);
+            return null;
+          },
+        ),
         _ToggleBulletListIntent: CallbackAction<_ToggleBulletListIntent>(
           onInvoke: (_) {
             _format(Attribute.ul);
@@ -425,29 +524,60 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
       },
       // Quill exposes this hook for precise keyboard behavior in list blocks.
       // ignore: experimental_member_use
-      onKeyPressed: (event, node) {
+      onKeyPressed: (event, _) {
         final selection = _quillController.selection;
-        final isEmptyListLine =
-            node is Line &&
-            node.toPlainText().trim().isEmpty &&
-            node.style.attributes.containsKey(Attribute.list.key);
-        if (event.logicalKey == LogicalKeyboardKey.backspace &&
-            selection.isCollapsed &&
-            isEmptyListLine) {
-          // Backspace exits the list from its empty final item. Keep a blank
-          // paragraph between the list and the normal line that follows it.
-          _quillController.formatText(
-            selection.start,
-            1,
-            Attribute.clone(Attribute.list, null),
+        if (event is KeyDownEvent &&
+            event.logicalKey == LogicalKeyboardKey.backspace &&
+            selection.isCollapsed) {
+          final plainText = _quillController.document.toPlainText();
+          final cursor = selection.start.clamp(0, plainText.length);
+          final lineStart = plainText.lastIndexOf('\n', cursor - 1) + 1;
+          final lineEnd = plainText.indexOf('\n', cursor);
+          final lineText = plainText.substring(
+            lineStart,
+            lineEnd == -1 ? plainText.length : lineEnd,
           );
-          _quillController.replaceText(
-            selection.start,
-            0,
-            '\n',
-            TextSelection.collapsed(offset: selection.start + 1),
+          final node = _quillController.document.queryChild(lineStart).node;
+          final isListLine =
+              node is Line &&
+              node.style.attributes.containsKey(Attribute.list.key);
+          final characterBeforeCaret =
+              cursor > 0 && plainText[cursor - 1] != '\n'
+              ? plainText[cursor - 1]
+              : null;
+
+          debugPrint(
+            '[DescriptionEditor] Backspace: cursor=$cursor '
+            'lineStart=$lineStart line="${lineText.replaceAll('\n', r'\n')}" '
+            'charBefore=$characterBeforeCaret isList=$isListLine',
           );
-          return KeyEventResult.handled;
+
+          if (!isListLine) return null;
+
+          // Handle character deletion ourselves for list lines. This prevents
+          // Quill from interpreting deletion of the final character as an
+          // empty-list exit in the same key event.
+          if (characterBeforeCaret != null) {
+            _quillController.replaceText(
+              cursor - 1,
+              1,
+              '',
+              TextSelection.collapsed(offset: cursor - 1),
+            );
+            debugPrint(
+              '[DescriptionEditor] Deleted list character '
+              '"$characterBeforeCaret"; list remains active',
+            );
+            return KeyEventResult.handled;
+          }
+
+          if (_exitEmptyListItemIfNeeded()) {
+            debugPrint(
+              '[DescriptionEditor] Empty list item exited; '
+              'inserted spaced normal line',
+            );
+            return KeyEventResult.handled;
+          }
         }
         return null;
       },
@@ -458,19 +588,38 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
     IconData icon,
     VoidCallback onPressed, {
     String? tooltip,
+    bool isActive = false,
   }) {
-    return IconButton(
-      tooltip: tooltip,
-      onPressed: onPressed,
-      icon: Icon(icon, size: 18),
-      color: AppColors.onSurface.withValues(alpha: 0.78),
-      padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
-      splashRadius: 17,
+    return Container(
+      decoration: BoxDecoration(
+        color: isActive
+            ? AppColors.primary.withValues(alpha: 0.18)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(6),
+        border: isActive
+            ? Border.all(color: AppColors.primary.withValues(alpha: 0.55))
+            : null,
+      ),
+      child: IconButton(
+        tooltip: tooltip,
+        onPressed: onPressed,
+        icon: Icon(icon, size: 18),
+        color: isActive
+            ? AppColors.primary
+            : AppColors.onSurface.withValues(alpha: 0.78),
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+        splashRadius: 17,
+      ),
     );
   }
 
   Widget _formattingToolbar() {
+    final selectionStyle = _quillController.getSelectionStyle();
+    final attributes = selectionStyle.attributes;
+    bool isActive(Attribute attribute) => attributes[attribute.key] != null;
+    final activeList = attributes[Attribute.list.key]?.value;
+
     return Container(
       height: 42,
       padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -487,14 +636,20 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
           _formatButton(
             Icons.format_bold,
             () => _format(Attribute.bold),
+            isActive: isActive(Attribute.bold),
+            tooltip: 'Bold (Ctrl+B)',
           ),
           _formatButton(
             Icons.format_italic,
             () => _format(Attribute.italic),
+            isActive: isActive(Attribute.italic),
+            tooltip: 'Italic (Ctrl+I)',
           ),
           _formatButton(
             Icons.format_underlined,
             () => _format(Attribute.underline),
+            isActive: isActive(Attribute.underline),
+            tooltip: 'Underline (Ctrl+U)',
           ),
           const SizedBox(width: 4),
           Container(width: 1, height: 22, color: AppColors.borderColor),
@@ -502,25 +657,26 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
           _formatButton(
             Icons.format_list_numbered,
             () => _format(Attribute.ol),
+            isActive: activeList == Attribute.ol.value,
+            tooltip: 'Numbered list (Ctrl+Shift+O)',
           ),
           _formatButton(
             Icons.format_list_bulleted,
             () => _format(Attribute.ul),
+            isActive: activeList == Attribute.ul.value,
+            tooltip: 'Bulleted list (Ctrl+Shift+U)',
           ),
           const SizedBox(width: 4),
           Container(width: 1, height: 22, color: AppColors.borderColor),
           const SizedBox(width: 4),
-          _formatButton(Icons.link, _addLink, ),
+          _formatButton(Icons.link, _addLink, tooltip: 'Add link (Ctrl+K)'),
           _formatButton(
             Icons.format_clear,
             _clearFormatting,
             tooltip: 'Clear formatting',
           ),
           const Spacer(),
-          _formatButton(
-            Icons.keyboard_arrow_up,
-            _toggleExpanded,
-          ),
+          _formatButton(Icons.keyboard_arrow_up, _toggleExpanded),
           if (widget.onAIClick != null)
             IconButton(
               tooltip: 'Improve with AI',
