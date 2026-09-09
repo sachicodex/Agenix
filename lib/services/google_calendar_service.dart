@@ -1022,6 +1022,7 @@ class GoogleCalendarService {
     required DateTime end,
     String calendarId = 'primary',
     String? customEventId,
+    List<String>? recurrence,
   }) async {
     final client = await _getAuthenticatedClient();
 
@@ -1034,6 +1035,9 @@ class GoogleCalendarService {
       ..description = description
       ..start = calendar.EventDateTime(dateTime: start.toUtc(), timeZone: 'UTC')
       ..end = calendar.EventDateTime(dateTime: end.toUtc(), timeZone: 'UTC');
+    if (recurrence != null && recurrence.isNotEmpty) {
+      event.recurrence = recurrence;
+    }
 
     if (customEventId != null && customEventId.isNotEmpty) {
       event.id = customEventId;
@@ -1517,6 +1521,7 @@ class GoogleCalendarService {
     required DateTime end,
     String calendarId = 'primary',
     Color? color,
+    List<String>? recurrence,
   }) async {
     final client = await _getAuthenticatedClient();
     final cal = calendar.CalendarApi(client);
@@ -1535,6 +1540,7 @@ class GoogleCalendarService {
       dateTime: end.toUtc(),
       timeZone: 'UTC',
     );
+    existingEvent.recurrence = recurrence;
 
     if (color != null) {
       // Map color to Google Calendar colorId (simplified)

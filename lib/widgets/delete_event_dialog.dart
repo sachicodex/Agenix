@@ -3,8 +3,13 @@ import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import 'app_popup.dart';
 
-Future<bool> showDeleteEventDialog(BuildContext context) async {
-  final confirmed = await showAppDialog<bool>(
+enum DeleteEventChoice { cancel, thisEvent, allEvents }
+
+Future<DeleteEventChoice> showDeleteEventDialog(
+  BuildContext context, {
+  bool isRecurring = false,
+}) async {
+  final choice = await showAppDialog<DeleteEventChoice>(
     context: context,
     barrierDismissible: true,
     builder: (context) {
@@ -34,7 +39,9 @@ Future<bool> showDeleteEventDialog(BuildContext context) async {
               ),
               const SizedBox(height: 18),
               Text(
-                'Are you sure you want to delete this event?',
+                isRecurring
+                    ? 'This is part of a recurring event. What would you like to delete?'
+                    : 'Are you sure you want to delete this event?',
                 style: TextStyle(
                   fontFamily: 'Montserrat',
                   color: AppColors.onSurface.withValues(alpha: 0.95),
@@ -44,11 +51,35 @@ Future<bool> showDeleteEventDialog(BuildContext context) async {
                 ),
               ),
               const SizedBox(height: 28),
+              if (isRecurring) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: () =>
+                        Navigator.of(context).pop(DeleteEventChoice.thisEvent),
+                    child: const Text('This event'),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: () =>
+                        Navigator.of(context).pop(DeleteEventChoice.allEvents),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFFE15A0A),
+                    ),
+                    child: const Text('All events in the series'),
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   TextButton(
-                    onPressed: () => Navigator.of(context).pop(false),
+                    onPressed: () =>
+                        Navigator.of(context).pop(DeleteEventChoice.cancel),
                     style: TextButton.styleFrom(
                       foregroundColor: AppColors.primary,
                       textStyle: const TextStyle(
@@ -59,24 +90,18 @@ Future<bool> showDeleteEventDialog(BuildContext context) async {
                     ),
                     child: const Text('Cancel'),
                   ),
-                  const SizedBox(width: 12),
-                  FilledButton(
-                    onPressed: () => Navigator.of(context).pop(true),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFFE15A0A),
-                      foregroundColor: AppColors.onPrimary,
-                      minimumSize: const Size(140, 44),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
+                  if (!isRecurring) ...[
+                    const SizedBox(width: 12),
+                    FilledButton(
+                      onPressed: () => Navigator.of(
+                        context,
+                      ).pop(DeleteEventChoice.thisEvent),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFFE15A0A),
                       ),
-                      textStyle: const TextStyle(
-                        fontFamily: 'Montserrat',
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                      ),
+                      child: const Text('Delete'),
                     ),
-                    child: const Text('Delete'),
-                  ),
+                  ],
                 ],
               ),
             ],
@@ -86,5 +111,5 @@ Future<bool> showDeleteEventDialog(BuildContext context) async {
     },
   );
 
-  return confirmed == true;
+  return choice ?? DeleteEventChoice.cancel;
 }

@@ -18,6 +18,9 @@ class CalendarEvent {
   final bool deleted;
   final PendingAction pendingAction;
   final Color color;
+  final String recurrence;
+  final String? recurringEventId;
+  final bool deleteSeries;
 
   CalendarEvent({
     required this.id,
@@ -35,6 +38,9 @@ class CalendarEvent {
     this.deleted = false,
     this.pendingAction = PendingAction.none,
     this.gEventId,
+    this.recurrence = '',
+    this.recurringEventId,
+    this.deleteSeries = false,
   }) : color = color ?? Colors.blue;
 
   // Convert to JSON for storage
@@ -55,6 +61,9 @@ class CalendarEvent {
       'deleted': deleted,
       'pendingAction': pendingAction.name,
       'color': color.toARGB32(),
+      'recurrence': recurrence,
+      'recurringEventId': recurringEventId,
+      'deleteSeries': deleteSeries,
     };
   }
 
@@ -78,6 +87,9 @@ class CalendarEvent {
       deleted: json['deleted'] as bool? ?? false,
       pendingAction: _pendingActionFromJson(json['pendingAction'] as String?),
       color: Color(json['color'] as int),
+      recurrence: json['recurrence'] as String? ?? '',
+      recurringEventId: json['recurringEventId'] as String?,
+      deleteSeries: json['deleteSeries'] as bool? ?? false,
     );
   }
 
@@ -111,6 +123,9 @@ class CalendarEvent {
     bool? deleted,
     PendingAction? pendingAction,
     Color? color,
+    String? recurrence,
+    String? recurringEventId,
+    bool? deleteSeries,
   }) {
     return CalendarEvent(
       id: id ?? this.id,
@@ -128,6 +143,9 @@ class CalendarEvent {
       deleted: deleted ?? this.deleted,
       pendingAction: pendingAction ?? this.pendingAction,
       color: color ?? this.color,
+      recurrence: recurrence ?? this.recurrence,
+      recurringEventId: recurringEventId ?? this.recurringEventId,
+      deleteSeries: deleteSeries ?? this.deleteSeries,
     );
   }
 

@@ -3887,11 +3887,18 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   }
 
   Future<void> _confirmAndDeleteEvent(CalendarEvent event) async {
-    final confirmed = await showDeleteEventDialog(context);
-    if (!confirmed) return;
+    final deleteChoice = await showDeleteEventDialog(
+      context,
+      isRecurring:
+          event.recurrence.isNotEmpty || event.recurringEventId != null,
+    );
+    if (deleteChoice == DeleteEventChoice.cancel) return;
 
     try {
-      await _repository.deleteEvent(event.id);
+      await _repository.deleteEvent(
+        event.id,
+        deleteSeries: deleteChoice == DeleteEventChoice.allEvents,
+      );
     } catch (e) {
       if (mounted) {
         _showCompactSnackBar('Error deleting event: $e');

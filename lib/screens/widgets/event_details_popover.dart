@@ -10,6 +10,7 @@ import '../../widgets/app_snackbar.dart';
 import '../../widgets/app_popup.dart';
 import '../../widgets/delete_event_dialog.dart';
 import '../../widgets/primary_action_button.dart';
+import '../../widgets/form_fields.dart';
 import 'event_creation_modal.dart';
 import '../../utils/platform_focus.dart';
 
@@ -26,10 +27,19 @@ class EventDetailsPopover extends ConsumerWidget {
   });
 
   Future<void> _deleteEvent(BuildContext context, WidgetRef ref) async {
-    final confirmed = await showDeleteEventDialog(context);
-    if (confirmed) {
+    final deleteChoice = await showDeleteEventDialog(
+      context,
+      isRecurring:
+          event.recurrence.isNotEmpty || event.recurringEventId != null,
+    );
+    if (deleteChoice != DeleteEventChoice.cancel) {
       try {
-        await ref.read(eventRepositoryProvider).deleteEvent(event.id);
+        await ref
+            .read(eventRepositoryProvider)
+            .deleteEvent(
+              event.id,
+              deleteSeries: deleteChoice == DeleteEventChoice.allEvents,
+            );
 
         if (context.mounted) {
           Navigator.pop(context);
@@ -113,7 +123,10 @@ class EventDetailsPopover extends ConsumerWidget {
             const SizedBox(height: 16),
             // Description
             if (event.description.isNotEmpty) ...[
-              Text(event.description, style: AppTextStyles.bodyText1),
+              Text(
+                plainDescriptionText(event.description),
+                style: AppTextStyles.bodyText1,
+              ),
               const SizedBox(height: 16),
             ],
             // Color indicator

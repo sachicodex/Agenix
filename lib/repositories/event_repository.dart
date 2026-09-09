@@ -95,7 +95,7 @@ class EventRepository {
     }
   }
 
-  Future<void> deleteEvent(String eventId) async {
+  Future<void> deleteEvent(String eventId, {bool deleteSeries = false}) async {
     final watch = DebugPerfLogger.start('EventRepository', 'deleteEvent');
     final existing = await _localStore.getById(eventId);
     if (existing == null) {
@@ -124,6 +124,7 @@ class EventRepository {
       deleted: true,
       dirty: true,
       pendingAction: PendingAction.delete,
+      deleteSeries: deleteSeries,
     );
     try {
       await _localStore.upsertEvent(record);

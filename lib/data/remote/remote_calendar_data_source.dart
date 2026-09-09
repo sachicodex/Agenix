@@ -42,6 +42,9 @@ class RemoteCalendarDataSource {
     final created = await _googleService.insertEvent(
       summary: event.title,
       description: event.description,
+      recurrence: event.recurrence.isEmpty
+          ? null
+          : event.recurrence.split('\n'),
       start: event.startDateTime,
       end: event.endDateTime,
       calendarId: event.calendarId,
@@ -64,6 +67,9 @@ class RemoteCalendarDataSource {
       eventId: event.gEventId!,
       summary: event.title,
       description: event.description,
+      recurrence: event.recurrence.isEmpty
+          ? null
+          : event.recurrence.split('\n'),
       start: event.startDateTime,
       end: event.endDateTime,
       calendarId: event.calendarId,
@@ -102,7 +108,9 @@ class RemoteCalendarDataSource {
       return;
     }
     await _googleService.deleteEvent(
-      eventId: event.gEventId!,
+      eventId: event.deleteSeries
+          ? (event.recurringEventId ?? event.gEventId!)
+          : event.gEventId!,
       calendarId: event.calendarId,
     );
   }
@@ -141,6 +149,8 @@ class RemoteCalendarDataSource {
       deleted: deleted,
       pendingAction: PendingAction.none,
       color: Color(colorValue),
+      recurrence: (data['recurrence'] as List<dynamic>?)?.join('\n') ?? '',
+      recurringEventId: data['recurringEventId'] as String?,
     );
   }
 
@@ -174,6 +184,8 @@ class RemoteCalendarDataSource {
       deleted: event.status == 'cancelled',
       pendingAction: PendingAction.none,
       color: fallbackColor,
+      recurrence: event.recurrence?.join('\n') ?? '',
+      recurringEventId: event.recurringEventId,
     );
   }
 

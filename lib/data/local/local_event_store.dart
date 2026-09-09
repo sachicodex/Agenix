@@ -30,7 +30,7 @@ class LocalEventStore {
 
     _db = await openDatabase(
       dbPath,
-      version: 3,
+      version: 5,
       onCreate: (db, version) async {
         await db.execute('''
 CREATE TABLE events (
@@ -49,7 +49,10 @@ CREATE TABLE events (
   deleted INTEGER NOT NULL,
   pending_action TEXT NOT NULL,
   color INTEGER NOT NULL,
-  reminders TEXT
+  reminders TEXT,
+  recurrence TEXT,
+  recurring_event_id TEXT,
+  delete_series INTEGER NOT NULL DEFAULT 0
 )
 ''');
         await db.execute(
@@ -101,6 +104,28 @@ CREATE TABLE IF NOT EXISTS user_profile (
 )
 ''');
         }
+        // Check the actual schema instead of relying only on user_version.
+        // Older builds could add a column before updating the database
+        // version, so a version-only migration can fail with "duplicate
+        // column name" when the app is opened again.
+        await _addColumnIfMissing(
+          db,
+          table: 'events',
+          column: 'recurrence',
+          definition: 'TEXT',
+        );
+        await _addColumnIfMissing(
+          db,
+          table: 'events',
+          column: 'recurring_event_id',
+          definition: 'TEXT',
+        );
+        await _addColumnIfMissing(
+          db,
+          table: 'events',
+          column: 'delete_series',
+          definition: 'INTEGER NOT NULL DEFAULT 0',
+        );
       },
     );
     DebugPerfLogger.end(
@@ -109,6 +134,19 @@ CREATE TABLE IF NOT EXISTS user_profile (
       'initialize',
       data: {'dbPath': dbPath},
     );
+  }
+
+  static Future<void> _addColumnIfMissing(
+    Database db, {
+    required String table,
+    required String column,
+    required String definition,
+  }) async {
+    final columns = await db.rawQuery('PRAGMA table_info($table)');
+    final exists = columns.any((row) => row['name'] == column);
+    if (!exists) {
+      await db.execute('ALTER TABLE $table ADD COLUMN $column $definition');
+    }
   }
 
   Future<void> close() async {
@@ -595,6 +633,9 @@ CREATE TABLE IF NOT EXISTS user_profile (
       'deleted': event.deleted ? 1 : 0,
       'pending_action': event.pendingAction.name,
       'color': event.color.toARGB32(),
+      'recurrence': event.recurrence,
+      'recurring_event_id': event.recurringEventId,
+      'delete_series': event.deleteSeries ? 1 : 0,
     };
   }
 
@@ -626,6 +667,9 @@ CREATE TABLE IF NOT EXISTS user_profile (
       deleted: (row['deleted'] as int? ?? 0) == 1,
       pendingAction: _pendingActionFromRow(row['pending_action'] as String?),
       color: Color((row['color'] as int?) ?? Colors.blue.toARGB32()),
+      recurrence: row['recurrence'] as String? ?? '',
+      recurringEventId: row['recurring_event_id'] as String?,
+      deleteSeries: (row['delete_series'] as int? ?? 0) == 1,
     );
   }
 

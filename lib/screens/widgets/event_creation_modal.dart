@@ -48,6 +48,7 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
   late DateTime _startTime;
   late DateTime _endTime;
   String? _selectedCalendarId;
+  String _recurrence = '';
   List<Map<String, dynamic>> _availableCalendars = [];
   bool _userHasSelectedCalendar = false;
 
@@ -58,6 +59,7 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
   bool _creatingCalendar = false;
   bool _showTitleError = false;
   bool _showCalendarError = false;
+  bool _descriptionExpanded = false;
   Timer? _requiredFieldErrorTimer;
   String? _originalUserTitle;
   final GroqService _groqService = GroqService();
@@ -77,6 +79,7 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
       _titleController.text = existing.title;
       _descriptionController.text = existing.description;
       _selectedCalendarId = existing.calendarId;
+      _recurrence = existing.recurrence;
     }
     _initialSnapshot = _buildSnapshot();
 
@@ -438,7 +441,9 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
     });
 
     try {
-      final currentDescription = _descriptionController.text.trim();
+      final currentDescription = plainDescriptionText(
+        _descriptionController.text,
+      ).trim();
       String result;
 
       final originalTitle = _originalUserTitle ?? currentTitle;
@@ -558,6 +563,7 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
           allDay: false,
           color: Color(colorValue ?? AppColors.primary.toARGB32()),
           description: _descriptionController.text.trim(),
+          recurrence: _recurrence,
           timezone: DateTime.now().timeZoneName,
         );
         await ref.read(eventRepositoryProvider).updateEvent(updatedEvent);
@@ -571,6 +577,7 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
           allDay: false,
           color: Color(colorValue ?? AppColors.primary.toARGB32()),
           description: _descriptionController.text.trim(),
+          recurrence: _recurrence,
           location: '',
           timezone: DateTime.now().timeZoneName,
         );
@@ -607,12 +614,30 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
     }
   }
 
+  Future<void> _selectRepeat(String value) async {
+    if (value != '__custom__') {
+      setState(() => _recurrence = value);
+      return;
+    }
+    final customRule = await showAppDialog<String>(
+      context: context,
+      builder: (_) => const _CustomRecurrenceDialog(),
+    );
+    if (customRule != null && mounted) {
+      setState(() => _recurrence = customRule);
+    }
+  }
+
   Future<void> _deleteEvent() async {
     final existing = widget.existingEvent;
     if (existing == null || _deleting) return;
 
-    final confirm = await showDeleteEventDialog(context);
-    if (!confirm) return;
+    final deleteChoice = await showDeleteEventDialog(
+      context,
+      isRecurring:
+          existing.recurrence.isNotEmpty || existing.recurringEventId != null,
+    );
+    if (deleteChoice == DeleteEventChoice.cancel) return;
 
     setState(() {
       _deleting = true;
@@ -620,7 +645,12 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
     final watch = DebugPerfLogger.start('EventCreationModal', 'deleteEvent');
 
     try {
-      await ref.read(eventRepositoryProvider).deleteEvent(existing.id);
+      await ref
+          .read(eventRepositoryProvider)
+          .deleteEvent(
+            existing.id,
+            deleteSeries: deleteChoice == DeleteEventChoice.allEvents,
+          );
       if (!mounted) return;
       Navigator.pop(context);
       widget.onEventCreated();
@@ -659,6 +689,7 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
       startTime: _startTime,
       endTime: _endTime,
       calendarId: _selectedCalendarId ?? '',
+      recurrence: _recurrence,
     );
   }
 
@@ -752,6 +783,26 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
         ),
         const SizedBox(height: 12),
         AppSelectField<String>(
+          label: 'Repeat',
+          value: _recurrence,
+          hint: 'Does not repeat',
+          options: const [
+            AppSelectOption(value: '', label: 'Does not repeat'),
+            AppSelectOption(value: 'RRULE:FREQ=DAILY', label: 'Daily'),
+            AppSelectOption(value: 'RRULE:FREQ=WEEKLY', label: 'Weekly'),
+            AppSelectOption(value: 'RRULE:FREQ=MONTHLY', label: 'Monthly'),
+            AppSelectOption(value: 'RRULE:FREQ=YEARLY', label: 'Annually'),
+            AppSelectOption(
+              value: 'RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
+              label: 'Every weekday (Monday to Friday)',
+            ),
+            AppSelectOption(value: '__custom__', label: 'Custom...'),
+          ],
+          showAddInField: false,
+          onChanged: _selectRepeat,
+        ),
+        const SizedBox(height: 12),
+        AppSelectField<String>(
           label: 'Select calendar',
           value: _selectedCalendarId,
           hint: _availableCalendars.isEmpty
@@ -786,11 +837,14 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
         const SizedBox(height: 12),
         ExpandableDescription(
           controller: _descriptionController,
-          hint: 'Description ( Optional )',
+          hint: '',
           minLines: 1,
           maxLines: 5,
           onAIClick: _optimizeOrGenerateDescription,
           aiLoading: _descriptionAILoading,
+          onExpansionChanged: (expanded) {
+            if (mounted) setState(() => _descriptionExpanded = expanded);
+          },
         ),
         const SizedBox(height: 24),
         Row(
@@ -872,28 +926,55 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
                 maxWidth: media.size.width,
                 maxHeight: maxHeight,
               ),
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (includeHandle) ...[
-                      Center(
-                        child: Container(
-                          width: 38,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: AppColors.onSurface.withValues(alpha: 0.24),
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
+              child: _descriptionExpanded
+                  ? SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (includeHandle) ...[
+                            Center(
+                              child: Container(
+                                width: 38,
+                                height: 4,
+                                decoration: BoxDecoration(
+                                  color: AppColors.onSurface.withValues(
+                                    alpha: 0.24,
+                                  ),
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                          _buildFormContent(context),
+                        ],
                       ),
-                      const SizedBox(height: 12),
-                    ],
-                    _buildFormContent(context),
-                  ],
-                ),
-              ),
+                    )
+                  : Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (includeHandle) ...[
+                            Center(
+                              child: Container(
+                                width: 38,
+                                height: 4,
+                                decoration: BoxDecoration(
+                                  color: AppColors.onSurface.withValues(
+                                    alpha: 0.24,
+                                  ),
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                          _buildFormContent(context),
+                        ],
+                      ),
+                    ),
             ),
           ),
         ),
@@ -912,7 +993,17 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
             child: Container(
               width: 500,
               padding: const EdgeInsets.all(24),
-              child: _buildFormContent(context),
+              child: _descriptionExpanded
+                  ? ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxHeight: media.size.height * 0.9,
+                      ),
+                      child: SingleChildScrollView(
+                        physics: const ClampingScrollPhysics(),
+                        child: _buildFormContent(context),
+                      ),
+                    )
+                  : _buildFormContent(context),
             ),
           );
 
@@ -925,6 +1016,77 @@ class _CalendarDraft {
 
   final String name;
   final Color color;
+}
+
+class _CustomRecurrenceDialog extends StatefulWidget {
+  const _CustomRecurrenceDialog();
+
+  @override
+  State<_CustomRecurrenceDialog> createState() =>
+      _CustomRecurrenceDialogState();
+}
+
+class _CustomRecurrenceDialogState extends State<_CustomRecurrenceDialog> {
+  final _intervalController = TextEditingController(text: '1');
+  String _unit = 'WEEKLY';
+
+  @override
+  void dispose() {
+    _intervalController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Custom recurrence'),
+      content: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('Repeat every'),
+          const SizedBox(width: 12),
+          SizedBox(
+            width: 58,
+            child: TextField(
+              controller: _intervalController,
+              keyboardType: TextInputType.number,
+              textAlign: TextAlign.center,
+              decoration: const InputDecoration(isDense: true),
+            ),
+          ),
+          const SizedBox(width: 8),
+          DropdownButton<String>(
+            value: _unit,
+            items: const [
+              DropdownMenuItem(value: 'DAILY', child: Text('day')),
+              DropdownMenuItem(value: 'WEEKLY', child: Text('week')),
+              DropdownMenuItem(value: 'MONTHLY', child: Text('month')),
+              DropdownMenuItem(value: 'YEARLY', child: Text('year')),
+            ],
+            onChanged: (value) {
+              if (value != null) setState(() => _unit = value);
+            },
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () {
+            final interval = int.tryParse(_intervalController.text) ?? 1;
+            Navigator.pop(
+              context,
+              'RRULE:FREQ=$_unit;INTERVAL=${interval.clamp(1, 99)}',
+            );
+          },
+          child: const Text('Done'),
+        ),
+      ],
+    );
+  }
 }
 
 class _CreateCalendarDialog extends StatefulWidget {
@@ -1038,6 +1200,7 @@ class _EventFormSnapshot {
     required this.startTime,
     required this.endTime,
     required this.calendarId,
+    required this.recurrence,
   });
 
   final String title;
@@ -1045,6 +1208,7 @@ class _EventFormSnapshot {
   final DateTime startTime;
   final DateTime endTime;
   final String calendarId;
+  final String recurrence;
 
   @override
   bool operator ==(Object other) {
@@ -1054,10 +1218,17 @@ class _EventFormSnapshot {
         other.description == description &&
         other.startTime == startTime &&
         other.endTime == endTime &&
-        other.calendarId == calendarId;
+        other.calendarId == calendarId &&
+        other.recurrence == recurrence;
   }
 
   @override
-  int get hashCode =>
-      Object.hash(title, description, startTime, endTime, calendarId);
+  int get hashCode => Object.hash(
+    title,
+    description,
+    startTime,
+    endTime,
+    calendarId,
+    recurrence,
+  );
 }

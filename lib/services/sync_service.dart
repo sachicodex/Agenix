@@ -797,6 +797,8 @@ class SyncService {
       endDateTime: remoteEvent.endDateTime,
       allDay: remoteEvent.allDay,
       timezone: remoteEvent.timezone,
+      recurrence: remoteEvent.recurrence,
+      recurringEventId: remoteEvent.recurringEventId,
       color: remoteEvent.color,
       gEventId: remoteEvent.gEventId,
       calendarId: remoteEvent.calendarId,
@@ -852,6 +854,8 @@ class SyncService {
     if (a.timezone != b.timezone) return false;
     if (a.color.toARGB32() != b.color.toARGB32()) return false;
     if (a.calendarId != b.calendarId) return false;
+    if (a.recurrence != b.recurrence) return false;
+    if (a.recurringEventId != b.recurringEventId) return false;
     if (a.deleted != b.deleted) return false;
     return true;
   }
