@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/calendar_event.dart';
 import '../../services/google_calendar_service.dart';
@@ -927,6 +928,7 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
                 child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     if (includeHandle) ...[
@@ -990,7 +992,13 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
             ),
           );
 
-    return popup;
+    return CallbackShortcuts(
+      bindings: <ShortcutActivator, VoidCallback>{
+        const SingleActivator(LogicalKeyboardKey.enter, control: true):
+            _saveEvent,
+      },
+      child: popup,
+    );
   }
 }
 

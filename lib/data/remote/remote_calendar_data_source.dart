@@ -117,7 +117,10 @@ class RemoteCalendarDataSource {
           closeList();
           html
             ..write('<p>')
-            ..write(currentLine.isEmpty ? '<br>' : currentLine)
+            // Keep empty paragraphs when Google normalizes the description.
+            // A bare <br> can be removed by another client, which makes
+            // Enter-created spacing disappear on mobile.
+            ..write(currentLine.isEmpty ? '&nbsp;' : currentLine)
             ..write('</p>');
         }
         currentLine.clear();
@@ -150,7 +153,10 @@ class RemoteCalendarDataSource {
   String _plainTextToHtml(String value) {
     return value
         .split('\n')
-        .map((line) => '<p>${_escapeHtml(line.isEmpty ? '<br>' : line)}</p>')
+        .map(
+          (line) =>
+              line.isEmpty ? '<p>&nbsp;</p>' : '<p>${_escapeHtml(line)}</p>',
+        )
         .join();
   }
 

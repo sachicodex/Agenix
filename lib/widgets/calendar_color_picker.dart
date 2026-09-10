@@ -170,7 +170,11 @@ class _CalendarColorPaletteState extends State<CalendarColorPalette> {
                             ),
                             FilledButton(
                               onPressed: () => Navigator.pop(context, true),
-                              child: const Text('Delete'),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: AppColors.error
+                              ),
+                              child:  Text('Delete'),
+                              
                             ),
                           ],
                         ),

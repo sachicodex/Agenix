@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io' show Platform, InternetAddress;
 
+import 'package:agenix/theme/app_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
@@ -166,22 +167,22 @@ class _AuthWrapperState extends State<AuthWrapper> {
               width: 34,
               height: 34,
               decoration: BoxDecoration(
-                color: Colors.orange.withValues(alpha: 0.16),
+                color: AppColors.primary.withValues(alpha: 0.16),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: const Icon(
                 Icons.wifi_off_rounded,
                 size: 20,
-                color: Colors.orange,
+                color: AppColors.secondary,
               ),
             ),
             const SizedBox(width: 10),
             const Text('No Internet'),
+            const SizedBox(height: 50),
           ],
         ),
         content: const Text(
           'You are offline now.\n\n'
-          'Retry to check connection again.\n'
           'Continue to use the app offline. It will auto sync when internet returns.',
         ),
         actions: [

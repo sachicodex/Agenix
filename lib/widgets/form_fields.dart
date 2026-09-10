@@ -30,6 +30,10 @@ class _ToggleBoldIntent extends Intent {
   const _ToggleBoldIntent();
 }
 
+class _IgnoreEditorShortcutIntent extends Intent {
+  const _IgnoreEditorShortcutIntent();
+}
+
 class _AddLinkIntent extends Intent {
   const _AddLinkIntent();
 }
@@ -493,10 +497,19 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
           control: true,
           shift: true,
         ): const _ToggleNumberListIntent(),
-        const SingleActivator(LogicalKeyboardKey.keyK, control: true):
+        const SingleActivator(LogicalKeyboardKey.keyL, control: true):
             const _AddLinkIntent(),
+        const SingleActivator(LogicalKeyboardKey.keyK, control: true):
+            const _IgnoreEditorShortcutIntent(),
+        const SingleActivator(
+          LogicalKeyboardKey.keyL,
+          control: true,
+          shift: true,
+        ): const _IgnoreEditorShortcutIntent(),
       },
       customActions: {
+        _IgnoreEditorShortcutIntent:
+            CallbackAction<_IgnoreEditorShortcutIntent>(onInvoke: (_) => null),
         _ToggleBoldIntent: CallbackAction<_ToggleBoldIntent>(
           onInvoke: (_) {
             _format(Attribute.bold);
@@ -637,19 +650,16 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
             Icons.format_bold,
             () => _format(Attribute.bold),
             isActive: isActive(Attribute.bold),
-            tooltip: 'Bold (Ctrl+B)',
           ),
           _formatButton(
             Icons.format_italic,
             () => _format(Attribute.italic),
             isActive: isActive(Attribute.italic),
-            tooltip: 'Italic (Ctrl+I)',
           ),
           _formatButton(
             Icons.format_underlined,
             () => _format(Attribute.underline),
             isActive: isActive(Attribute.underline),
-            tooltip: 'Underline (Ctrl+U)',
           ),
           const SizedBox(width: 4),
           Container(width: 1, height: 22, color: AppColors.borderColor),
@@ -658,28 +668,24 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
             Icons.format_list_numbered,
             () => _format(Attribute.ol),
             isActive: activeList == Attribute.ol.value,
-            tooltip: 'Numbered list (Ctrl+Shift+O)',
           ),
           _formatButton(
             Icons.format_list_bulleted,
             () => _format(Attribute.ul),
             isActive: activeList == Attribute.ul.value,
-            tooltip: 'Bulleted list (Ctrl+Shift+U)',
           ),
           const SizedBox(width: 4),
           Container(width: 1, height: 22, color: AppColors.borderColor),
           const SizedBox(width: 4),
-          _formatButton(Icons.link, _addLink, tooltip: 'Add link (Ctrl+K)'),
+          _formatButton(Icons.link, _addLink),
           _formatButton(
             Icons.format_clear,
             _clearFormatting,
-            tooltip: 'Clear formatting',
           ),
           const Spacer(),
           _formatButton(Icons.keyboard_arrow_up, _toggleExpanded),
           if (widget.onAIClick != null)
             IconButton(
-              tooltip: 'Improve with AI',
               onPressed: widget.aiLoading ? null : widget.onAIClick,
               icon: widget.aiLoading
                   ? const SizedBox(

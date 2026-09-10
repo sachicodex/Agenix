@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'dart:async';
 
 import '../theme/app_colors.dart';
@@ -155,332 +156,434 @@ class _AppSelectDialog<T> extends StatefulWidget {
 
 class _AppSelectDialogState<T> extends State<_AppSelectDialog<T>> {
   final _search = TextEditingController();
+  final _optionsScrollController = ScrollController();
+  final Map<T, GlobalKey> _optionKeys = {};
   final Map<T, Color> _updatedColors = {};
   final Map<T, String> _updatedNames = {};
+  int _highlightedIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    final selectedIndex = widget.options.indexWhere(
+      (option) => option.value == widget.selected,
+    );
+    if (selectedIndex >= 0) _highlightedIndex = selectedIndex;
+  }
 
   @override
   void dispose() {
     _search.dispose();
+    _optionsScrollController.dispose();
     super.dispose();
+  }
+
+  void _highlightOption(int index, int optionCount) {
+    setState(() {
+      _highlightedIndex = (index + optionCount) % optionCount;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final options = _filteredOptions();
+      if (_highlightedIndex >= options.length) return;
+      final key = _optionKeys[options[_highlightedIndex].value];
+      final target = key?.currentContext;
+      if (target != null) {
+        Scrollable.ensureVisible(
+          target,
+          alignment: 0.5,
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  List<AppSelectOption<T>> _filteredOptions() {
+    final query = _search.text.trim().toLowerCase();
+    return widget.options
+        .where((option) => option.label.toLowerCase().contains(query))
+        .toList();
+  }
+
+  KeyEventResult _handleKeyboard(FocusNode _, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    final options = _filteredOptions();
+    if (options.isEmpty) return KeyEventResult.ignored;
+
+    if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+      _highlightOption(_highlightedIndex + 1, options.length);
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+      _highlightOption(_highlightedIndex - 1, options.length);
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.enter) {
+      Navigator.pop(context, options[_highlightedIndex].value);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
   }
 
   @override
   Widget build(BuildContext context) {
     final dialogWidth = appPopupWidth(context, 440);
     final query = _search.text.trim().toLowerCase();
-    final options = widget.options
-        .where((option) => option.label.toLowerCase().contains(query))
-        .toList();
-    return Dialog(
-      backgroundColor: AppColors.surface,
-      insetPadding: appPopupInsetPadding(context),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      child: SizedBox(
-        width: dialogWidth,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 520),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Material(
-                  color: AppColors.surface,
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          widget.label,
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                      ),
-                      if (widget.onAddPressed != null)
-                        IconButton(
-                          onPressed: () {
-                            Navigator.pop(context);
-                            widget.onAddPressed!();
-                          },
-                          icon: const Icon(
-                            Icons.add,
-                            color: AppColors.onBackground,
+    final options = _filteredOptions();
+    if (options.isNotEmpty && _highlightedIndex >= options.length) {
+      _highlightedIndex = options.length - 1;
+    }
+    return Focus(
+      onKeyEvent: _handleKeyboard,
+      child: Dialog(
+        backgroundColor: AppColors.surface,
+        insetPadding: appPopupInsetPadding(context),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        child: SizedBox(
+          width: dialogWidth,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 520),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Material(
+                    color: AppColors.surface,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            widget.label,
+                            style: Theme.of(context).textTheme.titleMedium,
                           ),
                         ),
-                    ],
-                  ),
-                ),
-                if (widget.searchable) ...[
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _search,
-                    autofocus: shouldAutofocusTextInput,
-                    onChanged: (_) => setState(() {}),
-                    decoration: InputDecoration(
-                      hintText: 'Search',
-                      prefixIcon: Icon(
-                        Icons.search,
-                        color: AppColors.onTertiary,
-                      ),
-                      suffixIcon: query.isEmpty
-                          ? null
-                          : IconButton(
-                              onPressed: () {
-                                _search.clear();
-                                setState(() {});
-                              },
-                              icon: const Icon(Icons.close),
+                        if (widget.onAddPressed != null)
+                          IconButton(
+                            onPressed: () {
+                              Navigator.pop(context);
+                              widget.onAddPressed!();
+                            },
+                            icon: const Icon(
+                              Icons.add,
+                              color: AppColors.onBackground,
                             ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (widget.searchable) ...[
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _search,
+                      autofocus: shouldAutofocusTextInput,
+                      onChanged: (_) => setState(() => _highlightedIndex = 0),
+                      decoration: InputDecoration(
+                        hintText: 'Search',
+                        prefixIcon: Icon(
+                          Icons.search,
+                          color: AppColors.onTertiary,
+                        ),
+                        suffixIcon: query.isEmpty
+                            ? null
+                            : IconButton(
+                                onPressed: () {
+                                  _search.clear();
+                                  setState(() {});
+                                },
+                                icon: const Icon(Icons.close),
+                              ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: Material(
+                      color: AppColors.surface,
+                      clipBehavior: Clip.hardEdge,
+                      child: ClipRect(
+                        child: options.isEmpty
+                            ? const Center(child: Text('No matching options'))
+                            : ListView.separated(
+                                controller: _optionsScrollController,
+                                clipBehavior: Clip.hardEdge,
+                                itemCount: options.length,
+                                separatorBuilder: (_, _) =>
+                                    const SizedBox(height: 2),
+                                itemBuilder: (context, index) {
+                                  final option = options[index];
+                                  final selected =
+                                      option.value == widget.selected;
+                                  final displayColor =
+                                      _updatedColors[option.value] ??
+                                      option.color;
+                                  final displayName =
+                                      _updatedNames[option.value] ??
+                                      option.label;
+                                  Future<void> editCalendar() async {
+                                    if (displayColor == null ||
+                                        widget.onColorChanged == null) {
+                                      return;
+                                    }
+                                    final picked =
+                                        await showAppDialog<
+                                          _CalendarEditResult
+                                        >(
+                                          context: context,
+                                          builder: (_) => _CalendarColorDialog(
+                                            initialName: option.label,
+                                            initialColor: displayColor,
+                                          ),
+                                        );
+                                    if (picked == null) return;
+                                    if (picked.name != option.label &&
+                                        widget.onNameChanged != null) {
+                                      await widget.onNameChanged!(
+                                        option.value,
+                                        picked.name,
+                                      );
+                                      if (mounted) {
+                                        setState(
+                                          () => _updatedNames[option.value] =
+                                              picked.name,
+                                        );
+                                      }
+                                    }
+                                    final saved = await widget.onColorChanged!(
+                                      option.value,
+                                      picked.color,
+                                    );
+                                    if (saved != null && mounted) {
+                                      setState(
+                                        () => _updatedColors[option.value] =
+                                            saved,
+                                      );
+                                    }
+                                  }
+
+                                  Future<void> deleteCalendar() async {
+                                    if (widget.onDelete == null) return;
+                                    final confirmed = await showAppDialog<bool>(
+                                      context: context,
+                                      builder: (context) => AlertDialog(
+                                        title: Row(
+                                          children: [
+                                            const Expanded(
+                                              child: Text('Delete calendar?'),
+                                            ),
+                                            IconButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(context, false),
+                                              icon: const AppIcon(
+                                                icon: AppIconData.material(
+                                                  Icons.close,
+                                                ),
+                                                color: AppColors.onSurface,
+                                                size: 20,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        content: const Text(
+                                          'This calendar will be permanently deleted.',
+                                        ),
+                                        actions: [
+                                          SizedBox(
+                                            width: double.infinity,
+                                            child: FilledButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(context, true),
+                                              style: FilledButton.styleFrom(
+                                backgroundColor: AppColors.error
+                              ),
+                                              child: const Text('Delete'),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                    if (confirmed == true &&
+                                        await widget.onDelete!(option.value) &&
+                                        context.mounted) {
+                                      Navigator.pop(context);
+                                    }
+                                  }
+
+                                  Future<void> showCalendarActions() async {
+                                    final action = await showAppDialog<_CalendarAction>(
+                                      context: context,
+                                      builder: (dialogContext) => Dialog(
+                                        backgroundColor: AppColors.surface,
+                                        insetPadding: appPopupInsetPadding(
+                                          dialogContext,
+                                        ),
+                                        child: SizedBox(
+                                          width: appPopupWidth(
+                                            dialogContext,
+                                            360,
+                                          ),
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(20),
+                                            child: Column(
+                                              mainAxisSize: MainAxisSize.min,
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Row(
+                                                  children: [
+                                                    const Expanded(
+                                                      child: Text(
+                                                        'Manage Calendar',
+                                                        style: AppTextStyles
+                                                            .headline3,
+                                                      ),
+                                                    ),
+                                                    IconButton(
+                                                      onPressed: () =>
+                                                          Navigator.pop(
+                                                            dialogContext,
+                                                          ),
+                                                      icon: const Icon(
+                                                        Icons.close,
+                                                        color:
+                                                            AppColors.onSurface,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 16),
+                                                SizedBox(
+                                                  width: double.infinity,
+                                                  child: FilledButton.icon(
+                                                    onPressed: () =>
+                                                        Navigator.pop(
+                                                          dialogContext,
+                                                          _CalendarAction.edit,
+                                                        ),
+                                                    icon: AppIcon(
+                                                      icon: AppIconData.huge(
+                                                        HugeIcons
+                                                            .strokeRoundedEdit02,
+                                                      ),
+                                                      size: 18,
+                                                      strokeWidth: 2.2,
+                                                    ),
+
+                                                    label: const Text(
+                                                      'Edit Calendar',
+                                                      style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 15),
+                                                SizedBox(
+                                                  width: double.infinity,
+                                                  child: OutlinedButton.icon(
+                                                    onPressed: () =>
+                                                        Navigator.pop(
+                                                          dialogContext,
+                                                          _CalendarAction
+                                                              .delete,
+                                                        ),
+                                                    style:
+                                                        OutlinedButton.styleFrom(
+                                                          foregroundColor:
+                                                              AppColors.error,
+                                                        ),
+                                                    icon: const AppIcon(
+                                                      icon: AppIconData.huge(
+                                                        HugeIcons
+                                                            .strokeRoundedDelete03,
+                                                      ),
+                                                      color: AppColors.error,
+                                                      size: 18,
+                                                      strokeWidth: 2.2,
+                                                    ),
+                                                    label: const Text(
+                                                      'Delete Calendar',
+                                                    ),
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 20),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                    switch (action) {
+                                      case _CalendarAction.edit:
+                                        await editCalendar();
+                                        break;
+                                      case _CalendarAction.delete:
+                                        await deleteCalendar();
+                                        break;
+                                      case null:
+                                        break;
+                                    }
+                                  }
+
+                                  return _HoldToDelete(
+                                    onHold: widget.onDelete == null
+                                        ? null
+                                        : showCalendarActions,
+                                    child: Container(
+                                      key: _optionKeys.putIfAbsent(
+                                        option.value,
+                                        GlobalKey.new,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: _highlightedIndex == index
+                                            ? AppColors.optionHighlightColor
+                                            : Colors.transparent,
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: ListTile(
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            10,
+                                          ),
+                                        ),
+                                        selected: false,
+                                        title: _OptionRow(
+                                          option: AppSelectOption(
+                                            value: option.value,
+                                            label: displayName,
+                                            color: option.color,
+                                          ),
+                                          color: displayColor,
+                                          onColorPressed:
+                                              widget.onColorChanged == null
+                                              ? null
+                                              : editCalendar,
+                                          textStyle: selected
+                                              ? widget.listTextStyle.copyWith(
+                                                  fontWeight: FontWeight.w700,
+                                                )
+                                              : widget.listTextStyle,
+                                          textColor: selected
+                                              ? displayColor
+                                              : AppColors.onBackground
+                                                    .withValues(alpha: 0.9),
+                                        ),
+                                        onTap: () => Navigator.pop(
+                                          context,
+                                          option.value,
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                      ),
                     ),
                   ),
                 ],
-                const SizedBox(height: 8),
-                Expanded(
-                  child: ClipRect(
-                    child: options.isEmpty
-                        ? const Center(child: Text('No matching options'))
-                        : ListView.separated(
-                            clipBehavior: Clip.hardEdge,
-                            itemCount: options.length,
-                            separatorBuilder: (_, _) =>
-                                const SizedBox(height: 2),
-                            itemBuilder: (context, index) {
-                              final option = options[index];
-                              final selected = option.value == widget.selected;
-                              final displayColor =
-                                  _updatedColors[option.value] ?? option.color;
-                              final displayName =
-                                  _updatedNames[option.value] ?? option.label;
-                              Future<void> editCalendar() async {
-                                if (displayColor == null ||
-                                    widget.onColorChanged == null) {
-                                  return;
-                                }
-                                final picked =
-                                    await showAppDialog<_CalendarEditResult>(
-                                      context: context,
-                                      builder: (_) => _CalendarColorDialog(
-                                        initialName: option.label,
-                                        initialColor: displayColor,
-                                      ),
-                                    );
-                                if (picked == null) return;
-                                if (picked.name != option.label &&
-                                    widget.onNameChanged != null) {
-                                  await widget.onNameChanged!(
-                                    option.value,
-                                    picked.name,
-                                  );
-                                  if (mounted) {
-                                    setState(
-                                      () => _updatedNames[option.value] =
-                                          picked.name,
-                                    );
-                                  }
-                                }
-                                final saved = await widget.onColorChanged!(
-                                  option.value,
-                                  picked.color,
-                                );
-                                if (saved != null && mounted) {
-                                  setState(
-                                    () => _updatedColors[option.value] = saved,
-                                  );
-                                }
-                              }
-
-                              Future<void> deleteCalendar() async {
-                                if (widget.onDelete == null) return;
-                                final confirmed = await showAppDialog<bool>(
-                                  context: context,
-                                  builder: (context) => AlertDialog(
-                                    title: Row(
-                                      children: [
-                                        const Expanded(
-                                          child: Text('Delete calendar?'),
-                                        ),
-                                        IconButton(
-                                          tooltip: 'Cancel',
-                                          onPressed: () =>
-                                              Navigator.pop(context, false),
-                                          icon: const AppIcon(
-                                            icon: AppIconData.material(
-                                              Icons.close,
-                                            ),
-                                            color: AppColors.onSurface,
-                                            size: 20,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    content: const Text(
-                                      'This calendar will be permanently deleted.',
-                                    ),
-                                    actions: [
-                                      SizedBox(
-                                        width: double.infinity,
-                                        child: FilledButton(
-                                          onPressed: () =>
-                                              Navigator.pop(context, true),
-                                          child: const Text('Delete'),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                                if (confirmed == true &&
-                                    await widget.onDelete!(option.value) &&
-                                    context.mounted) {
-                                  Navigator.pop(context);
-                                }
-                              }
-
-                              Future<void> showCalendarActions() async {
-                                final action = await showAppDialog<_CalendarAction>(
-                                  context: context,
-                                  builder: (dialogContext) => Dialog(
-                                    backgroundColor: AppColors.surface,
-                                    insetPadding: appPopupInsetPadding(
-                                      dialogContext,
-                                    ),
-                                    child: SizedBox(
-                                      width: appPopupWidth(dialogContext, 360),
-                                      child: Padding(
-                                        padding: const EdgeInsets.all(20),
-                                        child: Column(
-                                          mainAxisSize: MainAxisSize.min,
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Row(
-                                              children: [
-                                                const Expanded(
-                                                  child: Text(
-                                                    'Manage Calendar',
-                                                    style:
-                                                        AppTextStyles.headline3,
-                                                  ),
-                                                ),
-                                                IconButton(
-                                                  onPressed: () =>
-                                                      Navigator.pop(
-                                                        dialogContext,
-                                                      ),
-                                                  icon: const Icon(
-                                                    Icons.close,
-                                                    color: AppColors.onSurface,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                            const SizedBox(height: 16),
-                                            SizedBox(
-                                              width: double.infinity,
-                                              child: FilledButton.icon(
-                                                onPressed: () => Navigator.pop(
-                                                  dialogContext,
-                                                  _CalendarAction.edit,
-                                                ),
-                                                icon: AppIcon(
-                                                  icon: AppIconData.huge(
-                                                    HugeIcons
-                                                        .strokeRoundedEdit02,
-                                                  ),
-                                                  size: 18,
-                                                  strokeWidth: 2.2,
-                                                ),
-
-                                                label: const Text(
-                                                  'Edit Calendar',
-                                                  style: TextStyle(
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                            const SizedBox(height: 15),
-                                            SizedBox(
-                                              width: double.infinity,
-                                              child: OutlinedButton.icon(
-                                                onPressed: () => Navigator.pop(
-                                                  dialogContext,
-                                                  _CalendarAction.delete,
-                                                ),
-                                                style: OutlinedButton.styleFrom(
-                                                  foregroundColor:
-                                                      AppColors.error,
-                                                ),
-                                                icon: const AppIcon(
-                                                  icon: AppIconData.huge(
-                                                    HugeIcons
-                                                        .strokeRoundedDelete03,
-                                                  ),
-                                                  color: AppColors.error,
-                                                  size: 18,
-                                                  strokeWidth: 2.2,
-                                                ),
-                                                label: const Text(
-                                                  'Delete Calendar',
-                                                ),
-                                              ),
-                                            ),
-                                            const SizedBox(height: 20),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                );
-                                switch (action) {
-                                  case _CalendarAction.edit:
-                                    await editCalendar();
-                                    break;
-                                  case _CalendarAction.delete:
-                                    await deleteCalendar();
-                                    break;
-                                  case null:
-                                    break;
-                                }
-                              }
-
-                              return _HoldToDelete(
-                                onHold: widget.onDelete == null
-                                    ? null
-                                    : showCalendarActions,
-                                child: ListTile(
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  selected: false,
-                                  title: _OptionRow(
-                                    option: AppSelectOption(
-                                      value: option.value,
-                                      label: displayName,
-                                      color: option.color,
-                                    ),
-                                    color: displayColor,
-                                    onColorPressed:
-                                        widget.onColorChanged == null
-                                        ? null
-                                        : editCalendar,
-                                    textStyle: selected
-                                        ? widget.listTextStyle.copyWith(
-                                            fontWeight: FontWeight.w700,
-                                          )
-                                        : widget.listTextStyle,
-                                    textColor: selected
-                                        ? displayColor
-                                        : AppColors.onBackground.withValues(
-                                            alpha: 0.9,
-                                          ),
-                                  ),
-                                  onTap: () =>
-                                      Navigator.pop(context, option.value),
-                                ),
-                              );
-                            },
-                          ),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ),
@@ -624,8 +727,9 @@ class _CalendarColorDialogState extends State<_CalendarColorDialog> {
       FilledButton(
         onPressed: () {
           final name = _name.text.trim();
-          if (name.isNotEmpty)
+          if (name.isNotEmpty) {
             Navigator.pop(context, _CalendarEditResult(name, _color));
+          }
         },
         child: const Text('Save'),
       ),

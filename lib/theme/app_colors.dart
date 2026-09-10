@@ -2,15 +2,15 @@ import 'package:flutter/material.dart';
 
 class AppColors {
   // Brand dark-mode palette
-  static const Color primary = Color(0xFFF97015); // Brand
-  static const Color secondary = Color(0xFFFFA04D); // Highlight - still not use
+  static const Color primary = Color(0xFFC8F902); // Brand
+  static const Color secondary = Color(0xFFA0C702); // Highlight - still not use
   static const Color background = Color(0XFF020202); // Dark background
   static const Color surface = Color(0XFF161616); // Dark surface
-  static const Color gradientMix = Color(0xFFFF9500); // Border and divider
+  static const Color gradientMix = Color(0xFFA0C702); // Border and divider
   static const Color error = Color(0xFFCB4B0B); // Emphasis
   static const Color onPrimary = Color(
     0xFF1A1614,
-  ); // Dark text on orange button
+  ); // Dark text on the brand button
   static const Color onBackground = Color(0xFFf4f4f5); // Light text on dark
   static const Color onSurface = Color(0xFFd4d4d8); // Secondary light text
   static const Color onTertiary = Color(0xFFa1a1aa);
@@ -20,8 +20,11 @@ class AppColors {
   static const Color borderFocusColor = Color(0XFF3a3a3a);
   static const Color dividerColor = Color(0xFF1F242C);
   static const Color selectedColor = Color(
-    0x33F97015,
+    0x55789501,
   ); // Brand with low opacity
+  /// Background used for keyboard-highlighted options in selectors.
+  static const Color optionHighlightColor = Color.fromARGB(20, 255, 255, 255);
+
   /// Primary time-axis labels (hour marks).
   static const Color timeTextColor = onSurface;
 
@@ -38,7 +41,7 @@ class AppColors {
   static const LinearGradient primaryActionGradientDisabled = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [Color(0x99F97015), Color(0x99FF9500)],
+    colors: [Color(0x99C8F902), Color(0x99A0C702)],
   );
 }
 
@@ -56,7 +59,7 @@ class AppTextStyles {
     color: AppColors.onBackground,
     letterSpacing: 1.1,
   );
-    static const TextStyle headline3 = TextStyle(
+  static const TextStyle headline3 = TextStyle(
     fontFamily: 'Montserrat',
     fontSize: 18,
     fontWeight: FontWeight.w600,

@@ -81,7 +81,7 @@ Future<DeleteEventChoice> showDeleteEventDialog(
                     onPressed: () =>
                         Navigator.of(context).pop(DeleteEventChoice.cancel),
                     style: TextButton.styleFrom(
-                      foregroundColor: AppColors.primary,
+                      foregroundColor: AppColors.onSurface,
                       textStyle: const TextStyle(
                         fontFamily: 'Montserrat',
                         fontSize: 15,
@@ -97,7 +97,7 @@ Future<DeleteEventChoice> showDeleteEventDialog(
                         context,
                       ).pop(DeleteEventChoice.thisEvent),
                       style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFFE15A0A),
+                        backgroundColor:  AppColors.error,
                       ),
                       child: const Text('Delete'),
                     ),

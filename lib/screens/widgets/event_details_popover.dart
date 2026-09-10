@@ -1,6 +1,8 @@
 import 'dart:async';
-
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_quill/flutter_quill.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../models/calendar_event.dart';
@@ -8,54 +10,19 @@ import '../../theme/app_colors.dart';
 import '../../providers/event_providers.dart';
 import '../../widgets/app_snackbar.dart';
 import '../../widgets/app_popup.dart';
-import '../../widgets/delete_event_dialog.dart';
 import '../../widgets/primary_action_button.dart';
-import '../../widgets/form_fields.dart';
 import 'event_creation_modal.dart';
 import '../../utils/platform_focus.dart';
 
-class EventDetailsPopover extends ConsumerWidget {
+class EventDetailsPopover extends StatelessWidget {
   final CalendarEvent event;
   final VoidCallback onEventUpdated;
-  final VoidCallback onEventDeleted;
 
   const EventDetailsPopover({
     super.key,
     required this.event,
     required this.onEventUpdated,
-    required this.onEventDeleted,
   });
-
-  Future<void> _deleteEvent(BuildContext context, WidgetRef ref) async {
-    final deleteChoice = await showDeleteEventDialog(
-      context,
-      isRecurring:
-          event.recurrence.isNotEmpty || event.recurringEventId != null,
-    );
-    if (deleteChoice != DeleteEventChoice.cancel) {
-      try {
-        await ref
-            .read(eventRepositoryProvider)
-            .deleteEvent(
-              event.id,
-              deleteSeries: deleteChoice == DeleteEventChoice.allEvents,
-            );
-
-        if (context.mounted) {
-          Navigator.pop(context);
-          onEventDeleted();
-        }
-      } catch (e) {
-        if (context.mounted) {
-          showAppSnackBar(
-            context,
-            'Error deleting event: $e',
-            type: AppSnackBarType.error,
-          );
-        }
-      }
-    }
-  }
 
   Future<void> _editEvent(BuildContext context) async {
     Navigator.pop(context);
@@ -86,78 +53,130 @@ class EventDetailsPopover extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Dialog(
-      backgroundColor: AppColors.surface,
-      child: Container(
-        width: appPopupWidth(context, 400),
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Title
-            Row(
-              children: [
-                Expanded(
-                  child: Text(event.title, style: AppTextStyles.headline2),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            // Time
-            if (event.allDay)
-              Text(
-                DateFormat('EEEE, MMMM d, y').format(event.startDateTime),
-                style: AppTextStyles.bodyText1,
-              )
-            else
-              Text(
-                '${DateFormat('EEEE, MMMM d, y').format(event.startDateTime)} • ${DateFormat('h:mm a').format(event.startDateTime)} - ${DateFormat('h:mm a').format(event.endDateTime)}',
-                style: AppTextStyles.bodyText1,
-              ),
-            const SizedBox(height: 16),
-            // Description
-            if (event.description.isNotEmpty) ...[
-              Text(
-                plainDescriptionText(event.description),
-                style: AppTextStyles.bodyText1,
-              ),
+  Widget build(BuildContext context) {
+    return CallbackShortcuts(
+      bindings: <ShortcutActivator, VoidCallback>{
+        const SingleActivator(LogicalKeyboardKey.enter, control: true): () =>
+            _editEvent(context),
+      },
+      child: Dialog(
+        backgroundColor: AppColors.surface,
+        child: Container(
+          width: appPopupWidth(context, 400),
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Title
+              Text(event.title, style: AppTextStyles.headline2),
               const SizedBox(height: 16),
-            ],
-            // Color indicator
-            Container(
-              width: double.infinity,
-              height: 4,
-              decoration: BoxDecoration(
-                color: event.color,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 24),
-            // Actions
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton.icon(
+              // Description
+              if (event.description.isNotEmpty) ...[
+                _ReadOnlyDescription(value: event.description),
+                const SizedBox(height: 24),
+              ],
+              // Actions
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
                   onPressed: () => _editEvent(context),
                   icon: const Icon(Icons.edit),
                   label: const Text('Edit'),
                 ),
-                const SizedBox(width: 8),
-                TextButton.icon(
-                  onPressed: () => _deleteEvent(context, ref),
-                  icon: const Icon(Icons.delete),
-                  label: const Text('Delete'),
-                  style: TextButton.styleFrom(foregroundColor: AppColors.error),
-                ),
-              ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ReadOnlyDescription extends StatefulWidget {
+  const _ReadOnlyDescription({required this.value});
+
+  final String value;
+
+  @override
+  State<_ReadOnlyDescription> createState() => _ReadOnlyDescriptionState();
+}
+
+class _ReadOnlyDescriptionState extends State<_ReadOnlyDescription> {
+  late final QuillController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = QuillController(
+      document: _documentFromValue(widget.value),
+      selection: const TextSelection.collapsed(offset: 0),
+    )..readOnly = true;
+  }
+
+  Document _documentFromValue(String value) {
+    if (value.startsWith('quill:')) {
+      try {
+        return Document.fromJson(jsonDecode(value.substring(6)) as List);
+      } catch (_) {
+        // Fall back to plain text for older or invalid stored values.
+      }
+    }
+    final document = Document();
+    if (value.isNotEmpty) document.insert(0, value);
+    return document;
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final defaultStyles = DefaultStyles.getInstance(context);
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: 280),
+      child: QuillEditor.basic(
+        controller: _controller,
+        config: QuillEditorConfig(
+          autoFocus: false,
+          showCursor: false,
+          padding: EdgeInsets.zero,
+          scrollable: true,
+          customStyles: defaultStyles.merge(
+            DefaultStyles(
+              link: defaultStyles.link?.copyWith(
+                decoration: TextDecoration.none,
+              ),
             ),
-          ],
+          ),
+          // ignore: experimental_member_use
+          customLeadingBlockBuilder: (node, config) {
+            if (config.attribute != Attribute.ol || node is! Line) {
+              return null;
+            }
+            final textChildren = node.children
+                .where((child) => child.toPlainText().isNotEmpty)
+                .toList();
+            final isEntireLineBold =
+                textChildren.isNotEmpty &&
+                textChildren.every(
+                  (child) => child.style.containsKey(Attribute.bold.key),
+                );
+            if (!isEntireLineBold) return null;
+
+            return QuillNumberPoint(
+              index: config.getIndexNumberByIndent!,
+              indentLevelCounts: config.indentLevelCounts,
+              count: config.count,
+              style: config.style!.copyWith(fontWeight: FontWeight.bold),
+              attrs: config.attrs,
+              width: config.width!,
+              padding: config.padding!,
+            );
+          },
         ),
       ),
     );

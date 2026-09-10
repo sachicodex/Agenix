@@ -14,13 +14,13 @@ import '../services/sync_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import 'widgets/event_creation_modal.dart';
+import 'widgets/event_details_popover.dart';
 import '../widgets/context_menu.dart';
 import '../navigation/app_route_observer.dart';
 import '../widgets/app_animations.dart';
 import '../widgets/app_popup.dart';
 import '../widgets/app_snackbar.dart';
 import '../widgets/modern_splash_screen.dart';
-import '../widgets/delete_event_dialog.dart';
 import '../widgets/secondary_action_button.dart';
 import '../controllers/timeline_zoom_controller.dart';
 import '../utils/platform_focus.dart';
@@ -162,7 +162,6 @@ class CalendarDayViewScreen extends ConsumerStatefulWidget {
 class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     with WidgetsBindingObserver, TickerProviderStateMixin, RouteAware {
   static const Color _eventBlockTextColor = Color(0xFF141614);
-  static const double _pastEventOpacity = 0.55;
   static const Duration _touchLongPressDuration = Duration(milliseconds: 280);
   static const double _touchCancelDistance = 10.0;
   static const double _touchHoldCancelDistance = 20.0;
@@ -277,6 +276,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   int _mobileTapCount = 0;
   String? _mobileDuplicateDragEventId;
   Timer? _pendingMobileDoubleTapTimer;
+  Timer? _pendingDesktopSingleTapTimer;
   String? _lastDesktopClickEventId;
   DateTime? _lastDesktopClickTime;
   Offset? _lastDesktopClickPosition;
@@ -393,6 +393,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     _mobileInteractionWatchdogTimer?.cancel();
     _gridLongPressTimer?.cancel();
     _pendingMobileDoubleTapTimer?.cancel();
+    _pendingDesktopSingleTapTimer?.cancel();
     _syncRotationController.dispose();
     super.dispose();
   }
@@ -1439,8 +1440,10 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                                 child: Text(
                                   label,
                                   textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                    color: AppColors.primary,
+                                  style: TextStyle(
+                                    color: label == 'Sa' || label == 'Su'
+                                        ? AppColors.error
+                                        : AppColors.primary,
                                     fontSize: 16,
                                     fontWeight: FontWeight.w700,
                                   ),
@@ -1799,25 +1802,25 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                                             now,
                                           );
                                       return Opacity(
-                                        opacity: isPastEvent
-                                            ? _pastEventOpacity
-                                            : 1,
+                                        opacity: 1,
                                         child: Container(
                                           decoration: BoxDecoration(
                                             gradient: _eventBlockGradient(
                                               event.color,
+                                              isPast: isPastEvent,
                                             ),
-                                            border: isPastEvent
-                                                ? null
-                                                : Border(
-                                                    left: BorderSide(
-                                                      color:
-                                                          _eventBlockBorderColor(
-                                                            event.color,
-                                                          ),
-                                                      width: 3,
-                                                    ),
-                                                  ),
+                                            border: Border(
+                                              left: BorderSide(
+                                                color: isPastEvent
+                                                    ? _pastEventBorderColor(
+                                                        event.color,
+                                                      )
+                                                    : _eventBlockBorderColor(
+                                                        event.color,
+                                                      ),
+                                                width: 3,
+                                              ),
+                                            ),
                                             borderRadius: BorderRadius.circular(
                                               6,
                                             ),
@@ -1838,7 +1841,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                                                   ),
                                               child: Text(
                                                 event.title,
-                                                style: const TextStyle(
+                                                style: TextStyle(
                                                   color: _eventBlockTextColor,
                                                   fontSize: 12,
                                                   fontWeight: FontWeight.w600,
@@ -2028,36 +2031,50 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                     day.day == now.day;
                 return SizedBox(
                   width: dayWidth,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      border: Border(
-                        left: BorderSide(color: AppColors.dividerColor),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () {
+                        // Selecting a day header switches the timeline to
+                        // that exact date instead of leaving the user in the
+                        // multi-day range.
+                        unawaited(_handleDateChange(day));
+                      },
+                      child: Container(
+                        decoration: BoxDecoration(
+                          border: Border(
+                            left: BorderSide(color: AppColors.dividerColor),
+                          ),
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              label,
+                              style: TextStyle(
+                                fontFamily: 'Montserrat',
+                                color: isToday
+                                    ? AppColors.primary
+                                    : day.weekday == DateTime.saturday ||
+                                          day.weekday == DateTime.sunday
+                                    ? AppColors.error
+                                    : AppColors.timeTextColor,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              dayNumber,
+                              style: TextStyle(
+                                color: AppColors.onBackground,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          label,
-                          style: TextStyle(
-                            fontFamily: 'Montserrat',
-                            color: AppColors.timeTextColor,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          dayNumber,
-                          style: TextStyle(
-                            color: isToday
-                                ? AppColors.primary
-                                : AppColors.onBackground,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
                     ),
                   ),
                 );
@@ -2119,10 +2136,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
             top: top,
             width: dayWidth - 4,
             height: height,
-            child: Opacity(
-              opacity: _isPastEvent(event) ? _pastEventOpacity : 1,
-              child: _buildReadOnlyEventCard(event, height: height),
-            ),
+            child: _buildReadOnlyEventCard(event, height: height),
           ),
         );
       }
@@ -2145,15 +2159,15 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       borderRadius: BorderRadius.circular(6),
       child: Container(
         decoration: BoxDecoration(
-          gradient: _eventBlockGradient(event.color),
-          border: isPastEvent
-              ? null
-              : Border(
-                  left: BorderSide(
-                    color: _eventBlockBorderColor(event.color),
-                    width: 3,
-                  ),
-                ),
+          gradient: _eventBlockGradient(event.color, isPast: isPastEvent),
+          border: Border(
+            left: BorderSide(
+              color: isPastEvent
+                  ? _pastEventBorderColor(event.color)
+                  : _eventBlockBorderColor(event.color),
+              width: 3,
+            ),
+          ),
           borderRadius: BorderRadius.circular(6),
         ),
         child: TimelineEventBlockContent(
@@ -2293,7 +2307,9 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                             child: Text(
                               label,
                               style: TextStyle(
-                                color: AppColors.primary,
+                                color: label == 'Sa' || label == 'Su'
+                                    ? AppColors.error
+                                    : AppColors.primary,
                                 fontSize: 15,
                                 fontWeight: FontWeight.w600,
                                 letterSpacing: 0.2,
@@ -2554,7 +2570,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                       autofocus: shouldAutofocusTextInput,
                       style: const TextStyle(color: AppColors.onBackground),
                       decoration: InputDecoration(
-                        hintText: 'Type title, location, description',
+                        hintText: 'Type title or description',
                         hintStyle: TextStyle(color: AppColors.timeTextColor),
                         filled: true,
                         fillColor: AppColors.background,
@@ -2828,16 +2844,21 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     );
   }
 
-  LinearGradient _eventBlockGradient(Color baseColor) {
+  LinearGradient _eventBlockGradient(Color baseColor, {bool isPast = false}) {
+    final gradientBase = isPast ? _darkenColor(baseColor, 0.22) : baseColor;
     return LinearGradient(
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
-      colors: [baseColor, _darkenColor(baseColor, 0.16)],
+      colors: [gradientBase, _darkenColor(gradientBase, 0.16)],
     );
   }
 
   Color _eventBlockBorderColor(Color baseColor) {
     return _darkenColor(baseColor, 0.24);
+  }
+
+  Color _pastEventBorderColor(Color baseColor) {
+    return _darkenColor(baseColor, 0.40);
   }
 
   Color _darkenColor(Color color, double amount) {
@@ -2983,11 +3004,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
         !isPreview &&
         (event.endDateTime.isBefore(now) ||
             event.endDateTime.isAtSameMomentAs(now));
-    final effectiveOpacity = isDraggingOriginal
-        ? 0.35
-        : isPastEvent
-        ? _pastEventOpacity
-        : 1.0;
+    final effectiveOpacity = isDraggingOriginal ? 0.35 : 1.0;
 
     bool? resizeZoneForLocal(Offset localPosition) {
       final visualBottom = visualTopInset + visualHeight;
@@ -3238,7 +3255,10 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
               _handleMobileTapUp(event.id);
             } else {
               if (_isDesktopDoubleClick(event.id, pointerEvent.position)) {
+                _pendingDesktopSingleTapTimer?.cancel();
                 _showEditEventModal(event);
+              } else {
+                _schedulePendingDesktopSingleTapDetails(event.id);
               }
             }
           }
@@ -3306,15 +3326,18 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                     borderRadius: BorderRadius.circular(6),
                     child: Container(
                       decoration: BoxDecoration(
-                        gradient: _eventBlockGradient(event.color),
-                        border: isPastEvent
-                            ? null
-                            : Border(
-                                left: BorderSide(
-                                  color: _eventBlockBorderColor(event.color),
-                                  width: 3,
-                                ),
-                              ),
+                        gradient: _eventBlockGradient(
+                          event.color,
+                          isPast: isPastEvent,
+                        ),
+                        border: Border(
+                          left: BorderSide(
+                            color: isPastEvent
+                                ? _pastEventBorderColor(event.color)
+                                : _eventBlockBorderColor(event.color),
+                            width: 3,
+                          ),
+                        ),
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: TimelineEventBlockContent(
@@ -3886,19 +3909,18 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     }
   }
 
-  Future<void> _confirmAndDeleteEvent(CalendarEvent event) async {
-    final deleteChoice = await showDeleteEventDialog(
-      context,
-      isRecurring:
-          event.recurrence.isNotEmpty || event.recurringEventId != null,
+  Future<void> _showEventDetailsPopover(CalendarEvent event) async {
+    if (!mounted) return;
+    await showAppDialog<void>(
+      context: context,
+      builder: (context) =>
+          EventDetailsPopover(event: event, onEventUpdated: () {}),
     );
-    if (deleteChoice == DeleteEventChoice.cancel) return;
+  }
 
+  Future<void> _deleteEvent(CalendarEvent event) async {
     try {
-      await _repository.deleteEvent(
-        event.id,
-        deleteSeries: deleteChoice == DeleteEventChoice.allEvents,
-      );
+      await _repository.deleteEvent(event.id);
     } catch (e) {
       if (mounted) {
         _showCompactSnackBar('Error deleting event: $e');
@@ -3941,7 +3963,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
         isDestructive: true,
         onTap: () async {
           _dismissContextMenu();
-          await _confirmAndDeleteEvent(event);
+          await _deleteEvent(event);
         },
       ),
     ];
@@ -4103,7 +4125,22 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     }
     if (_mobileTapCount == 2 && _lastMobileTapEventId == eventId) {
       _schedulePendingMobileDoubleTapEdit(eventId);
+      return;
     }
+    if (_mobileTapCount == 1 && _lastMobileTapEventId == eventId) {
+      _schedulePendingMobileTapDetails(eventId);
+    }
+  }
+
+  void _schedulePendingMobileTapDetails(String eventId) {
+    _cancelPendingMobileDoubleTapEdit();
+    _pendingMobileDoubleTapTimer = Timer(_mobileDoubleTapWindow, () {
+      if (!mounted || _mobileDuplicateDragEventId == eventId) return;
+      final event = _eventsMap[eventId];
+      if (event == null) return;
+      unawaited(_showEventDetailsPopover(event));
+      _clearMobileTapSequence();
+    });
   }
 
   void _schedulePendingMobileDoubleTapEdit(String eventId) {
@@ -4124,6 +4161,17 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   void _cancelPendingMobileDoubleTapEdit() {
     _pendingMobileDoubleTapTimer?.cancel();
     _pendingMobileDoubleTapTimer = null;
+  }
+
+  void _schedulePendingDesktopSingleTapDetails(String eventId) {
+    _pendingDesktopSingleTapTimer?.cancel();
+    _pendingDesktopSingleTapTimer = Timer(_desktopDoubleClickWindow, () {
+      if (!mounted) return;
+      final event = _eventsMap[eventId];
+      if (event == null) return;
+      unawaited(_showEventDetailsPopover(event));
+      _pendingDesktopSingleTapTimer = null;
+    });
   }
 
   void _clearMobileTapSequence() {
@@ -4668,14 +4716,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
 
     if (key == LogicalKeyboardKey.keyC) {
       _showCreateEventModal();
-      return;
-    }
-
-    if (key == LogicalKeyboardKey.delete ||
-        key == LogicalKeyboardKey.backspace) {
-      if (targetEvent != null) {
-        _confirmAndDeleteEvent(targetEvent);
-      }
       return;
     }
 

@@ -1031,7 +1031,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                     color: AppColors.onSurface.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: Icon(icon, color: AppColors.primary, size: 20),
+                  child: Icon(icon, color: AppColors.onBackground, size: 20),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -1280,7 +1280,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
-                    color: AppColors.primary.withValues(alpha: 0.35),
+                    color: AppColors.onBackground.withValues(alpha: 0.35),
                   ),
                 ),
                 child: _buildUserAvatar(),
