@@ -12,7 +12,7 @@ void main() {
     expect(theme.useMaterial3, isTrue);
     expect(theme.brightness, Brightness.dark);
     expect(theme.scaffoldBackgroundColor, AppColors.background);
-    expect(theme.textTheme.bodyLarge?.fontFamily, 'Montserrat');
+    expect(theme.textTheme.bodyLarge?.fontFamily, 'SFProDisplay');
     expect(
       theme.pageTransitionsTheme.builders[TargetPlatform.iOS],
       isA<CupertinoPageTransitionsBuilder>(),

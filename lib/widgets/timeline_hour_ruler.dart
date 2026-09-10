@@ -107,7 +107,7 @@ class _TimelineHourRulerPainter extends CustomPainter {
   TextStyle _hourLabelStyle() {
     final fontSize = (hourHeight * 0.13).clamp(11.0, 13.0);
     return TextStyle(
-      fontFamily: 'Montserrat',
+      fontFamily: 'SFProDisplay',
       fontSize: fontSize,
       color: AppColors.timeTextColor,
       fontWeight: FontWeight.w600,
@@ -119,7 +119,7 @@ class _TimelineHourRulerPainter extends CustomPainter {
   TextStyle _subLabelStyle() {
     final fontSize = (hourHeight * 0.1).clamp(9.0, 11.0);
     return TextStyle(
-      fontFamily: 'Montserrat',
+      fontFamily: 'SFProDisplay',
       fontSize: fontSize,
       color: AppColors.timeTextSecondaryColor,
       fontWeight: FontWeight.w400,

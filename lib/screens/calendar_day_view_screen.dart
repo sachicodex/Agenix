@@ -294,7 +294,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   bool _syncLoopActive = false;
   bool _screenInitialized = false;
   ModalRoute<dynamic>? _subscribedRoute;
-  bool _isOfflineSnackBarVisible = false;
   late final AnimationController _syncRotationController;
 
   // Mini calendar range-selection state
@@ -434,6 +433,9 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     final text = message.toLowerCase();
     return text.contains('failed host lookup') ||
         text.contains('socketexception') ||
+        text.contains('network_error') ||
+        text.contains('network error') ||
+        text.contains('platformexception') && text.contains('network') ||
         text.contains('network is unreachable') ||
         text.contains('name or service not known') ||
         text.contains('no address associated with hostname') ||
@@ -444,27 +446,12 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     if (status.state == SyncState.error) {
       final message = status.error ?? 'Sync error';
       if (_isLikelyOfflineError(message)) {
-        if (_isOfflineSnackBarVisible) return;
-        _isOfflineSnackBarVisible = true;
-        _showCompactSnackBar(
-          'No internet connection',
-          type: AppSnackBarType.offline,
-          duration: const Duration(days: 1),
-        );
+        // Offline sync failures are expected. Local changes remain queued in
+        // SQLite and will be retried automatically when connectivity returns.
+        // Do not interrupt offline work with a persistent snackbar.
         return;
       }
-      _isOfflineSnackBarVisible = false;
       _showCompactSnackBar(message, type: AppSnackBarType.error);
-      return;
-    }
-
-    if (_isOfflineSnackBarVisible) {
-      _isOfflineSnackBarVisible = false;
-      _showCompactSnackBar(
-        'Back online',
-        type: AppSnackBarType.success,
-        duration: const Duration(seconds: 2),
-      );
     }
   }
 
@@ -1771,7 +1758,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                             '*',
                             textAlign: TextAlign.center,
                             style: TextStyle(
-                              fontFamily: 'Montserrat',
+                              fontFamily: 'SFProDisplay',
                               fontSize: 24,
                               color: AppColors.timeTextColor,
                               fontWeight: FontWeight.w500,
@@ -2052,7 +2039,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                             Text(
                               label,
                               style: TextStyle(
-                                fontFamily: 'Montserrat',
+                                fontFamily: 'SFProDisplay',
                                 color: isToday
                                     ? AppColors.primary
                                     : day.weekday == DateTime.saturday ||
@@ -2845,7 +2832,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   }
 
   LinearGradient _eventBlockGradient(Color baseColor, {bool isPast = false}) {
-    final gradientBase = isPast ? _darkenColor(baseColor, 0.22) : baseColor;
+    final gradientBase = isPast ? _darkenColor(baseColor, 0.1) : baseColor;
     return LinearGradient(
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
@@ -2858,7 +2845,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   }
 
   Color _pastEventBorderColor(Color baseColor) {
-    return _darkenColor(baseColor, 0.40);
+    return _darkenColor(baseColor, 0.32);
   }
 
   Color _darkenColor(Color color, double amount) {
@@ -4733,6 +4720,11 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
 
     if (key == LogicalKeyboardKey.keyT) {
       _handleDateChange(DateTime.now());
+      return;
+    }
+
+    if (key == LogicalKeyboardKey.keyS) {
+      _handleSidebarSearchEvent();
       return;
     }
 

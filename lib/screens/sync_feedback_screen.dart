@@ -79,7 +79,7 @@ class _SyncFeedbackScreenState extends State<SyncFeedbackScreen> {
             width: 56,
             height: 56,
             child: Image.asset(
-              'assets/logo/Agenix.png',
+              'assets/logo/agenix.png',
               fit: BoxFit.contain,
               errorBuilder: (context, error, stackTrace) => const Icon(
                 Icons.sync_rounded,

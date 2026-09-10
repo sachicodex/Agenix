@@ -104,7 +104,7 @@ class _ContextMenuItemWidget extends StatelessWidget {
               child: Text(
                 item.label,
                 style: TextStyle(
-                  fontFamily: 'Montserrat',
+                  fontFamily: 'SFProDisplay',
                   fontSize: 14,
                   color: item.isDestructive
                       ? AppColors.error

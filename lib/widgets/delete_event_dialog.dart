@@ -30,7 +30,7 @@ Future<DeleteEventChoice> showDeleteEventDialog(
               const Text(
                 'Delete Event',
                 style: TextStyle(
-                  fontFamily: 'Montserrat',
+                  fontFamily: 'SFProDisplay',
                   color: AppColors.onBackground,
                   fontSize: 22,
                   fontWeight: FontWeight.w500,
@@ -43,7 +43,7 @@ Future<DeleteEventChoice> showDeleteEventDialog(
                     ? 'This is part of a recurring event. What would you like to delete?'
                     : 'Are you sure you want to delete this event?',
                 style: TextStyle(
-                  fontFamily: 'Montserrat',
+                  fontFamily: 'SFProDisplay',
                   color: AppColors.onSurface.withValues(alpha: 0.95),
                   fontSize: 15,
                   fontWeight: FontWeight.w400,
@@ -83,7 +83,7 @@ Future<DeleteEventChoice> showDeleteEventDialog(
                     style: TextButton.styleFrom(
                       foregroundColor: AppColors.onSurface,
                       textStyle: const TextStyle(
-                        fontFamily: 'Montserrat',
+                        fontFamily: 'SFProDisplay',
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
                       ),

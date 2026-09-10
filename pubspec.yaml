@@ -88,17 +88,17 @@ flutter:
     - assets/img/
     - assets/logo/
 
-  # Custom fonts (Montserrat)
+  # Custom fonts (SF Pro Display)
   fonts:
-    - family: Montserrat
+    - family: SFProDisplay
       fonts:
-        - asset: assets/fonts/Montserrat-Regular.ttf
+        - asset: assets/fonts/sf pro display/SF PRO DISPLAY REGULAR.OTF
           weight: 400
-        - asset: assets/fonts/Montserrat-Medium.ttf
+        - asset: assets/fonts/sf pro display/SF PRO DISPLAY MEDIUM.OTF
           weight: 500
-        - asset: assets/fonts/Montserrat-SemiBold.ttf
+        - asset: assets/fonts/sf pro display/SF PRO DISPLAY BOLD.OTF
           weight: 600
-        - asset: assets/fonts/Montserrat-Bold.ttf
+        - asset: assets/fonts/sf pro display/SF PRO DISPLAY BOLD.OTF
           weight: 700
 
   # To add additional assets or fonts, place them under assets/ and update

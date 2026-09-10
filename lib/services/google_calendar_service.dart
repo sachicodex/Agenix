@@ -2381,14 +2381,13 @@ class GoogleCalendarService {
   <title>$escapedTitle</title>
   <link rel="icon" type="image/png" href="$faviconDataUrl">
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap');
     * {
       margin: 0;
       padding: 0;
       box-sizing: border-box;
     }
     body {
-      font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       background: linear-gradient(135deg, #030303 0%, #161616 100%);
       color: #F5F5F5;
       display: flex;

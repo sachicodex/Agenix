@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import '../services/google_calendar_service.dart';
-import '../widgets/app_snackbar.dart';
 import '../widgets/app_popup.dart';
 import '../widgets/modern_splash_screen.dart';
 import 'calendar_day_view_screen.dart';
@@ -29,8 +28,6 @@ class _AuthWrapperState extends State<AuthWrapper> {
   bool _isSignedIn = false;
   bool _hasDefaultCalendar = false;
   bool _offlineDialogActive = false;
-  bool _watchingReconnect = false;
-  Timer? _reconnectTimer;
 
   @override
   void initState() {
@@ -40,7 +37,6 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
   @override
   void dispose() {
-    _reconnectTimer?.cancel();
     super.dispose();
   }
 
@@ -205,28 +201,6 @@ class _AuthWrapperState extends State<AuthWrapper> {
       await _showOfflineDialogIfNeeded();
       return;
     }
-
-    _startReconnectWatcher();
-  }
-
-  void _startReconnectWatcher() {
-    if (_watchingReconnect) return;
-    _watchingReconnect = true;
-    _reconnectTimer?.cancel();
-    _reconnectTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
-      if (!mounted) return;
-      final online = await _hasInternetConnection();
-      if (!mounted || !online) return;
-
-      _reconnectTimer?.cancel();
-      _watchingReconnect = false;
-
-      showAppSnackBar(
-        context,
-        'Internet is back. Auto sync is now running.',
-        type: AppSnackBarType.success,
-      );
-    });
   }
 
   @override

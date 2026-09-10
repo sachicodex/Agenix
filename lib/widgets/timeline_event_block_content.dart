@@ -127,7 +127,7 @@ class TimelineEventBlockContent extends StatelessWidget {
 
   TextStyle _titleStyle(double fontSize) {
     return TextStyle(
-      fontFamily: 'Montserrat',
+      fontFamily: 'SFProDisplay',
       color: textColor,
       fontSize: fontSize,
       fontWeight: FontWeight.w600,
@@ -137,7 +137,7 @@ class TimelineEventBlockContent extends StatelessWidget {
 
   TextStyle _timeStyle(double fontSize) {
     return TextStyle(
-      fontFamily: 'Montserrat',
+      fontFamily: 'SFProDisplay',
       color: textColor,
       fontSize: fontSize,
       fontWeight: FontWeight.w500,

@@ -309,7 +309,7 @@ lib/
 oauth-proxy/
   src/            Cloudflare Worker OAuth token exchange
 assets/
-  fonts/          Montserrat font family
+  fonts/          SF Pro Display font family
   img/            AI and verification artwork
   logo/           Agenix application logos and icons
 ```

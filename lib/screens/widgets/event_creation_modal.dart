@@ -794,7 +794,7 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
             AppSelectOption(value: 'RRULE:FREQ=YEARLY', label: 'Annually'),
             AppSelectOption(
               value: 'RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
-              label: 'Every weekday (Monday to Friday)',
+              label: 'Every weekday',
             ),
             AppSelectOption(value: '__custom__', label: 'Custom...'),
           ],

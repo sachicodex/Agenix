@@ -47,32 +47,32 @@ class AppColors {
 
 class AppTextStyles {
   static const TextStyle headline1 = TextStyle(
-    fontFamily: 'Montserrat',
+    fontFamily: 'SFProDisplay',
     fontSize: 32,
     fontWeight: FontWeight.bold,
     color: AppColors.onBackground,
   );
   static const TextStyle headline2 = TextStyle(
-    fontFamily: 'Montserrat',
+    fontFamily: 'SFProDisplay',
     fontSize: 22,
     fontWeight: FontWeight.w600,
     color: AppColors.onBackground,
     letterSpacing: 1.1,
   );
   static const TextStyle headline3 = TextStyle(
-    fontFamily: 'Montserrat',
+    fontFamily: 'SFProDisplay',
     fontSize: 18,
     fontWeight: FontWeight.w600,
     color: AppColors.onBackground,
     letterSpacing: 1.1,
   );
   static const TextStyle bodyText1 = TextStyle(
-    fontFamily: 'Montserrat',
+    fontFamily: 'SFProDisplay',
     fontSize: 16,
     color: AppColors.onBackground,
   );
   static const TextStyle button = TextStyle(
-    fontFamily: 'Montserrat',
+    fontFamily: 'SFProDisplay',
     fontSize: 16,
     fontWeight: FontWeight.w600,
     color: AppColors.onPrimary,
