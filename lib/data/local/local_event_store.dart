@@ -479,6 +479,41 @@ CREATE TABLE IF NOT EXISTS user_profile (
     _emitChange();
   }
 
+  /// Replaces the cached calendar list with an authoritative remote snapshot.
+  /// Calendars missing from [calendars] have been deleted or are no longer
+  /// accessible and must not remain visible in offline cache/UI state.
+  Future<void> replaceCalendars(List<Map<String, dynamic>> calendars) async {
+    final db = _requireDb();
+    final ids = calendars
+        .map((calendar) => calendar['id'] as String?)
+        .whereType<String>()
+        .where((id) => id.isNotEmpty)
+        .toSet();
+
+    final cachedRows = await db.query('calendars', columns: ['id']);
+    await db.transaction((txn) async {
+      for (final row in cachedRows) {
+        final id = row['id'] as String?;
+        if (id != null && !ids.contains(id)) {
+          await txn.delete('calendars', where: 'id = ?', whereArgs: [id]);
+        }
+      }
+      for (final calendar in calendars) {
+        final id = (calendar['id'] as String?) ?? '';
+        if (id.isEmpty) continue;
+        await txn.insert('calendars', {
+          'id': id,
+          'name': (calendar['name'] as String?) ?? id,
+          'color': (calendar['color'] as int?) ?? 0xFF039BE5,
+          'selected': ((calendar['selected'] as bool?) ?? true) ? 1 : 0,
+          'updated_at': DateTime.now().millisecondsSinceEpoch,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+    });
+
+    _emitChange();
+  }
+
   Future<List<Map<String, dynamic>>> getCachedCalendars() async {
     final db = _requireDb();
     final rows = await db.query(

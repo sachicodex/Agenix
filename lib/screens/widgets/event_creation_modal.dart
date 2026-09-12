@@ -107,7 +107,10 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
           .getDefaultCalendarId();
     } catch (_) {}
 
-    void applyCalendars(List<Map<String, dynamic>> calendars) {
+    void applyCalendars(
+      List<Map<String, dynamic>> calendars, {
+      bool mergeWithCurrent = true,
+    }) {
       final filteredCalendars = calendars.where((cal) {
         final name = (cal['name'] as String?) ?? '';
         return name.isNotEmpty && name.toLowerCase() != 'calendar';
@@ -115,10 +118,9 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
 
       if (mounted) {
         setState(() {
-          _availableCalendars = _mergeCalendars(
-            _availableCalendars,
-            filteredCalendars,
-          );
+          _availableCalendars = mergeWithCurrent
+              ? _mergeCalendars(_availableCalendars, filteredCalendars)
+              : filteredCalendars;
           if (widget.existingEvent != null) {
             return;
           }
@@ -157,7 +159,7 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
       }
 
       final calendars = await GoogleCalendarService.instance.getUserCalendars();
-      applyCalendars(calendars);
+      applyCalendars(calendars, mergeWithCurrent: false);
     } catch (e) {
       debugPrint('Error loading calendars: $e');
       if (mounted) {

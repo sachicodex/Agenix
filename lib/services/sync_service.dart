@@ -584,6 +584,10 @@ class SyncService {
           );
         }
       } catch (e) {
+        if (_isPermanentWritePermissionError(e)) {
+          await _resolvePermanentWritePermissionFailure(normalizedEvent);
+          continue;
+        }
         if (_isMissingRemoteError(e)) {
           try {
             final resolved = await _resolveMissingRemoteDuringPush(
@@ -648,6 +652,39 @@ class SyncService {
         text.contains('message: resource has been deleted') ||
         text.contains('resource has been deleted') ||
         text.contains('message: not found');
+  }
+
+  bool _isPermanentWritePermissionError(Object error) {
+    final text = error.toString().toLowerCase();
+    return text.contains('status: 403') &&
+        (text.contains('writer access') ||
+            text.contains('insufficient permissions') ||
+            text.contains('forbidden'));
+  }
+
+  Future<void> _resolvePermanentWritePermissionFailure(
+    CalendarEvent event,
+  ) async {
+    final latest = await _localStore.getById(event.id);
+    if (latest == null) return;
+
+    if (event.pendingAction == PendingAction.create) {
+      // The remote create was rejected, so keeping this local-only event as a
+      // clean record would make it look successfully synced forever.
+      await _localStore.deleteEventById(latest.id);
+    } else {
+      // Keep the last local value visible, but stop retrying a mutation that
+      // the calendar will never accept. A later pull can replace it with the
+      // authoritative remote value.
+      await _localStore.upsertEvent(
+        latest.copyWith(dirty: false, pendingAction: PendingAction.none),
+      );
+    }
+    debugPrint(
+      'Cleared unsynchronizable local ${event.pendingAction.name} for '
+      'calendar without write access: calendarId=${event.calendarId}, '
+      'eventId=${event.id}',
+    );
   }
 
   Future<bool> _resolveMissingRemoteDuringPush(CalendarEvent event) async {

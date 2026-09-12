@@ -15,7 +15,10 @@ class SystemTrayService with TrayListener, WindowListener {
   bool _pendingExitAfterSync = false;
   Future<bool> Function()? _exitGuard;
   Future<void>? _exitAfterSyncInFlight;
+  Timer? _exitRetryTimer;
   bool _quitting = false;
+
+  static const Duration _exitRetryDelay = Duration(seconds: 2);
 
   void _log(String message) {
     if (kDebugMode && Platform.isWindows) {
@@ -64,6 +67,7 @@ class SystemTrayService with TrayListener, WindowListener {
     if (key == 'quit') {
       _log('tray menu quit');
       _pendingExitAfterSync = false;
+      _cancelExitRetryTimer();
       unawaited(_quitApp());
     }
   }
@@ -89,6 +93,7 @@ class SystemTrayService with TrayListener, WindowListener {
   Future<void> _showWindow() async {
     _log('show window and cancel pending exit');
     _pendingExitAfterSync = false;
+    _cancelExitRetryTimer();
     await windowManager.show();
     await windowManager.focus();
   }
@@ -103,6 +108,7 @@ class SystemTrayService with TrayListener, WindowListener {
     _log('quit app start');
     _allowClose = true;
     _pendingExitAfterSync = false;
+    _cancelExitRetryTimer();
 
     try {
       trayManager.removeListener(this);
@@ -145,11 +151,42 @@ class SystemTrayService with TrayListener, WindowListener {
     // The guard performs and awaits the last local sync. A false result means
     // there is no remaining work, so it is now safe to remove the tray icon
     // and terminate the Windows process.
-    final shouldBlockExit = await _exitGuard?.call() ?? false;
+    bool shouldBlockExit;
+    try {
+      shouldBlockExit = await _exitGuard?.call() ?? false;
+    } catch (error) {
+      // A failed guard must not strand the process permanently. Keep the
+      // window hidden and retry on the next pass, just like background sync.
+      _log('final sync check failed: $error');
+      _scheduleExitRetry();
+      return;
+    }
     _log('final sync completed shouldBlockExit=$shouldBlockExit');
-    if (!_pendingExitAfterSync || shouldBlockExit) return;
+    if (!_pendingExitAfterSync) return;
+    if (shouldBlockExit) {
+      _scheduleExitRetry();
+      return;
+    }
 
     await _quitApp();
+  }
+
+  void _scheduleExitRetry() {
+    if (!_pendingExitAfterSync || _quitting || _exitRetryTimer != null) {
+      return;
+    }
+    _log(
+      'final sync still has pending work -> retry in ${_exitRetryDelay.inSeconds}s',
+    );
+    _exitRetryTimer = Timer(_exitRetryDelay, () {
+      _exitRetryTimer = null;
+      unawaited(_exitAfterPendingSync());
+    });
+  }
+
+  void _cancelExitRetryTimer() {
+    _exitRetryTimer?.cancel();
+    _exitRetryTimer = null;
   }
 
   String? _resolveTrayIconPath() {

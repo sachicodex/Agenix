@@ -469,9 +469,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       final calendars = await GoogleCalendarService.instance.getUserCalendars();
       if (mounted) {
         setState(() {
-          _availableCalendars = _mergeCalendars(_availableCalendars, calendars);
-          // If no calendar is selected, select the first one
-          if (_selectedCalendarId == null && calendars.isNotEmpty) {
+          // A successful remote response is authoritative. Do not keep
+          // calendars that were deleted or removed from Google Calendar.
+          _availableCalendars = calendars;
+          // If the selected calendar was deleted, select a valid replacement.
+          final selectedStillExists =
+              _selectedCalendarId != null &&
+              calendars.any(
+                (calendar) => calendar['id'] == _selectedCalendarId,
+              );
+          if (!selectedStillExists && calendars.isNotEmpty) {
             _selectedCalendarId = calendars.first['id'];
           }
           _loadingCalendars = false;

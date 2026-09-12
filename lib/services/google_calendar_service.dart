@@ -218,7 +218,7 @@ class GoogleCalendarService {
         .toList();
 
     try {
-      await LocalEventStore.instance.upsertCalendars(calendars);
+      await LocalEventStore.instance.replaceCalendars(calendars);
     } catch (e) {
       _logDebug('Failed to cache calendars locally: $e');
     }
@@ -283,8 +283,21 @@ class GoogleCalendarService {
       throw ArgumentError('The default calendar cannot be deleted.');
     }
     final client = await _getAuthenticatedClient();
-    await calendar.CalendarApi(client).calendars.delete(calendarId);
+    try {
+      await calendar.CalendarApi(client).calendars.delete(calendarId);
+    } catch (error) {
+      // Google returns 404 when the calendar was already deleted elsewhere.
+      // Treat that as an idempotent success and remove the stale local entry.
+      if (!_isCalendarNotFoundError(error)) rethrow;
+    }
     await LocalEventStore.instance.deleteCalendar(calendarId);
+  }
+
+  bool _isCalendarNotFoundError(Object error) {
+    final text = error.toString().toLowerCase();
+    return text.contains('status: 404') ||
+        text.contains('404, message: not found') ||
+        text.contains('message: not found');
   }
 
   /// Updates the display colour selected by the user for a calendar.
