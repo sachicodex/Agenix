@@ -191,8 +191,8 @@ class SystemTrayService with TrayListener, WindowListener {
 
   String? _resolveTrayIconPath() {
     final candidates = <String>[
-      'assets/logo/agenix-windows.png',
-      '${File(Platform.resolvedExecutable).parent.path}\\data\\flutter_assets\\assets\\logo\\agenix-windows.png',
+      'assets/logo/Agenix - Transparent - Windows.png',
+      '${File(Platform.resolvedExecutable).parent.path}\\data\\flutter_assets\\assets\\logo\\Agenix - Transparent - Windows.png',
     ];
 
     for (final path in candidates) {

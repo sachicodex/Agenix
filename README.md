@@ -1,7 +1,7 @@
 # Agenix
 
 <p align="center">
-  <img src="assets/logo/agenix-windows.png" alt="Agenix Logo" width="140" />
+  <img src="assets/logo/Agenix - Transparent - Windows.png" alt="Agenix Logo" width="140" />
 </p>
 
 <p align="center">

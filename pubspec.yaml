@@ -85,7 +85,6 @@ flutter:
 
   # Assets used by the UI (icons placeholders)
   assets:
-    - assets/img/
     - assets/logo/
 
   # Custom fonts (SF Pro Display)
@@ -111,7 +110,7 @@ msix_config:
   publisher: CN=Sachicodex
   identity_name: com.sachicodex.agenix
   msix_version: 6.3.25.0
-  logo_path: assets/logo/agenix-windows.png
-  start_menu_icon_path: assets/logo/agenix-windows.png
-  tile_icon_path: assets/logo/agenix-windows.png
+  logo_path: assets/logo/Agenix - Transparent - Windows.png
+  start_menu_icon_path: assets/logo/Agenix - Transparent - Windows.png
+  tile_icon_path: assets/logo/Agenix - Transparent - Windows.png
   sign_tool_options: /tr http://timestamp.digicert.com /td sha256 /fd sha256

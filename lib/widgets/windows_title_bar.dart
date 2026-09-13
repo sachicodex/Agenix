@@ -217,7 +217,7 @@ class _WindowsTitleBarState extends State<_WindowsTitleBar>
                         child: Row(
                           children: [
                             Image.asset(
-                              'assets/logo/agenix.png',
+                              'assets/logo/Agenix - Transparent - App.png',
                               width: 20,
                               height: 20,
                               fit: BoxFit.contain,

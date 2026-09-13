@@ -23,7 +23,7 @@ class ModernSplashScreen extends StatelessWidget {
           width: 90,
           height: 90,
           child: Image.asset(
-            'assets/logo/agenix.png',
+            'assets/logo/Agenix - Transparent - Full.png',
             fit: BoxFit.contain,
             errorBuilder: (context, error, stackTrace) => const Icon(
               Icons.auto_awesome_rounded,

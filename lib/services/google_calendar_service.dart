@@ -2486,9 +2486,9 @@ class GoogleCalendarService {
 
   String? _resolveAgenixLogoDataUrl() {
     final candidates = <String>[
-      r'E:\02 Soft Dev\Flutter Development\Nuvex Flow\assets\logo\agenix-windows.png',
-      'assets/logo/agenix-windows.png',
-      '${File(Platform.resolvedExecutable).parent.path}\\data\\flutter_assets\\assets\\logo\\agenix-windows.png',
+      r'E:\02 Soft Dev\Flutter Development\Nuvex Flow\assets\logo\Agenix - Transparent - Windows.png',
+      'assets/logo/Agenix - Transparent - Windows.png',
+      '${File(Platform.resolvedExecutable).parent.path}\\data\\flutter_assets\\assets\\logo\\Agenix - Transparent - Windows.png',
     ];
 
     for (final path in candidates) {

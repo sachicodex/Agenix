@@ -36,7 +36,7 @@ CloseApplications=yes
 RestartApplications=no
 OutputDir=F:\02 Soft Dev\Flutter Development\Agenix-main\installer\output
 OutputBaseFilename=Agenix-Setup
-SetupIconFile=F:\02 Soft Dev\Flutter Development\Agenix-main\assets\logo\agenix.ico
+SetupIconFile=F:\02 Soft Dev\Flutter Development\Agenix-main\assets\logo\Agenix.ico
 SolidCompression=yes
 WizardStyle=modern dark windows11
 

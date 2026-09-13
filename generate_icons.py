@@ -8,7 +8,7 @@ from PIL import Image
 
 def generate_android_icons():
     """Generate Android launcher icons in different densities"""
-    logo_path = "assets/logo/agenix-android.png"
+    logo_path = "assets/logo/Agenix - Transparent - App.png"
     
     if not os.path.exists(logo_path):
         print(f"Error: {logo_path} not found!")
@@ -45,7 +45,7 @@ def generate_android_icons():
 
 def generate_android_adaptive_icons():
     """Generate Android adaptive icon foregrounds in different densities"""
-    logo_path = "assets/logo/agenix-android.png"
+    logo_path = "assets/logo/Agenix - Transparent - App.png"
     
     if not os.path.exists(logo_path):
         print(f"Error: {logo_path} not found!")
@@ -84,8 +84,8 @@ def generate_android_adaptive_icons():
         return False
 
 def generate_windows_ico():
-    """Generate Windows ICO file from agenix-windows.png"""
-    logo_path = "assets/logo/agenix-windows.png"
+    """Generate Windows ICO file from the Windows logo PNG"""
+    logo_path = "assets/logo/Agenix - Transparent - Windows.png"
     
     if not os.path.exists(logo_path):
         print(f"Error: {logo_path} not found!")
@@ -175,4 +175,3 @@ if __name__ == "__main__":
     else:
         print("\n[ERROR] Some icons failed to generate")
         sys.exit(1)
-

@@ -67,7 +67,10 @@ class _SignInScreenState extends State<SignInScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               AppFadeSlideIn(
-                child: Image.asset('assets/logo/agenix.png', width: 160),
+                child: Image.asset(
+                  'assets/logo/Agenix - Transparent - App.png',
+                  width: 160,
+                ),
               ),
               const SizedBox(height: 48),
               AppFadeSlideIn(
