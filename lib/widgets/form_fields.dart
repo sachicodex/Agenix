@@ -678,10 +678,7 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
           Container(width: 1, height: 22, color: AppColors.borderColor),
           const SizedBox(width: 4),
           _formatButton(Icons.link, _addLink),
-          _formatButton(
-            Icons.format_clear,
-            _clearFormatting,
-          ),
+          _formatButton(Icons.format_clear, _clearFormatting),
           const Spacer(),
           _formatButton(Icons.keyboard_arrow_up, _toggleExpanded),
           if (widget.onAIClick != null)

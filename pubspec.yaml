@@ -85,6 +85,7 @@ flutter:
 
   # Assets used by the UI (icons placeholders)
   assets:
+    - assets/img/
     - assets/logo/
 
   # Custom fonts (SF Pro Display)
