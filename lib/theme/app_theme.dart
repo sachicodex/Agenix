@@ -236,14 +236,7 @@ class AppTheme {
         actionTextColor: AppColors.primary,
         elevation: 6,
       ),
-      appBarTheme: AppBarTheme(
-        backgroundColor: AppColors.surface,
-        foregroundColor: AppColors.onBackground,
-        elevation: 0,
-        centerTitle: false,
-        titleTextStyle: AppTextStyles.headline2,
-        toolbarTextStyle: AppTextStyles.bodyText1,
-      ),
+
     );
   }
 }

@@ -1,3 +1,4 @@
+import 'package:agenix/widgets/app_bar_widget/app_bar.dart';
 import 'package:agenix/widgets/primary_button/primary_button.dart';
 import 'package:flutter/material.dart';
 import '../services/google_calendar_service.dart';
@@ -163,7 +164,7 @@ class _CalendarSelectionScreenState extends State<CalendarSelectionScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: AppBarWidget(
         automaticallyImplyLeading: false, // Remove back button
         title: Text('Select Default Calendar', style: AppTextStyles.headline2),
       ),
@@ -213,9 +214,8 @@ class _CalendarSelectionScreenState extends State<CalendarSelectionScreen> {
                             child: PrimaryButton(
                               onPressed: _reAuthenticate,
                               icon: const Icon(Icons.login),
-                              label:
-                                'Sign In Again',
-                              textStyle:  AppTextStyles.button,
+                              label: 'Sign In Again',
+                              textStyle: AppTextStyles.button,
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 24,
                                 vertical: 16,

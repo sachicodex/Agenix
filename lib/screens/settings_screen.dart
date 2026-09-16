@@ -22,6 +22,9 @@ import '../widgets/modern_splash_screen.dart';
 import '../widgets/app_select_field.dart';
 import '../widgets/app_popup.dart';
 import '../widgets/calendar_color_picker.dart';
+import '../widgets/app_bar_widget/app_bar.dart';
+import '../widgets/app_card/card.dart';
+import '../widgets/app_input/input.dart';
 import '../navigation/app_route_observer.dart';
 import '../utils/platform_focus.dart';
 
@@ -988,24 +991,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     final content = ListView(
       padding: EdgeInsets.all(isWide ? 24 : 16),
       children: [
-        Card(
-          color: const Color(0xFF101010),
-          child: Padding(
-            padding: const EdgeInsets.all(18),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildAccountAndServicesSection(),
+        AppCard(
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildAccountAndServicesSection(),
+              const SizedBox(height: 32),
+              if (_signedIn || Platform.isWindows) ...[
+                _buildAppPreferencesSection(),
                 const SizedBox(height: 32),
-                if (_signedIn || Platform.isWindows) ...[
-                  _buildAppPreferencesSection(),
-                  const SizedBox(height: 32),
-                ],
-                _buildAboutSection(),
-                const SizedBox(height: 32),
-                _buildLogoutSection(),
               ],
-            ),
+              _buildAboutSection(),
+              const SizedBox(height: 32),
+              _buildLogoutSection(),
+            ],
           ),
         ),
       ],
@@ -1203,42 +1203,35 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   }
 
   Widget _buildAiContent() {
-    return TextField(
+    return AppInput(
       controller: _apiKeyController,
       autofocus: shouldAutofocusTextInput,
-      decoration: InputDecoration(
-        hintText: 'Enter your AI API key',
-        hintStyle: AppTextStyles.bodyText1.copyWith(
-          color: AppColors.onSurface.withValues(alpha: 0.5),
-        ),
-        filled: true,
-        fillColor: Color(0XFF101010),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide.none,
-        ),
-        suffixIcon: _isSavingApiKey
-            ? const Padding(
-                padding: EdgeInsets.all(12.0),
-                child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              )
-            : AppPressFeedback(
-                child: IconButton(
-                  icon: Icon(
-                    _apiKeyValid
-                        ? Icons.check_circle
-                        : Icons.check_circle_outline,
-                  ),
-                  color: _apiKeyValid ? Colors.green : AppColors.primary,
-                  onPressed: _saveApiKey,
-                ),
-              ),
+      hintText: 'Enter your AI API key',
+      hintStyle: AppTextStyles.bodyText1.copyWith(
+        color: AppColors.onSurface.withValues(alpha: 0.5),
       ),
-      style: AppTextStyles.bodyText1,
+      borderRadius: const BorderRadius.all(Radius.circular(14)),
+      suffixIcon: _isSavingApiKey
+          ? const Padding(
+              padding: EdgeInsets.all(12.0),
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+          : AppPressFeedback(
+              child: IconButton(
+                icon: Icon(
+                  _apiKeyValid
+                      ? Icons.check_circle
+                      : Icons.check_circle_outline,
+                ),
+                color: _apiKeyValid ? Colors.green : AppColors.primary,
+                onPressed: _saveApiKey,
+              ),
+            ),
+      textStyle: AppTextStyles.bodyText1,
       obscureText: true,
       enabled: !_isSavingApiKey,
       onChanged: (value) {
@@ -1410,7 +1403,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     }
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: AppBarWidget(
         backgroundColor: Color(0XFF101010),
         leading: AppPressFeedback(
           child: IconButton(

@@ -130,8 +130,7 @@ class _TimelineHourRulerPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final columnBackgroundPaint = Paint()
-      ..color = AppColors.surface.withValues(alpha: 0.72);
+    final columnBackgroundPaint = Paint()..color = AppColors.card;
     canvas.drawRect(
       Rect.fromLTWH(0, 0, labelAreaWidth, size.height),
       columnBackgroundPaint,

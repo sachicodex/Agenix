@@ -5,6 +5,7 @@ class AppColors {
   static const Color primary = Color(0xFFC8F902); // Brand
   static const Color secondary = Color(0xFFA0C702); // Highlight - still not use
   static const Color background = Color(0XFF020202); // Dark background
+  static const Color card = Color(0XFF101010); // Dark surface
   static const Color surface = Color(0XFF161616); // Dark surface
   static const Color gradientMix = Color(0xFFA0C702); // Border and divider
   static const Color success = Color(0xFF22C55E);

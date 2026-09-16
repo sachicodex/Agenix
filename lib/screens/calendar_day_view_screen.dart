@@ -1521,7 +1521,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
-        statusBarColor: AppColors.surface,
+        statusBarColor: AppColors.card,
         statusBarIconBrightness: Brightness.light,
         statusBarBrightness: Brightness.dark,
       ),
@@ -1626,7 +1626,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       height: 60,
       padding: const EdgeInsets.symmetric(horizontal: 4),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: AppColors.card,
         border: Border(bottom: BorderSide(color: AppColors.borderColor)),
       ),
       child: Stack(
@@ -1745,7 +1745,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                     horizontal: 0,
                     vertical: 6,
                   ),
-                  decoration: BoxDecoration(color: AppColors.surface),
+                  decoration: BoxDecoration(color: AppColors.error),
                   child: Row(
                     children: [
                       SizedBox(
@@ -1856,46 +1856,51 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                   timelineBuilder: (context, hourHeight, gridHeight) {
                     return SizedBox(
                       height: gridHeight + timelineTopGap,
-                      child: Stack(
-                        children: [
-                          // Full-day calendars are also visible in the time
-                          // grid: each receives a 2px color rail at its left.
-                          ..._allDayEvents.asMap().entries.map(
-                            (entry) => Positioned(
+                      child: ColoredBox(
+                        color: AppColors.card,
+                        child: Stack(
+                          children: [
+                            // Full-day calendars are also visible in the time
+                            // grid: each receives a 2px color rail at its left.
+                            ..._allDayEvents.asMap().entries.map(
+                              (entry) => Positioned(
+                                top: timelineTopGap,
+                                bottom: 0,
+                                left: timeColumnWidth - 3 - (entry.key * 3),
+                                width: 2,
+                                child: ColoredBox(color: entry.value.color),
+                              ),
+                            ),
+                            Positioned.fill(
                               top: timelineTopGap,
-                              bottom: 0,
-                              left: timeColumnWidth - 3 - (entry.key * 3),
-                              width: 2,
-                              child: ColoredBox(color: entry.value.color),
+                              child: TimelineHourRuler(
+                                hourHeight: hourHeight,
+                                labelAreaWidth: timeColumnWidth,
+                              ),
                             ),
-                          ),
-                          Positioned.fill(
-                            top: timelineTopGap,
-                            child: TimelineHourRuler(
-                              hourHeight: hourHeight,
-                              labelAreaWidth: timeColumnWidth,
-                            ),
-                          ),
-                          Row(
-                            children: [
-                              SizedBox(width: timeColumnWidth),
-                              Expanded(
-                                child: Padding(
-                                  padding: EdgeInsets.only(top: timelineTopGap),
-                                  child: _buildDayGrid(
-                                    BoxConstraints(
-                                      maxWidth:
-                                          constraints.maxWidth -
-                                          timeColumnWidth,
-                                      maxHeight: gridHeight,
+                            Row(
+                              children: [
+                                SizedBox(width: timeColumnWidth),
+                                Expanded(
+                                  child: Padding(
+                                    padding: EdgeInsets.only(
+                                      top: timelineTopGap,
                                     ),
-                                    hourHeight: hourHeight,
+                                    child: _buildDayGrid(
+                                      BoxConstraints(
+                                        maxWidth:
+                                            constraints.maxWidth -
+                                            timeColumnWidth,
+                                        maxHeight: gridHeight,
+                                      ),
+                                      hourHeight: hourHeight,
+                                    ),
                                   ),
                                 ),
-                              ),
-                            ],
-                          ),
-                        ],
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
                     );
                   },
@@ -1953,31 +1958,34 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                 timelineBuilder: (context, hourHeight, gridHeight) {
                   return SizedBox(
                     height: gridHeight,
-                    child: Stack(
-                      children: [
-                        Positioned.fill(
-                          child: TimelineHourRuler(
-                            hourHeight: hourHeight,
-                            labelAreaWidth: timeColumnWidth,
-                          ),
-                        ),
-                        Row(
-                          children: [
-                            SizedBox(width: timeColumnWidth),
-                            SizedBox(
-                              width: gridWidth,
-                              child: _buildMultiDayGrid(
-                                BoxConstraints(
-                                  maxWidth: gridWidth,
-                                  maxHeight: gridHeight,
-                                ),
-                                days,
-                                hourHeight: hourHeight,
-                              ),
+                    child: ColoredBox(
+                      color: AppColors.card,
+                      child: Stack(
+                        children: [
+                          Positioned.fill(
+                            child: TimelineHourRuler(
+                              hourHeight: hourHeight,
+                              labelAreaWidth: timeColumnWidth,
                             ),
-                          ],
-                        ),
-                      ],
+                          ),
+                          Row(
+                            children: [
+                              SizedBox(width: timeColumnWidth),
+                              SizedBox(
+                                width: gridWidth,
+                                child: _buildMultiDayGrid(
+                                  BoxConstraints(
+                                    maxWidth: gridWidth,
+                                    maxHeight: gridHeight,
+                                  ),
+                                  days,
+                                  hourHeight: hourHeight,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                   );
                 },
@@ -3318,7 +3326,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                       child: TimelineEventBlockContent(
                         event: event,
                         visualHeight: visualHeight,
-                        textColor:  _eventBlockTextColor,
+                        textColor: _eventBlockTextColor,
                       ),
                     ),
                   ),
