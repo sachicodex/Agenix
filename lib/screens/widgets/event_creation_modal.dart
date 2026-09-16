@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:agenix/widgets/primary_button/primary_button.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -853,10 +854,10 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
     return Row(
       children: [
         Expanded(
-          child: PrimaryActionButton(
+          child: PrimaryButton(
             onPressed: _saving || _creatingCalendar ? null : _saveEvent,
             minimumSize: const Size.fromHeight(44),
-            label: Text(_saving ? 'Saving...' : 'Save'),
+            label: _saving ? 'Saving...' : 'Save',
           ),
         ),
       ],

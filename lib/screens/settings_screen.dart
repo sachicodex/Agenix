@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:agenix/widgets/secondary_button/secondary_button.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,6 +17,7 @@ import '../services/settings_sync_state_store.dart';
 import '../services/windows_startup_service.dart';
 import 'auth_wrapper.dart';
 import '../widgets/app_animations.dart';
+import '../widgets/app_icon.dart';
 import '../widgets/modern_splash_screen.dart';
 import '../widgets/app_select_field.dart';
 import '../widgets/app_popup.dart';
@@ -95,7 +97,7 @@ class _SettingsCreateCalendarDialogState
                 color: AppColors.onSurface.withValues(alpha: 0.7),
               ),
               filled: true,
-              fillColor: AppColors.surface,
+              fillColor: Color(0XFF101010),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: _nameBorder,
@@ -986,20 +988,26 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     final content = ListView(
       padding: EdgeInsets.all(isWide ? 24 : 16),
       children: [
-        _buildAccountSection(),
-        const SizedBox(height: 16),
-        _buildAiSection(),
-        if (Platform.isAndroid || Platform.isWindows) ...[
-          const SizedBox(height: 16),
-        ],
-        if (_signedIn) ...[_buildCalendarSection(), const SizedBox(height: 16)],
-        if (Platform.isAndroid || Platform.isWindows) ...[
-          _buildPlatformSection(),
-          const SizedBox(height: 16),
-        ],
-        _buildAboutSection(),
-        const SizedBox(height: 16),
-        _buildLogoutSection(),
+        Card(
+          color: const Color(0xFF101010),
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildAccountAndServicesSection(),
+                const SizedBox(height: 32),
+                if (_signedIn || Platform.isWindows) ...[
+                  _buildAppPreferencesSection(),
+                  const SizedBox(height: 32),
+                ],
+                _buildAboutSection(),
+                const SizedBox(height: 32),
+                _buildLogoutSection(),
+              ],
+            ),
+          ),
+        ),
       ],
     );
 
@@ -1020,55 +1028,43 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
 
   Widget _buildSectionCard({
     required String title,
-    required IconData icon,
+    required AppIconData icon,
     required List<Widget> children,
   }) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
           children: [
-            Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: AppColors.onSurface.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Icon(icon, color: AppColors.onBackground, size: 20),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: AppTextStyles.headline2.copyWith(fontSize: 18),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+            Container(
+              width: 25,
+              height: 25,
+              decoration: BoxDecoration(
+                color: AppColors.onSurface.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: AppIcon(icon: icon, color: AppColors.primary, size: 10),
             ),
-            const SizedBox(height: 18),
-            ...children,
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: AppTextStyles.headline2.copyWith(
+                      fontSize: 18,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildSectionDivider() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      child: Divider(
-        height: 1,
-        color: AppColors.onSurface.withValues(alpha: 0.08),
-      ),
+        const SizedBox(height: 18),
+        ...children,
+      ],
     );
   }
 
@@ -1116,141 +1112,146 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     );
   }
 
-  Widget _buildCalendarSection() {
+  Widget _buildAccountAndServicesSection() {
     return _buildSectionCard(
-      title: 'Default Calendar',
-      icon: Icons.calendar_today_outlined,
+      title: 'Account & Services',
+      icon: AppIconData.huge(HugeIcons.strokeRoundedDatabase),
       children: [
-        if (_loadingCalendars)
-          const Center(
-            child: Padding(
-              padding: EdgeInsets.all(16.0),
-              child: CircularProgressIndicator(),
-            ),
-          )
-        else if (_availableCalendars.isEmpty)
-          Text(
-            'No calendars available right now.',
-            style: AppTextStyles.bodyText1.copyWith(
-              color: AppColors.onSurface.withValues(alpha: 0.62),
-            ),
-          )
-        else
-          AppSelectField<String>(
-            label: 'Default calendar',
-            value: _selectedCalendarId,
-            options: _availableCalendars
-                .map(
-                  (calendar) => AppSelectOption(
-                    value: calendar['id'] as String,
-                    label: calendar['name'] as String? ?? '',
-                    color: calendar['color'] is int
-                        ? Color(calendar['color'] as int)
-                        : null,
-                  ),
-                )
-                .toList(),
-            onAddPressed: _creatingCalendar ? null : _createCalendar,
-            showAddInField: false,
-            onDelete: _deleteCalendar,
-            onColorChanged: _changeCalendarColor,
-            onNameChanged: _changeCalendarName,
-            addTooltip: _creatingCalendar
-                ? 'Creating calendar...'
-                : 'Create calendar',
-            onChanged: (value) {
-              if (value == _selectedCalendarId) return;
-              setState(() => _selectedCalendarId = value);
-              _saveDefaultCalendar();
-            },
-          ),
+        _buildAccountContent(),
+        const SizedBox(height: 18),
+        _buildAiContent(),
       ],
     );
   }
 
-  Widget _buildPlatformSection() {
+  Widget _buildAppPreferencesSection() {
     final children = <Widget>[];
-
-    if (Platform.isWindows) {
-      children.add(
-        _buildSwitchRow(
-          title: 'Launch on Windows startup',
-          subtitle: _windowsHasPackageIdentity
-              ? 'Start Agenix automatically when Windows starts.'
-              : 'May require MSIX install or manual startup registration.',
-          value: _launchOnStartup,
-          onChanged: (value) => _toggleLaunchOnStartup(value),
-        ),
-      );
+    if (_signedIn) {
+      children.add(_buildCalendarContent());
     }
-
-    if (children.isEmpty) {
-      return const SizedBox.shrink();
+    if (_signedIn && Platform.isWindows) {
+      children.add(const SizedBox(height: 18));
+    }
+    if (Platform.isWindows) {
+      children.add(_buildStartupContent());
     }
 
     return _buildSectionCard(
-      title: 'Startup',
-      icon: Icons.rocket_launch_outlined,
+      title: 'App Preferences',
+      icon: AppIconData.huge(HugeIcons.strokeRoundedSettings01),
       children: children,
     );
   }
 
-  Widget _buildAiSection() {
-    return _buildSectionCard(
-      title: 'AI Tools',
-      icon: Icons.auto_awesome_outlined,
-      children: [
-        TextField(
-          controller: _apiKeyController,
-          autofocus: shouldAutofocusTextInput,
-          decoration: InputDecoration(
-            hintText: 'Enter your AI API key',
-            hintStyle: AppTextStyles.bodyText1.copyWith(
-              color: AppColors.onSurface.withValues(alpha: 0.5),
-            ),
-            filled: true,
-            fillColor: AppColors.surface,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide.none,
-            ),
-            suffixIcon: _isSavingApiKey
-                ? const Padding(
-                    padding: EdgeInsets.all(12.0),
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  )
-                : AppPressFeedback(
-                    child: IconButton(
-                      icon: Icon(
-                        _apiKeyValid
-                            ? Icons.check_circle
-                            : Icons.check_circle_outline,
-                      ),
-                      color: _apiKeyValid ? Colors.green : AppColors.primary,
-                      onPressed: _saveApiKey,
-                    ),
-                  ),
-          ),
-          style: AppTextStyles.bodyText1,
-          obscureText: true,
-          enabled: !_isSavingApiKey,
-          onChanged: (value) {
-            if (_apiKeyValid) {
-              setState(() {
-                _apiKeyValid = false;
-              });
-            }
-          },
+  Widget _buildCalendarContent() {
+    if (_loadingCalendars) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(16.0),
+          child: CircularProgressIndicator(),
         ),
-      ],
+      );
+    }
+    if (_availableCalendars.isEmpty) {
+      return Text(
+        'No calendars available right now.',
+        style: AppTextStyles.bodyText1.copyWith(
+          color: AppColors.onSurface.withValues(alpha: 0.62),
+        ),
+      );
+    }
+
+    return AppSelectField<String>(
+      label: 'Default calendar',
+      value: _selectedCalendarId,
+      options: _availableCalendars
+          .map(
+            (calendar) => AppSelectOption(
+              value: calendar['id'] as String,
+              label: calendar['name'] as String? ?? '',
+              color: calendar['color'] is int
+                  ? Color(calendar['color'] as int)
+                  : null,
+            ),
+          )
+          .toList(),
+      onAddPressed: _creatingCalendar ? null : _createCalendar,
+      showAddInField: false,
+      onDelete: _deleteCalendar,
+      onColorChanged: _changeCalendarColor,
+      onNameChanged: _changeCalendarName,
+      addTooltip: _creatingCalendar
+          ? 'Creating calendar...'
+          : 'Create calendar',
+      onChanged: (value) {
+        if (value == _selectedCalendarId) return;
+        setState(() => _selectedCalendarId = value);
+        _saveDefaultCalendar();
+      },
     );
   }
 
-  Widget _buildAccountSection() {
+  Widget _buildStartupContent() {
+    return _buildSwitchRow(
+      title: 'Launch on Windows startup',
+      subtitle: _windowsHasPackageIdentity
+          ? 'Start Agenix automatically when Windows starts.'
+          : 'May require MSIX install or manual startup registration.',
+      value: _launchOnStartup,
+      onChanged: (value) => _toggleLaunchOnStartup(value),
+    );
+  }
+
+  Widget _buildAiContent() {
+    return TextField(
+      controller: _apiKeyController,
+      autofocus: shouldAutofocusTextInput,
+      decoration: InputDecoration(
+        hintText: 'Enter your AI API key',
+        hintStyle: AppTextStyles.bodyText1.copyWith(
+          color: AppColors.onSurface.withValues(alpha: 0.5),
+        ),
+        filled: true,
+        fillColor: Color(0XFF101010),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide.none,
+        ),
+        suffixIcon: _isSavingApiKey
+            ? const Padding(
+                padding: EdgeInsets.all(12.0),
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              )
+            : AppPressFeedback(
+                child: IconButton(
+                  icon: Icon(
+                    _apiKeyValid
+                        ? Icons.check_circle
+                        : Icons.check_circle_outline,
+                  ),
+                  color: _apiKeyValid ? Colors.green : AppColors.primary,
+                  onPressed: _saveApiKey,
+                ),
+              ),
+      ),
+      style: AppTextStyles.bodyText1,
+      obscureText: true,
+      enabled: !_isSavingApiKey,
+      onChanged: (value) {
+        if (_apiKeyValid) {
+          setState(() {
+            _apiKeyValid = false;
+          });
+        }
+      },
+    );
+  }
+
+  Widget _buildAccountContent() {
     final accountTitle = _signedIn
         ? ((_userDisplayName != null && _userDisplayName!.trim().isNotEmpty)
               ? _userDisplayName!.trim()
@@ -1260,75 +1261,62 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
         ? _userEmail!
         : 'Sign in from the welcome screen to sync your account.';
 
-    return _buildSectionCard(
-      title: 'Account',
-      icon: Icons.account_circle_outlined,
-      children: [
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppColors.onSurface.withValues(alpha: 0.06),
-                AppColors.onSurface.withValues(alpha: 0.03),
-              ],
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [AppColors.surface, AppColors.surface],
+        ),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: AppColors.onSurface.withValues(alpha: 0.08)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: AppColors.onBackground.withValues(alpha: 0.35),
+              ),
             ),
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(
-              color: AppColors.onSurface.withValues(alpha: 0.08),
-            ),
+            child: _buildUserAvatar(),
           ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(3),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: AppColors.onBackground.withValues(alpha: 0.35),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  accountTitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.bodyText1,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  accountSubtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.bodyText1.copyWith(
+                    color: AppColors.onSurface.withValues(alpha: 0.62),
+                    fontSize: 13,
                   ),
                 ),
-                child: _buildUserAvatar(),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      accountTitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyles.bodyText1,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      accountSubtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyles.bodyText1.copyWith(
-                        color: AppColors.onSurface.withValues(alpha: 0.62),
-                        fontSize: 13,
-                      ),
-                    ),
-
-                    const SizedBox(width: 6),
-                  ],
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
   Widget _buildAboutSection() {
     return _buildSectionCard(
       title: 'About',
-      icon: Icons.info_outline_rounded,
+      icon: AppIconData.huge(HugeIcons.strokeRoundedInformationCircle),
       children: [
         Row(
           children: [
@@ -1336,7 +1324,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
               child: Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: AppColors.onSurface.withValues(alpha: 0.04),
+                  color: AppColors.surface,
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
                     color: AppColors.onSurface.withValues(alpha: 0.08),
@@ -1363,7 +1351,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
               child: Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: AppColors.onSurface.withValues(alpha: 0.04),
+                  color: AppColors.surface,
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
                     color: AppColors.onSurface.withValues(alpha: 0.08),
@@ -1393,22 +1381,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
 
   Widget _buildLogoutSection() {
     return Padding(
-      padding: const EdgeInsets.all(18),
+      padding: EdgeInsets.zero,
       child: SizedBox(
         width: double.infinity,
-        child: OutlinedButton.icon(
+        child: SecondaryButton(
           onPressed: _signedIn ? _handleLogout : null,
-          icon: const Icon(Icons.logout_rounded, size: 18),
-          label: const Text('Logout'),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: AppColors.error,
-            backgroundColor: AppColors.error.withValues(alpha: 0.1),
-            side: BorderSide(color: AppColors.error.withValues(alpha: 0.45)),
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-            ),
-          ),
+          icon: const Icon(Icons.logout_rounded),
+          label: 'Logout',
+          padding: EdgeInsets.symmetric(vertical: 20),
+          backgroundColor: AppColors.error,
         ),
       ),
     );
@@ -1430,6 +1411,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
 
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: Color(0XFF101010),
         leading: AppPressFeedback(
           child: IconButton(
             icon: const Icon(Icons.arrow_back_ios_rounded),

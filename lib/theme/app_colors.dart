@@ -7,7 +7,9 @@ class AppColors {
   static const Color background = Color(0XFF020202); // Dark background
   static const Color surface = Color(0XFF161616); // Dark surface
   static const Color gradientMix = Color(0xFFA0C702); // Border and divider
-  static const Color error = Color(0xFFCB4B0B); // Emphasis
+  static const Color success = Color(0xFF22C55E);
+  static const Color warning = Color(0xFFF59E0B);
+  static const Color error = Color(0xFFEF4444);// Emphasis
   static const Color onPrimary = Color(
     0xFF1A1614,
   ); // Dark text on the brand button
@@ -18,7 +20,7 @@ class AppColors {
   // Supporting UI colors
   static const Color borderColor = Color(0XFF2a2a2a);
   static const Color borderFocusColor = Color(0XFF3a3a3a);
-  static const Color dividerColor = Color(0xFF1F242C);
+  static const Color dividerColor = Color(0xFF222222);
   static const Color selectedColor = Color(
     0x55789501,
   ); // Brand with low opacity

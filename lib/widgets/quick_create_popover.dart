@@ -1,3 +1,4 @@
+import 'package:agenix/widgets/primary_button/primary_button.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../theme/app_colors.dart';
@@ -121,13 +122,13 @@ class _QuickCreatePopoverState extends State<QuickCreatePopover> {
                           child: const Text('Cancel'),
                         ),
                         const SizedBox(width: 8),
-                        PrimaryActionButton(
+                        PrimaryButton(
                           onPressed: _handleCreate,
                           padding: const EdgeInsets.symmetric(
                             horizontal: 16,
                             vertical: 8,
                           ),
-                          label: const Text('Save'),
+                          label: 'Save',
                         ),
                       ],
                     ),

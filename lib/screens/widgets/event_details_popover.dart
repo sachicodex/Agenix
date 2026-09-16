@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:agenix/widgets/primary_button/primary_button.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_quill/flutter_quill.dart';
@@ -470,9 +471,9 @@ class _EventEditModalState extends ConsumerState<EventEditModal> {
                     child: const Text('Cancel'),
                   ),
                   const SizedBox(width: 8),
-                  PrimaryActionButton(
+                  PrimaryButton(
                     onPressed: _saveEvent,
-                    label: const Text('Save'),
+                    label: 'Save',
                   ),
                 ],
               ),

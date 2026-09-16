@@ -484,6 +484,7 @@ CREATE TABLE IF NOT EXISTS user_profile (
   /// accessible and must not remain visible in offline cache/UI state.
   Future<void> replaceCalendars(List<Map<String, dynamic>> calendars) async {
     final db = _requireDb();
+    final changedCalendarColors = <String, int>{};
     final ids = calendars
         .map((calendar) => calendar['id'] as String?)
         .whereType<String>()
@@ -501,16 +502,49 @@ CREATE TABLE IF NOT EXISTS user_profile (
       for (final calendar in calendars) {
         final id = (calendar['id'] as String?) ?? '';
         if (id.isEmpty) continue;
+        final existing = await txn.query(
+          'calendars',
+          columns: ['color'],
+          where: 'id = ?',
+          whereArgs: [id],
+          limit: 1,
+        );
+        final previousColor = existing.isEmpty
+            ? null
+            : existing.first['color'] as int?;
+        final color = (calendar['color'] as int?) ?? 0xFF039BE5;
         await txn.insert('calendars', {
           'id': id,
           'name': (calendar['name'] as String?) ?? id,
-          'color': (calendar['color'] as int?) ?? 0xFF039BE5,
+          'color': color,
           'selected': ((calendar['selected'] as bool?) ?? true) ? 1 : 0,
           'updated_at': DateTime.now().millisecondsSinceEpoch,
         }, conflictAlgorithm: ConflictAlgorithm.replace);
+        if (previousColor != null && previousColor != color) {
+          await txn.update(
+            'events',
+            {'color': color},
+            where: 'calendar_id = ?',
+            whereArgs: [id],
+          );
+          changedCalendarColors[id] = color;
+        }
       }
     });
 
+    if (changedCalendarColors.isEmpty) {
+      _emitChange();
+      return;
+    }
+    if (_eventCacheLoaded) {
+      for (final entry in _eventCache.entries.toList()) {
+        final color = changedCalendarColors[entry.value.calendarId];
+        if (color != null) {
+          _eventCache[entry.key] = entry.value.copyWith(color: Color(color));
+        }
+      }
+    }
+    // Calendar colour changes are display updates, not event edits.
     _emitChange();
   }
 

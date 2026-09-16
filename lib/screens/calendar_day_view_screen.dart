@@ -1,3 +1,4 @@
+import 'package:agenix/widgets/secondary_button/secondary_button.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/gestures.dart';
@@ -12,7 +13,6 @@ import '../providers/event_providers.dart';
 import '../repositories/event_repository.dart';
 import '../services/sync_service.dart';
 import '../theme/app_colors.dart';
-import '../theme/app_theme.dart';
 import 'widgets/event_creation_modal.dart';
 import 'widgets/event_details_popover.dart';
 import '../widgets/context_menu.dart';
@@ -21,7 +21,6 @@ import '../widgets/app_animations.dart';
 import '../widgets/app_popup.dart';
 import '../widgets/app_snackbar.dart';
 import '../widgets/modern_splash_screen.dart';
-import '../widgets/secondary_action_button.dart';
 import '../controllers/timeline_zoom_controller.dart';
 import '../utils/platform_focus.dart';
 import '../widgets/timeline_event_block_content.dart';
@@ -2480,23 +2479,12 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
             ),
             itemBuilder: (context, index) {
               final item = buttons[index];
-              return SecondaryActionButton(
-                onPressed: () {
-                  unawaited(item.onTap());
-                },
-                icon: item.icon,
-                label:
-                    item.label == 'Sync' &&
-                        Platform.isWindows &&
-                        _isUserTriggeredSyncActive
-                    ? 'Syncing'
-                    : item.label,
-                iconBuilder: item.label == 'Sync'
-                    ? (context, icon) => _buildSyncIcon(
-                        size: AppButtonStyles.secondaryActionIconSize,
-                        color: AppColors.onSurface,
-                      )
-                    : null,
+              return SecondaryButton(
+                onPressed: () => unawaited(item.onTap()),
+                icon: item.label == 'Sync'
+                    ? _buildSyncIcon(size: 20)
+                    : Icon(item.icon),
+                label: item.label,
               );
             },
           ),
@@ -2832,7 +2820,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   }
 
   LinearGradient _eventBlockGradient(Color baseColor, {bool isPast = false}) {
-    final gradientBase = isPast ? _darkenColor(baseColor, 0.1) : baseColor;
+    final gradientBase = isPast ? _darkenColor(baseColor, 0.16) : baseColor;
     return LinearGradient(
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
@@ -3330,7 +3318,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                       child: TimelineEventBlockContent(
                         event: event,
                         visualHeight: visualHeight,
-                        textColor: _eventBlockTextColor,
+                        textColor:  _eventBlockTextColor,
                       ),
                     ),
                   ),

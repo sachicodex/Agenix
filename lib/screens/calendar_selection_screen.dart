@@ -1,3 +1,4 @@
+import 'package:agenix/widgets/primary_button/primary_button.dart';
 import 'package:flutter/material.dart';
 import '../services/google_calendar_service.dart';
 import '../theme/app_colors.dart';
@@ -209,13 +210,12 @@ class _CalendarSelectionScreenState extends State<CalendarSelectionScreen> {
                         const SizedBox(height: 32),
                         if (_isPermissionError)
                           AppPressFeedback(
-                            child: PrimaryActionButton.icon(
+                            child: PrimaryButton(
                               onPressed: _reAuthenticate,
                               icon: const Icon(Icons.login),
-                              label: Text(
+                              label:
                                 'Sign In Again',
-                                style: AppTextStyles.button,
-                              ),
+                              textStyle:  AppTextStyles.button,
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 24,
                                 vertical: 16,
@@ -224,9 +224,10 @@ class _CalendarSelectionScreenState extends State<CalendarSelectionScreen> {
                           )
                         else
                           AppPressFeedback(
-                            child: PrimaryActionButton(
+                            child: PrimaryButton(
                               onPressed: _loadCalendars,
-                              label: Text('Retry', style: AppTextStyles.button),
+                              label: 'Retry',
+                              textStyle: AppTextStyles.button,
                             ),
                           ),
                       ],
@@ -302,10 +303,11 @@ class _CalendarSelectionScreenState extends State<CalendarSelectionScreen> {
                       ),
                       const SizedBox(height: 16),
                       AppPressFeedback(
-                        child: PrimaryActionButton.icon(
+                        child: PrimaryButton(
                           onPressed: _saveAndContinue,
                           icon: const Icon(Icons.check),
-                          label: Text('Continue', style: AppTextStyles.button),
+                          label: 'Continue',
+                          textStyle: AppTextStyles.button,
                           padding: const EdgeInsets.symmetric(vertical: 16),
                         ),
                       ),

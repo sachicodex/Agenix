@@ -1,3 +1,4 @@
+import 'package:agenix/widgets/primary_button/primary_button.dart';
 import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
@@ -115,9 +116,10 @@ class _SyncFeedbackScreenState extends State<SyncFeedbackScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           AppPressFeedback(
-            child: PrimaryActionButton(
+            child: PrimaryButton(
               onPressed: () => setState(() => state = 'syncing'),
-              label: Text('Retry', style: AppTextStyles.button),
+              label: 'Retry',
+              textStyle: AppTextStyles.button,
             ),
           ),
         ],

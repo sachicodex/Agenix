@@ -1,3 +1,4 @@
+import 'package:agenix/widgets/primary_button/primary_button.dart';
 import 'package:flutter/material.dart';
 import '../services/google_calendar_service.dart';
 import '../services/google_sign_in_error.dart';
@@ -86,15 +87,12 @@ class _SignInScreenState extends State<SignInScreen> {
                 delay: const Duration(milliseconds: 140),
                 child: AppPressFeedback(
                   enabled: !_loading,
-                  child: PrimaryActionButton.icon(
+                  child: PrimaryButton(
                     onPressed: _loading ? null : _signIn,
                     icon: const Icon(Icons.login),
-                    label: _loading
-                        ? Text('Signing in...', style: AppTextStyles.button)
-                        : Text(
-                            'Sign in with Google',
-                            style: AppTextStyles.button,
-                          ),
+                    label: _loading ? 'Signing in...' : 'Sign in with Google',
+
+                    textStyle: AppTextStyles.button,
                   ),
                 ),
               ),
