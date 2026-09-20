@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import '../models/calendar_event.dart';
 import '../services/google_calendar_service.dart';
 import '../providers/event_providers.dart';
@@ -160,7 +161,7 @@ class CalendarDayViewScreen extends ConsumerStatefulWidget {
 
 class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     with WidgetsBindingObserver, TickerProviderStateMixin, RouteAware {
-  static const Color _eventBlockTextColor = Color(0xFF141614);
+  static const Color _eventBlockTextColor = Colors.white;
   static const Duration _touchLongPressDuration = Duration(milliseconds: 280);
   static const double _touchCancelDistance = 10.0;
   static const double _touchHoldCancelDistance = 20.0;
@@ -243,6 +244,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   String? _keyboardActiveEventId;
   String? _eventActionsPopoverEventId;
   String? _pendingPointerEventId;
+  String? _eventInteractionPriorityId;
   Offset? _pointerDownGlobalPosition;
   bool _dragThresholdExceeded = false;
   CalendarEvent? _dragPreviewEvent;
@@ -2828,26 +2830,23 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   }
 
   LinearGradient _eventBlockGradient(Color baseColor, {bool isPast = false}) {
-    final gradientBase = isPast ? _darkenColor(baseColor, 0.16) : baseColor;
+    final opacity = isPast ? 0.12 : 0.20;
     return LinearGradient(
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
-      colors: [gradientBase, _darkenColor(gradientBase, 0.16)],
+      colors: [
+        baseColor.withValues(alpha: opacity),
+        baseColor.withValues(alpha: opacity * 0.65),
+      ],
     );
   }
 
   Color _eventBlockBorderColor(Color baseColor) {
-    return _darkenColor(baseColor, 0.24);
+    return baseColor;
   }
 
   Color _pastEventBorderColor(Color baseColor) {
-    return _darkenColor(baseColor, 0.32);
-  }
-
-  Color _darkenColor(Color color, double amount) {
-    final hsl = HSLColor.fromColor(color);
-    final lightness = (hsl.lightness - amount).clamp(0.0, 1.0).toDouble();
-    return hsl.withLightness(lightness).toColor();
+    return baseColor.withValues(alpha: 0.55);
   }
 
   void _updateResizeHoverState({
@@ -2874,21 +2873,38 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
 
   List<Widget> _buildEventWidgets(BoxConstraints constraints) {
     final widgets = <Widget>[];
+    final renderEvents = [..._timedEvents]
+      ..sort((a, b) {
+        if (a.id == _eventInteractionPriorityId) return 1;
+        if (b.id == _eventInteractionPriorityId) return -1;
+        return 0;
+      });
 
-    for (final event in _timedEvents) {
+    for (final event in renderEvents) {
+      final eventIndex = _timedEvents.indexOf(event);
+      final overlapDepth = _eventOverlapDepth(event, eventIndex);
+      final stackStep = math.min(overlapDepth, 3) * 72.0;
+      final trailingInset = overlapDepth.isOdd ? 56.0 : 0.0;
+      final eventWidth = (constraints.maxWidth - stackStep - trailingInset)
+          .clamp(80.0, constraints.maxWidth);
       final isDraggingOriginal =
           _isDraggingEvent &&
           _draggedEventId == event.id &&
           !_dragCreatesDuplicate;
-      widgets.add(
-        _buildEventWidget(
-          event,
-          constraints,
-          constraints.maxWidth,
-          0,
-          isDraggingOriginal: isDraggingOriginal,
-        ),
-      );
+      // During a normal move, render only the live preview at the new
+      // position. Keeping this widget here makes the old event look like a
+      // ghost behind the preview. Duplicate drags intentionally keep both.
+      if (!isDraggingOriginal) {
+        widgets.add(
+          _buildEventWidget(
+            event,
+            constraints,
+            eventWidth,
+            stackStep,
+            isDraggingOriginal: isDraggingOriginal,
+          ),
+        );
+      }
     }
 
     if (_dragPreviewEvent != null && _draggedEventId == _dragPreviewEvent!.id) {
@@ -2904,6 +2920,40 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     }
 
     return widgets;
+  }
+
+  void _prioritizeEventForInteraction(String eventId) {
+    if (_eventInteractionPriorityId == eventId ||
+        _isDraggingEvent ||
+        _resizingEventId != null) {
+      return;
+    }
+    setState(() {
+      _eventInteractionPriorityId = eventId;
+    });
+  }
+
+  void _clearEventInteractionPriority(String eventId) {
+    if (_eventInteractionPriorityId != eventId ||
+        _isDraggingEvent ||
+        _resizingEventId != null) {
+      return;
+    }
+    setState(() {
+      _eventInteractionPriorityId = null;
+    });
+  }
+
+  int _eventOverlapDepth(CalendarEvent event, int eventIndex) {
+    var depth = 0;
+    for (var index = 0; index < eventIndex; index++) {
+      final previous = _timedEvents[index];
+      final overlaps =
+          previous.startDateTime.isBefore(event.endDateTime) &&
+          event.startDateTime.isBefore(previous.endDateTime);
+      if (overlaps) depth++;
+    }
+    return depth;
   }
 
   Widget _buildEventWidget(
@@ -2952,20 +3002,51 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
         (constraints.maxWidth - (leftOffset + horizontalInset) - rightInset)
             .clamp(0.0, constraints.maxWidth);
 
+    final isZooming = _isTouchPinchZoomActive || _timelineZoom.isZooming;
+    // Only the event currently being manipulated gets animated. Other event
+    // blocks must stay visually locked while the preview changes position.
+    final isDraggingPreview = isPreview && _isDraggingEvent && !isZooming;
+    final isResizingThisEvent = _resizingEventId == event.id && !isZooming;
+    final interactionScale = isDraggingPreview
+        ? 0.985
+        : isResizingThisEvent
+        ? 0.985
+        : 1.0;
+    final interactionRotation = isDraggingPreview ? 0.0015 : 0.0;
+    final interactionDuration = isDraggingPreview
+        ? const Duration(milliseconds: 90)
+        : isResizingThisEvent
+        ? const Duration(milliseconds: 110)
+        : const Duration(milliseconds: 140);
+    final eventWidgetKey = ValueKey<String>(
+      isPreview && _dragCreatesDuplicate ? '${event.id}-preview' : event.id,
+    );
+
     return Positioned(
+      key: eventWidgetKey,
       left: leftOffset + horizontalInset,
       right: rightInset,
       top: interactionTop,
       height: interactionHeight,
       child: RepaintBoundary(
-        child: _buildEventCard(
-          event,
-          cardWidth: resolvedCardWidth,
-          cardHeight: interactionHeight,
-          visualHeight: visualHeight,
-          visualTopInset: visualTopInset,
-          isPreview: isPreview,
-          isDraggingOriginal: isDraggingOriginal,
+        child: AnimatedRotation(
+          turns: interactionRotation,
+          duration: interactionDuration,
+          curve: Curves.easeOutCubic,
+          child: AnimatedScale(
+            scale: interactionScale,
+            duration: interactionDuration,
+            curve: Curves.easeOutCubic,
+            child: _buildEventCard(
+              event,
+              cardWidth: resolvedCardWidth,
+              cardHeight: interactionHeight,
+              visualHeight: visualHeight,
+              visualTopInset: visualTopInset,
+              isPreview: isPreview,
+              isDraggingOriginal: isDraggingOriginal,
+            ),
+          ),
         ),
       ),
     );
@@ -3012,7 +3093,9 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     final isResizeHoverHere = _resizeHoverEventId == event.id;
 
     final cardContent = MouseRegion(
-      onEnter: (_) {},
+      onEnter: (_) {
+        _prioritizeEventForInteraction(event.id);
+      },
       onHover: (pointerEvent) {
         if (isPreview || _resizingEventId != null) return;
         final zone = resizeZoneForLocal(pointerEvent.localPosition);
@@ -3023,6 +3106,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
         }
       },
       onExit: (_) {
+        _clearEventInteractionPriority(event.id);
         if (_resizeHoverEventId == event.id) {
           _updateResizeHoverState(eventId: null, fromTop: null);
         }
@@ -3623,9 +3707,13 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
 
     final deltaY = globalPosition.dy - _dragStartGlobalPosition!.dy;
     final deltaMinutes = (deltaY / _hourHeight) * 60;
-    final snappedDelta = (deltaMinutes / 15).round() * 15;
+    // Moving an existing event should follow the pointer freely. Keep the
+    // fractional minute precision instead of forcing 15-minute jumps.
+    final deltaDuration = Duration(
+      microseconds: (deltaMinutes * Duration.microsecondsPerMinute).round(),
+    );
 
-    final newStart = _dragStartTime!.add(Duration(minutes: snappedDelta));
+    final newStart = _dragStartTime!.add(deltaDuration);
     final duration = event.endDateTime.difference(event.startDateTime);
     final newEnd = newStart.add(duration);
 
@@ -3975,9 +4063,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     final selectionColor = calendarColorValue != null
         ? Color(calendarColorValue)
         : AppColors.primary;
-    final textColor = selectionColor.computeLuminance() > 0.6
-        ? Colors.black87
-        : Colors.white;
+    const textColor = Colors.white;
 
     final startMinutes = startTime.hour * 60 + startTime.minute;
     final endMinutes = endTime.hour * 60 + endTime.minute;
@@ -3992,73 +4078,74 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       top: startPosition,
       right: 0,
       height: height,
-      child: Container(
-        decoration: BoxDecoration(
-          color: selectionColor.withValues(alpha: 0.85),
-          border: Border.all(
-            color: selectionColor.withValues(alpha: 0.95),
-            width: 1,
+      child: CustomPaint(
+        painter: _DashedEventPreviewPainter(
+          color: selectionColor.withValues(alpha: 0.95),
+        ),
+        child: Container(
+          decoration: BoxDecoration(
+            color: selectionColor.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(4),
           ),
-          borderRadius: BorderRadius.circular(4),
-        ),
-        padding: EdgeInsets.symmetric(
-          horizontal: isTiny ? 4 : 6,
-          vertical: isTiny ? 1 : 4,
-        ),
-        child: isTiny
-            ? Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  '${DateFormat('h:mma').format(startTime).toLowerCase()} - ${DateFormat('h:mma').format(endTime).toLowerCase()}',
-                  style: TextStyle(
-                    color: textColor.withValues(alpha: 0.9),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                    height: 1.0,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              )
-            : isCompact
-            ? Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  '(No title)  ${DateFormat('h:mma').format(startTime).toLowerCase()} - ${DateFormat('h:mma').format(endTime).toLowerCase()}',
-                  style: TextStyle(
-                    color: textColor.withValues(alpha: 0.9),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                    height: 1.1,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              )
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '(No title)',
+          padding: EdgeInsets.symmetric(
+            horizontal: isTiny ? 4 : 6,
+            vertical: isTiny ? 1 : 4,
+          ),
+          child: isTiny
+              ? Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '${DateFormat('h:mma').format(startTime).toLowerCase()} - ${DateFormat('h:mma').format(endTime).toLowerCase()}',
                     style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: textColor,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '${DateFormat('h:mm a').format(startTime)} - ${DateFormat('h:mm a').format(endTime)}',
-                    style: TextStyle(
-                      color: textColor.withValues(alpha: 0.8),
-                      fontSize: 12,
+                      color: textColor.withValues(alpha: 0.9),
+                      fontSize: 11,
                       fontWeight: FontWeight.w500,
+                      height: 1.0,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                ],
-              ),
+                )
+              : isCompact
+              ? Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '(No title)  ${DateFormat('h:mma').format(startTime).toLowerCase()} - ${DateFormat('h:mma').format(endTime).toLowerCase()}',
+                    style: TextStyle(
+                      color: textColor.withValues(alpha: 0.9),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                      height: 1.1,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '(No title)',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: textColor,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${DateFormat('h:mm a').format(startTime)} - ${DateFormat('h:mm a').format(endTime)}',
+                      style: TextStyle(
+                        color: textColor.withValues(alpha: 0.8),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+        ),
       ),
     );
   }
@@ -4736,5 +4823,37 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
         key == LogicalKeyboardKey.arrowRight) {
       _moveEventByKeyboard(targetEvent, deltaMinutes: 15);
     }
+  }
+}
+
+class _DashedEventPreviewPainter extends CustomPainter {
+  const _DashedEventPreviewPainter({required this.color});
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = Path()
+      ..addRRect(
+        RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(4)),
+      );
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2;
+
+    for (final metric in path.computeMetrics()) {
+      var distance = 0.0;
+      while (distance < metric.length) {
+        final end = (distance + 5).clamp(0.0, metric.length).toDouble();
+        canvas.drawPath(metric.extractPath(distance, end), paint);
+        distance += 8;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DashedEventPreviewPainter oldDelegate) {
+    return oldDelegate.color != color;
   }
 }

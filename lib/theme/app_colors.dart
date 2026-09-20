@@ -10,7 +10,7 @@ class AppColors {
   static const Color gradientMix = Color(0xFFA0C702); // Border and divider
   static const Color success = Color(0xFF22C55E);
   static const Color warning = Color(0xFFF59E0B);
-  static const Color error = Color(0xFFEF4444);// Emphasis
+  static const Color error = Color(0xFFEF4444); // Emphasis
   static const Color onPrimary = Color(
     0xFF1A1614,
   ); // Dark text on the brand button

@@ -48,6 +48,14 @@ class _DesktopTokenRefreshException implements Exception {
 }
 
 class GoogleCalendarService {
+  static bool _isHiddenCalendar(Map<String, dynamic> calendar) {
+    final id = (calendar['id'] as String? ?? '').toLowerCase();
+    final name = (calendar['name'] as String? ?? '').trim().toLowerCase();
+
+    return name == 'holidays in sri lanka' ||
+        id.contains('#holiday@group.v.calendar.google.com');
+  }
+
   static const bool _verboseEventFetchLogs = false;
   String? _desktopUserDisplayName;
   String? _desktopUserEmail;
@@ -209,6 +217,7 @@ class GoogleCalendarService {
           // Filter out empty IDs
           final id = c['id'] as String?;
           if (id == null || id.isEmpty) return false;
+          if (_isHiddenCalendar(c)) return false;
           // Include primary calendar even if named "Calendar"
           if (id == 'primary') return true;
           // Filter out calendars with the generic name "Calendar"
@@ -228,7 +237,8 @@ class GoogleCalendarService {
 
   Future<List<Map<String, dynamic>>> getCachedCalendars() async {
     try {
-      return await LocalEventStore.instance.getCachedCalendars();
+      final cached = await LocalEventStore.instance.getCachedCalendars();
+      return cached.where((calendar) => !_isHiddenCalendar(calendar)).toList();
     } catch (e) {
       _logDebug('Failed to read cached calendars: $e');
       return const [];
@@ -1300,7 +1310,7 @@ class GoogleCalendarService {
         .where((c) {
           // Only filter out calendars with empty IDs
           final id = c['id'] as String?;
-          return id != null && id.isNotEmpty;
+          return id != null && id.isNotEmpty && !_isHiddenCalendar(c);
         })
         .toList();
 

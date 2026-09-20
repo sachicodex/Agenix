@@ -46,23 +46,27 @@ class TimelineEventBlockContent extends StatelessWidget {
     }
 
     if (innerHeight < 34) {
-      return Padding(
-        padding: padding,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _singleLineTitle(
-              innerHeight,
-              fontSize: (innerHeight * 0.42).clamp(9.0, 11.0),
-            ),
-            const Spacer(),
-            Text(
-              _formatTimeRange(compact: false),
-              style: _timeStyle(8.5),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
+      return SizedBox(
+        width: double.infinity,
+        height: visualHeight,
+        child: Padding(
+          padding: padding,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _singleLineTitle(
+                innerHeight,
+                fontSize: (innerHeight * 0.42).clamp(9.0, 11.0),
+              ),
+              const Spacer(),
+              Text(
+                _formatTimeRange(compact: false),
+                style: _timeStyle(8.5),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -73,30 +77,34 @@ class TimelineEventBlockContent extends StatelessWidget {
     final titleMaxLines = innerHeight >= 64 ? 2 : 1;
     final titleBottomGap = innerHeight >= 56 ? 4.0 : 2.0;
 
-    return Padding(
-      padding: padding,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.start,
-        mainAxisSize: MainAxisSize.max,
-        children: [
-          Text(
-            event.title,
-            style: _titleStyle(titleSize),
-            maxLines: titleMaxLines,
-            overflow: TextOverflow.ellipsis,
-          ),
-          if (showTime) ...[
-            SizedBox(height: titleBottomGap),
-            const Spacer(),
+    return SizedBox(
+      width: double.infinity,
+      height: visualHeight,
+      child: Padding(
+        padding: padding,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.start,
+          mainAxisSize: MainAxisSize.max,
+          children: [
             Text(
-              _formatTimeRange(compact: false),
-              style: _timeStyle(timeSize),
-              maxLines: 1,
+              event.title,
+              style: _titleStyle(titleSize),
+              maxLines: titleMaxLines,
               overflow: TextOverflow.ellipsis,
             ),
+            if (showTime) ...[
+              SizedBox(height: titleBottomGap),
+              const Spacer(),
+              Text(
+                _formatTimeRange(compact: false),
+                style: _timeStyle(timeSize),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -155,11 +163,11 @@ class TimelineEventBlockContent extends StatelessWidget {
   /// Padding to apply on the parent [Container] for consistent spacing.
   static EdgeInsets paddingForHeight(double visualHeight) {
     if (visualHeight < 20) {
-      return const EdgeInsets.symmetric(horizontal: 4, vertical: 1);
+      return const EdgeInsets.symmetric(horizontal: 4, vertical: 2);
     }
     if (visualHeight < 32) {
-      return const EdgeInsets.symmetric(horizontal: 6, vertical: 2);
+      return const EdgeInsets.symmetric(horizontal: 6, vertical: 3);
     }
-    return const EdgeInsets.symmetric(horizontal: 8, vertical: 4);
+    return const EdgeInsets.symmetric(horizontal: 8, vertical: 8);
   }
 }
