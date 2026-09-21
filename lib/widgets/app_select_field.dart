@@ -1,5 +1,9 @@
+import 'package:agenix/widgets/Custom%20Dialog/reusable_dialog.dart';
+import 'package:agenix/widgets/Primary%20Button/primary_button.dart';
+import 'package:agenix/widgets/Secondary%20Button/secondary_button.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:hugeicons/hugeicons.dart';
 import 'dart:async';
 
 import '../theme/app_colors.dart';
@@ -414,110 +418,56 @@ class _AppSelectDialogState<T> extends State<_AppSelectDialog<T>> {
                                   }
 
                                   Future<void> showCalendarActions() async {
-                                    final action = await showAppDialog<_CalendarAction>(
-                                      context: context,
-                                      builder: (dialogContext) => Dialog(
-                                        backgroundColor: AppColors.surface,
-                                        insetPadding: appPopupInsetPadding(
-                                          dialogContext,
-                                        ),
-                                        child: SizedBox(
-                                          width: appPopupWidth(
-                                            dialogContext,
-                                            360,
-                                          ),
-                                          child: Padding(
-                                            padding: const EdgeInsets.all(20),
-                                            child: Column(
-                                              mainAxisSize: MainAxisSize.min,
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Row(
-                                                  children: [
-                                                    const Expanded(
-                                                      child: Text(
-                                                        'Manage Calendar',
-                                                        style: AppTextStyles
-                                                            .headline3,
-                                                      ),
+                                    final action =
+                                        await showAppDialog<_CalendarAction>(
+                                          context: context,
+                                          builder: (dialogContext) =>
+                                              CustomTwoActionDialog(
+                                                backgroundColor:
+                                                    AppColors.surface,
+                                                contentPadding:
+                                                    appPopupInsetPadding(
+                                                      dialogContext,
                                                     ),
-                                                    IconButton(
-                                                      onPressed: () =>
-                                                          Navigator.pop(
-                                                            dialogContext,
-                                                          ),
-                                                      icon: const Icon(
-                                                        Icons.close,
-                                                        color:
-                                                            AppColors.onSurface,
+                                                title: 'Manage Calendar',
+                                                titleDescriptionSpacing: 30,
+                                                primaryButton: PrimaryButton(
+                                                  label: 'Edit Calendar',
+                                                  icon: HugeIcon(
+                                                    icon: HugeIcons
+                                                        .strokeRoundedEdit02,
+                                                  ),
+                                                  onPressed: () =>
+                                                      Navigator.pop(
+                                                        dialogContext,
+                                                        _CalendarAction.edit,
                                                       ),
-                                                    ),
-                                                  ],
                                                 ),
-                                                const SizedBox(height: 16),
-                                                SizedBox(
-                                                  width: double.infinity,
-                                                  child: FilledButton.icon(
-                                                    onPressed: () =>
-                                                        Navigator.pop(
-                                                          dialogContext,
-                                                          _CalendarAction.edit,
-                                                        ),
-                                                    icon: AppIcon(
-                                                      icon: AppIconData.huge(
-                                                        HugeIcons
-                                                            .strokeRoundedEdit02,
+                                                secondaryButton: SecondaryButton(
+                                                  label: 'Yes, Delete Calendar',
+                                                  icon: HugeIcon(
+                                                    icon: HugeIcons
+                                                        .strokeRoundedDelete03,
+                                                  ),
+                                                  onPressed: () =>
+                                                      Navigator.pop(
+                                                        dialogContext,
+                                                        _CalendarAction.delete,
                                                       ),
-                                                      size: 18,
-                                                      strokeWidth: 2.2,
-                                                    ),
+                                                  foregroundColor:
+                                                      AppColors.error,
+                                                  backgroundColor: AppColors
+                                                      .error
+                                                      .withValues(alpha: 0.08),
+                                                  borderSide: BorderSide(
+                                                    color: AppColors.error
+                                                        .withValues(alpha: 0.5),
+                                                  ),
+                                                ),
 
-                                                    label: const Text(
-                                                      'Edit Calendar',
-                                                      style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w700,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 15),
-                                                SizedBox(
-                                                  width: double.infinity,
-                                                  child: OutlinedButton.icon(
-                                                    onPressed: () =>
-                                                        Navigator.pop(
-                                                          dialogContext,
-                                                          _CalendarAction
-                                                              .delete,
-                                                        ),
-                                                    style:
-                                                        OutlinedButton.styleFrom(
-                                                          foregroundColor:
-                                                              AppColors.error,
-                                                        ),
-                                                    icon: const AppIcon(
-                                                      icon: AppIconData.huge(
-                                                        HugeIcons
-                                                            .strokeRoundedDelete03,
-                                                      ),
-                                                      color: AppColors.error,
-                                                      size: 18,
-                                                      strokeWidth: 2.2,
-                                                    ),
-                                                    label: const Text(
-                                                      'Delete Calendar',
-                                                    ),
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 20),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    );
+                                                verticalActions: true,
+                                              ),
+                                        );
                                     switch (action) {
                                       case _CalendarAction.edit:
                                         await editCalendar();
@@ -722,19 +672,35 @@ class _CalendarColorDialogState extends State<_CalendarColorDialog> {
         ],
       ),
     ),
+
     actions: [
-      TextButton(
-        onPressed: () => Navigator.pop(context),
-        child: const Text('Cancel'),
-      ),
-      FilledButton(
-        onPressed: () {
-          final name = _name.text.trim();
-          if (name.isNotEmpty) {
-            Navigator.pop(context, _CalendarEditResult(name, _color));
-          }
-        },
-        child: const Text('Save'),
+      SizedBox(
+        width: double.infinity,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: SecondaryButton(
+                width: double.infinity,
+                onPressed: () => Navigator.pop(context),
+                label: 'Cancel',
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: PrimaryButton(
+                width: double.infinity,
+                onPressed: () {
+                  final name = _name.text.trim();
+                  if (name.isNotEmpty) {
+                    Navigator.pop(context, _CalendarEditResult(name, _color));
+                  }
+                },
+                label: 'Save',
+              ),
+            ),
+          ],
+        ),
       ),
     ],
   );

@@ -1,8 +1,13 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:agenix/widgets/Custom%20App%20Bar/custom_app_bar.dart';
 import 'package:agenix/widgets/Custom%20Card/custom_card.dart';
-import 'package:agenix/widgets/secondary_button/secondary_button.dart';
+import 'package:agenix/widgets/Custom%20Surface/custom_surface.dart';
+import 'package:agenix/widgets/Custom%20Text/custom_text.dart';
+import 'package:agenix/widgets/Glass%20Card/glass_carrd.dart';
+import 'package:agenix/widgets/Primary%20Button/primary_button.dart';
+import 'package:agenix/widgets/Secondary%20Button/secondary_button.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -55,6 +60,7 @@ class _SettingsCreateCalendarDialogState
     extends State<_SettingsCreateCalendarDialog> {
   final _nameController = TextEditingController();
   Color _selectedColor = AppColors.royalBlue;
+  bool _saving = false;
   Timer? _nameErrorTimer;
   bool _showNameError = false;
 
@@ -66,6 +72,7 @@ class _SettingsCreateCalendarDialogState
   }
 
   void _save() {
+    if (_saving) return;
     final name = _nameController.text.trim();
     if (name.isEmpty) {
       _nameErrorTimer?.cancel();
@@ -75,6 +82,7 @@ class _SettingsCreateCalendarDialogState
       });
       return;
     }
+    setState(() => _saving = true);
     Navigator.pop(
       context,
       _SettingsCalendarDraft(name: name, color: _selectedColor),
@@ -128,11 +136,30 @@ class _SettingsCreateCalendarDialogState
       ),
     ),
     actions: [
-      TextButton(
-        onPressed: () => Navigator.pop(context),
-        child: const Text('Cancel'),
+      SizedBox(
+        width: double.infinity,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: SecondaryButton(
+                width: double.infinity,
+                onPressed: () => Navigator.pop(context),
+                label: 'Cancel',
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: PrimaryButton(
+                width: double.infinity,
+                onPressed: _saving ? null : _save,
+                label: 'Save',
+                loading: _saving,
+              ),
+            ),
+          ],
+        ),
       ),
-      FilledButton(onPressed: _save, child: const Text('Save')),
     ],
   );
 
@@ -1049,15 +1076,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: AppTextStyles.headline2.copyWith(
-                      fontSize: 18,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ],
+                children: [CustomTextHeading(title)],
               ),
             ),
           ],
@@ -1080,19 +1099,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                title,
-                style: AppTextStyles.bodyText1.copyWith(color: Colors.red),
-              ),
+              CustomTextBody(title),
               const SizedBox(height: 4),
-              Text(
-                subtitle,
-                style: AppTextStyles.bodyText1.copyWith(
-                  color: Colors.green,
-                  fontSize: 13,
-                  height: 1.4,
-                ),
-              ),
+              CustomTextMuted(subtitle),
             ],
           ),
         ),
@@ -1156,12 +1165,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       );
     }
     if (_availableCalendars.isEmpty) {
-      return Text(
-        'No calendars available right now.',
-        style: AppTextStyles.bodyText1.copyWith(
-          color: AppColors.onSurface.withValues(alpha: 0.62),
-        ),
-      );
+      return CustomTextBody('No calendars available right now.');
     }
 
     return AppSelectField<String>(
@@ -1285,21 +1289,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                CustomTextBody(
                   accountTitle,
+                  style: TextStyle(fontSize: 16),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: AppTextStyles.bodyText1,
                 ),
                 const SizedBox(height: 4),
-                Text(
+                CustomTextMuted(
                   accountSubtitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: AppTextStyles.bodyText1.copyWith(
-                    color: AppColors.onSurface.withValues(alpha: 0.62),
-                    fontSize: 13,
-                  ),
                 ),
               ],
             ),
@@ -1317,26 +1317,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
         Row(
           children: [
             Expanded(
-              child: Container(
+              child: GlassCard(
+                borderRadius: BorderRadius.circular(20),
                 padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: AppColors.onSurface.withValues(alpha: 0.08),
-                  ),
-                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    CustomTextDescription(
                       'Developer',
-                      style: AppTextStyles.bodyText1.copyWith(fontSize: 13),
+                      style: TextStyle(fontSize: 13),
                     ),
                     const SizedBox(height: 8),
-                    Text(
+                    CustomTextBody(
                       'Sachicodex',
-                      style: AppTextStyles.headline2.copyWith(fontSize: 15),
+                      style: TextStyle(fontSize: 16),
                     ),
                   ],
                 ),
@@ -1344,27 +1338,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: Container(
+              child: GlassCard(
+                borderRadius: BorderRadius.circular(20),
                 padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: AppColors.onSurface.withValues(alpha: 0.08),
-                  ),
-                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'App version',
-                      style: AppTextStyles.bodyText1.copyWith(fontSize: 13),
+                    CustomTextDescription(
+                      'App Version',
+                      style: TextStyle(fontSize: 13),
                     ),
                     const SizedBox(height: 8),
-                    Text(
-                      'v6.3.25',
-                      style: AppTextStyles.headline2.copyWith(fontSize: 15),
-                    ),
+                    CustomTextBody('v6.3.25', style: TextStyle(fontSize: 16)),
                   ],
                 ),
               ),
@@ -1406,8 +1391,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     }
 
     return Scaffold(
-      appBar: AppBarWidget(
-        backgroundColor: Color(0XFF101010),
+      appBar: CustomAppBar(
         leading: AppPressFeedback(
           child: IconButton(
             icon: const Icon(Icons.arrow_back_ios_rounded),
@@ -1428,7 +1412,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
             },
           ),
         ),
-        title: Text('Settings', style: AppTextStyles.headline2),
+        title: CustomTextHeading('Settings', style: TextStyle(fontSize: 24)),
         scrolledUnderElevation: 0,
         surfaceTintColor: Colors.transparent,
         centerTitle: true,

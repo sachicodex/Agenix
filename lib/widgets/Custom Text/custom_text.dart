@@ -26,7 +26,7 @@ class CustomTextHeading extends StatelessWidget {
     style: const TextStyle(
       fontFamily: 'GoogleSans',
       fontSize: 20,
-      fontWeight: FontWeight.w700,
+      fontWeight: FontWeight.w600,
       color: Color(0xFFF4F4F5),
     ).merge(style),
     textAlign: textAlign,
@@ -63,7 +63,7 @@ class CustomTextDescription extends StatelessWidget {
     style: const TextStyle(
       fontFamily: 'GoogleSans',
       fontSize: 16,
-      fontWeight: FontWeight.w400,
+      fontWeight: FontWeight.w500,
       color: Color(0xFFD4D4D8),
       height: 1.45,
     ).merge(style),
@@ -101,7 +101,7 @@ class CustomTextBody extends StatelessWidget {
     style: const TextStyle(
       fontFamily: 'GoogleSans',
       fontSize: 14,
-      fontWeight: FontWeight.w400,
+      fontWeight: FontWeight.w500,
       color: Color(0xFFF4F4F5),
       height: 1.4,
     ).merge(style),

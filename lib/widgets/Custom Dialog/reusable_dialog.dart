@@ -1,18 +1,20 @@
+import 'package:agenix/widgets/Custom%20Text/custom_text.dart';
+import 'package:agenix/widgets/Primary%20Button/primary_button.dart';
 import 'package:flutter/material.dart';
 
-import '../primary_button/primary_button.dart';
-import '../secondary_button/secondary_button.dart';
-import '../text_only_button/text_only_button.dart';
+import '../Secondary Button/secondary_button.dart';
+import '../Text Only Button/text_only_button.dart';
 
-part 'one_action_dialog.dart';
-part 'two_action_dialog.dart';
-part 'text_action_dialog.dart';
+part 'custom_one_action_dialog.dart';
+part 'custom_two_action_dialog.dart';
+part 'custom_text_action_dialog.dart';
 
 abstract class _DialogBase extends StatelessWidget {
   const _DialogBase({
     super.key,
-    required this.title,
-    required this.content,
+    this.title,
+    this.content,
+    this.description,
     this.eyebrow,
     this.dialogWidth = 520,
     this.maxDialogWidth = 720,
@@ -31,11 +33,15 @@ abstract class _DialogBase extends StatelessWidget {
     ),
     this.centerContent = false,
     this.centerTitle = false,
+    this.titleDescriptionSpacing = 0,
+    this.showCloseButton = true,
+    this.descriptionStyle,
   });
 
-  final String title;
+  final String? title;
+  final String? description;
   final String? eyebrow;
-  final Widget content;
+  final Widget? content;
   final double dialogWidth;
   final double maxDialogWidth;
   final bool cancelAsText;
@@ -50,58 +56,11 @@ abstract class _DialogBase extends StatelessWidget {
   final TextStyle titleStyle;
   final bool centerContent;
   final bool centerTitle;
+  final double titleDescriptionSpacing;
+  final bool showCloseButton;
+  final TextStyle? descriptionStyle;
 
   Widget buildActions();
-
-  Widget primaryButton({
-    required String label,
-    required VoidCallback? onPressed,
-    Color? backgroundColor,
-    Color? foregroundColor,
-    Widget? icon,
-    TextStyle? textStyle,
-  }) => PrimaryButton(
-    label: label,
-    icon: icon,
-    onPressed: onPressed,
-    backgroundColor: backgroundColor,
-    foregroundColor: foregroundColor,
-    textStyle: textStyle,
-    width: double.infinity,
-  );
-
-  Widget secondaryButton({
-    required String label,
-    required VoidCallback? onPressed,
-    Color? backgroundColor,
-    Color? foregroundColor,
-    Widget? icon,
-    TextStyle? textStyle,
-  }) => SecondaryButton(
-    label: label,
-    icon: icon,
-    onPressed: onPressed,
-    backgroundColor: backgroundColor,
-    foregroundColor: foregroundColor,
-    textStyle: textStyle,
-    width: double.infinity,
-  );
-
-  Widget textButton({
-    required String label,
-    required VoidCallback? onPressed,
-    Color? backgroundColor,
-    Color? foregroundColor,
-    Widget? icon,
-    TextStyle? textStyle,
-  }) => TextOnlyButton(
-    label: label,
-    icon: icon,
-    onPressed: onPressed,
-    backgroundColor: backgroundColor,
-    foregroundColor: foregroundColor,
-    textStyle: textStyle,
-  );
 
   @override
   Widget build(BuildContext context) {
@@ -135,12 +94,36 @@ abstract class _DialogBase extends StatelessWidget {
                 cancelLabel: cancelLabel,
                 onCancel: close,
                 centerTitle: centerTitle,
+                showCloseButton: showCloseButton,
               ),
-              const SizedBox(height: 18),
-              centerContent
-                  ? Center(child: content)
-                  : Align(alignment: Alignment.centerLeft, child: content),
-              const SizedBox(height: 22),
+              if ((title != null && title!.trim().isNotEmpty) ||
+                  (eyebrow != null && eyebrow!.trim().isNotEmpty))
+                SizedBox(height: titleDescriptionSpacing),
+              if (description != null && description!.trim().isNotEmpty)
+                centerContent
+                    ? SizedBox(
+                        width: double.infinity,
+                        child: CustomTextDescription(
+                          description!,
+                          textAlign: TextAlign.center,
+                          style: descriptionStyle,
+                        ),
+                      )
+                    : CustomTextDescription(
+                        description!,
+                        style: descriptionStyle,
+                      ),
+              if (description != null &&
+                  description!.trim().isNotEmpty &&
+                  content != null)
+                const SizedBox(height: 12),
+              if (content != null)
+                centerContent
+                    ? Center(child: content)
+                    : Align(alignment: Alignment.centerLeft, child: content),
+              if ((description != null && description!.trim().isNotEmpty) ||
+                  content != null)
+                const SizedBox(height: 22),
               Padding(padding: actionsPadding, child: buildActions()),
             ],
           ),
@@ -160,16 +143,18 @@ class _DialogTitle extends StatelessWidget {
     required this.cancelLabel,
     required this.onCancel,
     required this.centerTitle,
+    required this.showCloseButton,
   });
 
   final String? eyebrow;
-  final String title;
+  final String? title;
   final TextStyle titleStyle;
   final Color foregroundColor;
   final bool cancelAsText;
   final String cancelLabel;
   final VoidCallback onCancel;
   final bool centerTitle;
+  final bool showCloseButton;
 
   @override
   Widget build(BuildContext context) => Row(
@@ -182,39 +167,44 @@ class _DialogTitle extends StatelessWidget {
               : CrossAxisAlignment.start,
           children: [
             if (eyebrow != null && eyebrow!.isNotEmpty)
-              Text(
+              CustomTextMuted(
                 eyebrow!,
                 style: TextStyle(
                   color: foregroundColor,
                   fontSize: 12,
                   fontWeight: FontWeight.w800,
+                  letterSpacing: 1.1,
                 ),
               ),
-            Text(
-              title,
-              textAlign: centerTitle ? TextAlign.center : TextAlign.start,
-              style: titleStyle,
-            ),
+            if (title != null && title!.trim().isNotEmpty)
+              CustomTextHeading(
+                title!,
+                textAlign: centerTitle ? TextAlign.center : TextAlign.start,
+                style: titleStyle,
+              ),
           ],
         ),
       ),
-      const SizedBox(width: 8),
-      cancelAsText
-          ? TextOnlyButton(
-              label: cancelLabel,
-              onPressed: onCancel,
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-              foregroundColor: foregroundColor,
-              textStyle: const TextStyle(fontWeight: FontWeight.w600),
-            )
-          : TextOnlyButton(
-              icon: Icon(Icons.close, size: 20, color: foregroundColor),
-              onPressed: onCancel,
-              width: 36,
-              height: 36,
-              padding: EdgeInsets.zero,
-              foregroundColor: foregroundColor,
-            ),
+      if (showCloseButton) ...[
+        const SizedBox(width: 8),
+        cancelAsText
+            ? TextOnlyButton(
+                label: cancelLabel,
+                onPressed: onCancel,
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                foregroundColor: foregroundColor,
+                textStyle: const TextStyle(fontWeight: FontWeight.w600),
+              )
+            : TextOnlyButton(
+                label: null,
+                icon: Icon(Icons.close, size: 20, color: foregroundColor),
+                onPressed: onCancel,
+                width: 36,
+                height: 36,
+                padding: EdgeInsets.zero,
+                foregroundColor: foregroundColor,
+              ),
+      ],
     ],
   );
 }

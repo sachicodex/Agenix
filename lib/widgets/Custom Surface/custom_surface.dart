@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-class AppSurface extends StatelessWidget {
-  const AppSurface({
+class CustomSurface extends StatelessWidget {
+  const CustomSurface({
     super.key,
     required this.child,
     this.width,

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:agenix/widgets/Secondary%20Button/secondary_button.dart';
 import 'package:agenix/widgets/primary_button/primary_button.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -865,6 +866,7 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
             onPressed: _saving || _creatingCalendar ? null : _saveEvent,
             minimumSize: const Size.fromHeight(44),
             label: _saving ? 'Saving...' : 'Save',
+            loading: _saving,
           ),
         ),
       ],
@@ -924,6 +926,7 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
         curve: Curves.easeOut,
         padding: EdgeInsets.only(bottom: keyboardInset),
         child: GlassCard(
+          padding: EdgeInsetsGeometry.zero,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
           child: SafeArea(
             top: true,
@@ -981,6 +984,8 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
             elevation: 0,
             child: GlassCard(
               width: 500,
+              padding: EdgeInsets.zero,
+              borderRadius: BorderRadius.circular(28),
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: ConstrainedBox(
@@ -1103,6 +1108,7 @@ class _CreateCalendarDialog extends StatefulWidget {
 class _CreateCalendarDialogState extends State<_CreateCalendarDialog> {
   final _nameController = TextEditingController();
   Color _selectedColor = AppColors.royalBlue;
+  bool _saving = false;
   Timer? _nameErrorTimer;
   bool _showNameError = false;
 
@@ -1164,15 +1170,36 @@ class _CreateCalendarDialogState extends State<_CreateCalendarDialog> {
         ),
       ),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: _save,
-          child: const Text(
-            'Save',
-            style: TextStyle(fontWeight: FontWeight.w700),
+        SizedBox(
+          width: double.infinity,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: SecondaryButton(
+                  width: double.infinity,
+                  onPressed: () => Navigator.pop(context),
+                  label: 'Cancel',
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 17,
+                    horizontal: 25,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: PrimaryButton(
+                  width: double.infinity,
+                  onPressed: _saving ? null : _save,
+                  label: 'Save',
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 17,
+                    horizontal: 25,
+                  ),
+                  loading: _saving,
+                ),
+              ),
+            ],
           ),
         ),
       ],
@@ -1180,6 +1207,7 @@ class _CreateCalendarDialogState extends State<_CreateCalendarDialog> {
   }
 
   void _save() {
+    if (_saving) return;
     final name = _nameController.text.trim();
     if (name.isEmpty) {
       _nameErrorTimer?.cancel();
@@ -1189,6 +1217,7 @@ class _CreateCalendarDialogState extends State<_CreateCalendarDialog> {
       });
       return;
     }
+    setState(() => _saving = true);
     Navigator.pop(context, _CalendarDraft(name: name, color: _selectedColor));
   }
 
