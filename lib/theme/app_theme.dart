@@ -35,7 +35,7 @@ class AppButtonStyles {
   );
   static const double secondaryActionIconSize = 23;
   static const TextStyle secondaryActionLabel = TextStyle(
-    fontFamily: 'SFProDisplay',
+    fontFamily: 'GoogleSans',
     color: AppColors.onSurface,
     fontSize: 15,
     fontWeight: FontWeight.w700,
@@ -69,7 +69,7 @@ class AppTheme {
           TargetPlatform.linux: FadeUpwardsPageTransitionsBuilder(),
         },
       ),
-      fontFamily: 'SFProDisplay',
+      fontFamily: 'GoogleSans',
       textTheme: TextTheme(
         displayLarge: AppTextStyles.headline1,
         displayMedium: AppTextStyles.headline2,
@@ -79,7 +79,7 @@ class AppTheme {
     );
 
     final appTextTheme = base.textTheme.apply(
-      fontFamily: 'SFProDisplay',
+      fontFamily: 'GoogleSans',
       bodyColor: AppColors.onBackground,
       displayColor: AppColors.onBackground,
     );
@@ -98,7 +98,7 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: AppColors.surface,
-        labelStyle: const TextStyle(fontFamily: 'SFProDisplay'),
+        labelStyle: const TextStyle(fontFamily: 'GoogleSans'),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadius.control),
           borderSide: const BorderSide(color: AppColors.borderColor),
@@ -115,7 +115,7 @@ class AppTheme {
           ),
         ),
         hintStyle: TextStyle(
-          fontFamily: 'SFProDisplay',
+          fontFamily: 'GoogleSans',
           color: AppColors.onSurface.withValues(alpha: 0.6),
         ),
       ),
@@ -125,7 +125,7 @@ class AppTheme {
           foregroundColor: AppColors.onPrimary,
           animationDuration: AppMotion.short,
           textStyle: const TextStyle(
-            fontFamily: 'SFProDisplay',
+            fontFamily: 'GoogleSans',
             fontWeight: FontWeight.w700,
           ),
           shape: RoundedRectangleBorder(borderRadius: AppButtonStyles.radius),
@@ -137,7 +137,7 @@ class AppTheme {
           foregroundColor: AppColors.onBackground,
           animationDuration: AppMotion.short,
           textStyle: const TextStyle(
-            fontFamily: 'SFProDisplay',
+            fontFamily: 'GoogleSans',
             fontWeight: FontWeight.w700,
           ),
           side: const BorderSide(color: AppColors.borderColor),
@@ -149,7 +149,7 @@ class AppTheme {
           foregroundColor: AppColors.onSurface,
           animationDuration: AppMotion.short,
           textStyle: const TextStyle(
-            fontFamily: 'SFProDisplay',
+            fontFamily: 'GoogleSans',
             fontWeight: FontWeight.w700,
           ),
           shape: const RoundedRectangleBorder(
@@ -171,7 +171,7 @@ class AppTheme {
           foregroundColor: AppColors.onPrimary,
           animationDuration: AppMotion.short,
           textStyle: const TextStyle(
-            fontFamily: 'SFProDisplay',
+            fontFamily: 'GoogleSans',
             fontWeight: FontWeight.w700,
           ),
           shape: const RoundedRectangleBorder(
@@ -209,13 +209,13 @@ class AppTheme {
             ? const EdgeInsets.symmetric(horizontal: 16, vertical: 24)
             : const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
         titleTextStyle: const TextStyle(
-          fontFamily: 'SFProDisplay',
+          fontFamily: 'GoogleSans',
           color: AppColors.onBackground,
           fontSize: 22,
           fontWeight: FontWeight.w600,
         ),
         contentTextStyle: const TextStyle(
-          fontFamily: 'SFProDisplay',
+          fontFamily: 'GoogleSans',
           color: AppColors.onSurface,
           fontSize: 15,
           fontWeight: FontWeight.w400,
@@ -236,7 +236,6 @@ class AppTheme {
         actionTextColor: AppColors.primary,
         elevation: 6,
       ),
-
     );
   }
 }

@@ -188,7 +188,6 @@ class _DialogTitle extends StatelessWidget {
                   color: foregroundColor,
                   fontSize: 12,
                   fontWeight: FontWeight.w800,
-                  letterSpacing: 1.1,
                 ),
               ),
             Text(

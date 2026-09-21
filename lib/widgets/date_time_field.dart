@@ -6,12 +6,14 @@ class DateTimeField extends StatelessWidget {
   final String label;
   final DateTime dateTime;
   final VoidCallback onTap;
+  final Color backgroundColor;
 
   const DateTimeField({
     super.key,
     required this.label,
     required this.dateTime,
     required this.onTap,
+    this.backgroundColor = AppColors.surface,
   });
 
   @override
@@ -25,7 +27,7 @@ class DateTimeField extends StatelessWidget {
             color: AppColors.onSurface.withValues(alpha: 0.7),
           ),
           filled: true,
-          fillColor: AppColors.surface,
+          fillColor: backgroundColor,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide.none,

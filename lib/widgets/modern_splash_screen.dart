@@ -35,10 +35,9 @@ class ModernSplashScreen extends StatelessWidget {
         const SizedBox(height: 18),
         Text(
           'AGENIX',
-          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-            letterSpacing: 2.4,
-            fontWeight: FontWeight.w700,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 8),
         Text(

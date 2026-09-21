@@ -12,7 +12,7 @@ void main() {
     expect(theme.useMaterial3, isTrue);
     expect(theme.brightness, Brightness.dark);
     expect(theme.scaffoldBackgroundColor, AppColors.background);
-    expect(theme.textTheme.bodyLarge?.fontFamily, 'SFProDisplay');
+    expect(theme.textTheme.bodyLarge?.fontFamily, 'GoogleSans');
     expect(
       theme.pageTransitionsTheme.builders[TargetPlatform.iOS],
       isA<CupertinoPageTransitionsBuilder>(),
@@ -29,9 +29,6 @@ void main() {
       message: 'com.google.android.gms.common.api.ApiException: 10',
     );
 
-    expect(
-      googleSignInErrorMessage(error),
-      contains('Firebase Console'),
-    );
+    expect(googleSignInErrorMessage(error), contains('Firebase Console'));
   });
 }

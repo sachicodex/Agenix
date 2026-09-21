@@ -11,6 +11,7 @@ import '../../services/api_key_storage_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/app_snackbar.dart';
 import '../../widgets/form_fields.dart';
+import '../../widgets/Glass Card/glass_carrd.dart';
 import '../../widgets/date_time_field.dart';
 import '../../widgets/primary_action_button.dart';
 import '../../widgets/app_select_field.dart';
@@ -757,6 +758,7 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
           minLines: 1,
           maxLines: 3,
           requiredField: true,
+          backgroundColor: Colors.transparent,
           hasError: _showTitleError,
           onChanged: (_) {
             if (_showTitleError) setState(() => _showTitleError = false);
@@ -771,6 +773,7 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
               child: DateTimeField(
                 label: 'Start',
                 dateTime: _startTime,
+                backgroundColor: Colors.transparent,
                 onTap: () => _pickDateTime(true),
               ),
             ),
@@ -779,6 +782,7 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
               child: DateTimeField(
                 label: 'End',
                 dateTime: _endTime,
+                backgroundColor: Colors.transparent,
                 onTap: () => _pickDateTime(false),
               ),
             ),
@@ -787,6 +791,7 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
         const SizedBox(height: 12),
         AppSelectField<String>(
           label: 'Repeat',
+          backgroundColor: Colors.transparent,
           value: _recurrence,
           hint: 'Does not repeat',
           options: const [
@@ -807,6 +812,7 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
         const SizedBox(height: 12),
         AppSelectField<String>(
           label: 'Select calendar',
+          backgroundColor: Colors.transparent,
           value: _selectedCalendarId,
           hint: _availableCalendars.isEmpty
               ? 'Loading calendars...'
@@ -841,6 +847,7 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
         ExpandableDescription(
           controller: _descriptionController,
           hint: '',
+          backgroundColor: Colors.transparent,
           minLines: 1,
           maxLines: 5,
           onAIClick: _optimizeOrGenerateDescription,
@@ -916,10 +923,8 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOut,
         padding: EdgeInsets.only(bottom: keyboardInset),
-        child: Material(
-          color: AppColors.surface,
+        child: GlassCard(
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          clipBehavior: Clip.antiAlias,
           child: SafeArea(
             top: true,
             child: ConstrainedBox(
@@ -972,24 +977,29 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
             child: mobilePanel(includeHandle: true),
           )
         : Dialog(
-            backgroundColor: AppColors.surface,
-            child: Container(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            child: GlassCard(
               width: 500,
-              padding: const EdgeInsets.all(24),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(maxHeight: media.size.height * 0.9),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Flexible(
-                      child: SingleChildScrollView(
-                        physics: const ClampingScrollPhysics(),
-                        child: _buildFormContent(context),
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: media.size.height * 0.9,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: SingleChildScrollView(
+                          physics: const ClampingScrollPhysics(),
+                          child: _buildFormContent(context),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    _buildSaveButton(),
-                  ],
+                      const SizedBox(height: 12),
+                      _buildSaveButton(),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -1092,7 +1102,7 @@ class _CreateCalendarDialog extends StatefulWidget {
 
 class _CreateCalendarDialogState extends State<_CreateCalendarDialog> {
   final _nameController = TextEditingController();
-  Color _selectedColor = const Color(0xFF5D9ED5);
+  Color _selectedColor = AppColors.royalBlue;
   Timer? _nameErrorTimer;
   bool _showNameError = false;
 

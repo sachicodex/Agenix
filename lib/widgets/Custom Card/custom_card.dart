@@ -1,20 +1,20 @@
 import 'package:flutter/material.dart';
 
-/// Reusable dark surface container with independently configurable styling.
-class AppSurface extends StatelessWidget {
-  const AppSurface({
+class CustomCard extends StatelessWidget {
+  const CustomCard({
     super.key,
     required this.child,
     this.width,
     this.height,
     this.padding = const EdgeInsets.all(16),
     this.margin = EdgeInsets.zero,
-    this.backgroundColor = const Color(0xFF161616),
+    this.backgroundColor = const Color(0xFF101010),
     this.borderColor = const Color(0xFF2A2A2A),
     this.borderWidth = 1,
-    this.borderRadius = const BorderRadius.all(Radius.circular(12)),
-    this.alignment,
+    this.borderRadius = const BorderRadius.all(Radius.circular(16)),
+    this.elevation = 0,
     this.clipBehavior = Clip.none,
+    this.alignment,
     this.onTap,
   });
 
@@ -27,8 +27,9 @@ class AppSurface extends StatelessWidget {
   final Color? borderColor;
   final double borderWidth;
   final BorderRadius borderRadius;
-  final AlignmentGeometry? alignment;
+  final double elevation;
   final Clip clipBehavior;
+  final AlignmentGeometry? alignment;
   final VoidCallback? onTap;
 
   @override
@@ -44,15 +45,16 @@ class AppSurface extends StatelessWidget {
         border: borderColor == null
             ? null
             : Border.all(color: borderColor!, width: borderWidth),
+        boxShadow: elevation <= 0
+            ? null
+            : [BoxShadow(color: Colors.black26, blurRadius: elevation)],
       ),
       clipBehavior: clipBehavior,
       child: child,
     );
-    return Padding(
-      padding: margin,
-      child: onTap == null
-          ? content
-          : InkWell(onTap: onTap, borderRadius: borderRadius, child: content),
-    );
+    final interactive = onTap == null
+        ? content
+        : InkWell(onTap: onTap, borderRadius: borderRadius, child: content);
+    return Padding(padding: margin, child: interactive);
   }
 }

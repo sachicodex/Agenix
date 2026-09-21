@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:agenix/widgets/Custom%20Card/custom_card.dart';
 import 'package:agenix/widgets/secondary_button/secondary_button.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -23,7 +24,6 @@ import '../widgets/app_select_field.dart';
 import '../widgets/app_popup.dart';
 import '../widgets/calendar_color_picker.dart';
 import '../widgets/app_bar_widget/app_bar.dart';
-import '../widgets/app_card/card.dart';
 import '../widgets/app_input/input.dart';
 import '../navigation/app_route_observer.dart';
 import '../utils/platform_focus.dart';
@@ -54,7 +54,7 @@ class _SettingsCreateCalendarDialog extends StatefulWidget {
 class _SettingsCreateCalendarDialogState
     extends State<_SettingsCreateCalendarDialog> {
   final _nameController = TextEditingController();
-  Color _selectedColor = const Color(0xFF5D9ED5);
+  Color _selectedColor = AppColors.royalBlue;
   Timer? _nameErrorTimer;
   bool _showNameError = false;
 
@@ -991,7 +991,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     final content = ListView(
       padding: EdgeInsets.all(isWide ? 24 : 16),
       children: [
-        AppCard(
+        CustomCard(
           padding: const EdgeInsets.all(18),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1080,12 +1080,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title, style: AppTextStyles.bodyText1),
+              Text(
+                title,
+                style: AppTextStyles.bodyText1.copyWith(color: Colors.red),
+              ),
               const SizedBox(height: 4),
               Text(
                 subtitle,
                 style: AppTextStyles.bodyText1.copyWith(
-                  color: AppColors.onSurface.withValues(alpha: 0.62),
+                  color: Colors.green,
                   fontSize: 13,
                   height: 1.4,
                 ),

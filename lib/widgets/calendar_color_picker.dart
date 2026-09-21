@@ -7,32 +7,7 @@ import '../services/calendar_palette_sync_service.dart';
 import 'app_popup.dart';
 import '../utils/platform_focus.dart';
 
-const _baseCalendarColors = <Color>[
-  Color(0xFFD65A82),
-  Color(0xFFF07A3E),
-  Color(0xFFE8BF54),
-  Color(0xFF68B98D),
-  Color(0xFF5D9ED5),
-  Color(0xFF9186D8),
-  Color(0xFFAE64C7),
-  Color(0xFFD96F68),
-  Color(0xFFB7A896),
-  Color(0xFFCB5479),
-  Color(0xFFF08A42),
-  Color(0xFFD5A646),
-  Color(0xFF58A67C),
-  Color(0xFF508ECA),
-  Color(0xFF7D78C8),
-  Color(0xFF974EB9),
-  Color(0xFFCB6963),
-  Color(0xFF8A8A8A),
-  Color(0xFFDF877B),
-  Color(0xFFE8B550),
-  Color(0xFF72C59B),
-  Color(0xFF7EABDB),
-  Color(0xFFAD9BDF),
-  Color(0xFFAF9D8A),
-];
+const _baseCalendarColors = AppColors.calendarPalette;
 
 final _customCalendarColors = ValueNotifier<List<Color>>(<Color>[]);
 final _calendarPaletteSync = CalendarPaletteSyncService();
@@ -171,10 +146,9 @@ class _CalendarColorPaletteState extends State<CalendarColorPalette> {
                             FilledButton(
                               onPressed: () => Navigator.pop(context, true),
                               style: FilledButton.styleFrom(
-                                backgroundColor: AppColors.error
+                                backgroundColor: AppColors.error,
                               ),
-                              child:  Text('Delete'),
-                              
+                              child: Text('Delete'),
                             ),
                           ],
                         ),
@@ -295,8 +269,8 @@ class _CustomColorDialog extends StatefulWidget {
 }
 
 class _CustomColorDialogState extends State<_CustomColorDialog> {
-  HSVColor _hsv = HSVColor.fromColor(const Color(0xFF5D9ED5));
-  late final TextEditingController _hex = TextEditingController(text: '5D9ED5');
+  HSVColor _hsv = HSVColor.fromColor(AppColors.royalBlue);
+  late final TextEditingController _hex = TextEditingController(text: '2563EB');
 
   @override
   void dispose() {

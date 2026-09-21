@@ -2,7 +2,7 @@ name: agenix
 description: "Agenix - Streamline your calendar management and event creation with AI-powered assistance. Sync seamlessly with Google Calendar and manage your schedule efficiently."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
-publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+publish_to: "none" # Remove this line if you wish to publish to pub.dev
 
 # The following defines the version and build number for your application.
 # A version number is three numbers separated by dots, like 1.2.43
@@ -77,7 +77,6 @@ dev_dependencies:
 
 # The following section is specific to Flutter packages.
 flutter:
-
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
   # the material Icons class.
@@ -90,15 +89,15 @@ flutter:
 
   # Custom fonts (SF Pro Display)
   fonts:
-    - family: SFProDisplay
+    - family: GoogleSans
       fonts:
-        - asset: assets/fonts/sf pro display/SF PRO DISPLAY REGULAR.OTF
+        - asset: assets/fonts/Google Sans/GoogleSans-Regular.ttf
           weight: 400
-        - asset: assets/fonts/sf pro display/SF PRO DISPLAY MEDIUM.OTF
+        - asset: assets/fonts/Google Sans/GoogleSans-Medium.ttf
           weight: 500
-        - asset: assets/fonts/sf pro display/SF PRO DISPLAY BOLD.OTF
+        - asset: assets/fonts/Google Sans/GoogleSans-SemiBold.ttf
           weight: 600
-        - asset: assets/fonts/sf pro display/SF PRO DISPLAY BOLD.OTF
+        - asset: assets/fonts/Google Sans/GoogleSans-Bold.ttf
           weight: 700
 
   # To add additional assets or fonts, place them under assets/ and update

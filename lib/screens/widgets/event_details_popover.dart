@@ -209,16 +209,7 @@ class _EventEditModalState extends ConsumerState<EventEditModal> {
   late bool _allDay;
   late Color _selectedColor;
 
-  final List<Color> _colorOptions = [
-    Colors.blue,
-    Colors.green,
-    Colors.orange,
-    Colors.purple,
-    Colors.red,
-    Colors.teal,
-    Colors.pink,
-    Colors.indigo,
-  ];
+  final List<Color> _colorOptions = AppColors.calendarPalette;
 
   @override
   void initState() {
@@ -471,10 +462,10 @@ class _EventEditModalState extends ConsumerState<EventEditModal> {
                     child: const Text('Cancel'),
                   ),
                   const SizedBox(width: 8),
-                  PrimaryButton(
-                    onPressed: _saveEvent,
-                    label: 'Save',
-                  ),
+                    PrimaryButton(
+                      onPressed: _saveEvent,
+                      label: 'Save',
+                    ),
                 ],
               ),
             ],

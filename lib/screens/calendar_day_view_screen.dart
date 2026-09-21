@@ -1680,7 +1680,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                           fontSize: 15,
                           fontWeight: FontWeight.w400,
                           color: AppColors.onBackground,
-                          letterSpacing: 0,
                         ),
                       ),
                     ),
@@ -1759,7 +1758,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                             '*',
                             textAlign: TextAlign.center,
                             style: TextStyle(
-                              fontFamily: 'SFProDisplay',
+                              fontFamily: 'GoogleSans',
                               fontSize: 24,
                               color: AppColors.timeTextColor,
                               fontWeight: FontWeight.w500,
@@ -2048,7 +2047,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                             Text(
                               label,
                               style: TextStyle(
-                                fontFamily: 'SFProDisplay',
+                                fontFamily: 'GoogleSans',
                                 color: isToday
                                     ? AppColors.primary
                                     : day.weekday == DateTime.saturday ||
@@ -2196,7 +2195,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       color: AppColors.onBackground,
       fontSize: 18,
       fontWeight: FontWeight.w700,
-      letterSpacing: 0.1,
     );
 
     return Container(
@@ -2308,7 +2306,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                                     : AppColors.primary,
                                 fontSize: 15,
                                 fontWeight: FontWeight.w600,
-                                letterSpacing: 0.2,
                               ),
                             ),
                           ),
@@ -2473,7 +2470,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                 color: AppColors.onBackground,
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
-                letterSpacing: 0.2,
               ),
             ),
           ),
@@ -4430,7 +4426,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                 color: AppColors.onBackground,
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
-                letterSpacing: 0.2,
               ),
             ),
           ),

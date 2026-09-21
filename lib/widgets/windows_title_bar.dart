@@ -228,7 +228,6 @@ class _WindowsTitleBarState extends State<_WindowsTitleBar>
                               style: AppTextStyles.headline2.copyWith(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w700,
-                                letterSpacing: 0,
                                 color: titleColor,
                                 decoration: TextDecoration.none,
                               ),

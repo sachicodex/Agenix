@@ -96,7 +96,7 @@ class _QuickCreatePopoverState extends State<QuickCreatePopover> {
                         contentPadding: EdgeInsets.symmetric(vertical: 8),
                       ),
                       style: const TextStyle(
-                        fontFamily: 'SFProDisplay',
+                        fontFamily: 'GoogleSans',
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
                       ),
@@ -107,7 +107,7 @@ class _QuickCreatePopoverState extends State<QuickCreatePopover> {
                     Text(
                       '${DateFormat('h:mm a').format(_startTime)} - ${DateFormat('h:mm a').format(_endTime)}',
                       style: TextStyle(
-                        fontFamily: 'SFProDisplay',
+                        fontFamily: 'GoogleSans',
                         fontSize: 12,
                         color: AppColors.onSurface.withValues(alpha: 0.7),
                       ),

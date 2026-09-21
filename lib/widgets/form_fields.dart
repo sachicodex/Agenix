@@ -52,6 +52,7 @@ class LargeTextField extends StatelessWidget {
   final bool aiLoading;
   final bool hasError;
   final ValueChanged<String>? onChanged;
+  final Color backgroundColor;
 
   const LargeTextField({
     super.key,
@@ -67,6 +68,7 @@ class LargeTextField extends StatelessWidget {
     this.aiLoading = false,
     this.hasError = false,
     this.onChanged,
+    this.backgroundColor = AppColors.surface,
   });
 
   Widget? _buildAiOverlayButton() {
@@ -136,7 +138,7 @@ class LargeTextField extends StatelessWidget {
                   color: AppColors.onSurface.withValues(alpha: 0.5),
                 ),
                 filled: true,
-                fillColor: AppColors.surface,
+                fillColor: backgroundColor,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: hasError
@@ -169,6 +171,7 @@ class ExpandableDescription extends StatefulWidget {
   final VoidCallback? onAIClick;
   final bool aiLoading;
   final ValueChanged<bool>? onExpansionChanged;
+  final Color backgroundColor;
 
   const ExpandableDescription({
     super.key,
@@ -179,6 +182,7 @@ class ExpandableDescription extends StatefulWidget {
     this.onAIClick,
     this.aiLoading = false,
     this.onExpansionChanged,
+    this.backgroundColor = AppColors.surface,
   });
 
   @override
@@ -637,7 +641,7 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
       height: 42,
       padding: const EdgeInsets.symmetric(horizontal: 8),
       decoration: BoxDecoration(
-        color: AppColors.surface.withValues(alpha: 0.72),
+        color: widget.backgroundColor.withValues(alpha: 0.72),
         border: Border(
           bottom: BorderSide(
             color: AppColors.borderColor.withValues(alpha: 0.65),
@@ -724,7 +728,7 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
                   height: 54,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   decoration: BoxDecoration(
-                    color: AppColors.surface,
+                    color: widget.backgroundColor,
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: AppColors.borderColor),
                   ),
@@ -758,7 +762,7 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
           if (_isExpanded) ...[
             Container(
               decoration: BoxDecoration(
-                color: AppColors.surface,
+                color: widget.backgroundColor,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: AppColors.borderColor),
               ),

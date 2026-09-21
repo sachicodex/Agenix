@@ -41,6 +41,7 @@ class AppSelectField<T> extends StatelessWidget {
       fontWeight: FontWeight.w500,
       color: AppColors.onBackground,
     ),
+    this.backgroundColor = AppColors.surface,
   });
 
   final String label;
@@ -59,6 +60,7 @@ class AppSelectField<T> extends StatelessWidget {
   final Future<void> Function(T value, String name)? onNameChanged;
   final TextStyle fieldTextStyle;
   final TextStyle listTextStyle;
+  final Color backgroundColor;
 
   @override
   Widget build(BuildContext context) {
@@ -98,7 +100,7 @@ class AppSelectField<T> extends StatelessWidget {
             color: AppColors.onSurface.withValues(alpha: 0.7),
           ),
           filled: true,
-          fillColor: AppColors.surface,
+          fillColor: backgroundColor,
           suffixIcon: onAddPressed == null || !showAddInField
               ? null
               : IconButton(
@@ -395,8 +397,9 @@ class _AppSelectDialogState<T> extends State<_AppSelectDialog<T>> {
                                               onPressed: () =>
                                                   Navigator.pop(context, true),
                                               style: FilledButton.styleFrom(
-                                backgroundColor: AppColors.error
-                              ),
+                                                backgroundColor:
+                                                    AppColors.error,
+                                              ),
                                               child: const Text('Delete'),
                                             ),
                                           ),
