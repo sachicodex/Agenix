@@ -20,6 +20,8 @@ abstract class _DialogBase extends StatelessWidget {
     this.maxDialogWidth = 720,
     this.cancelAsText = false,
     this.cancelLabel = 'Cancel',
+    this.cancelTextColor,
+    this.showCancelButton = true,
     this.onCancel,
     this.backgroundColor = const Color(0xFF161616),
     this.foregroundColor = const Color(0xFFF4F4F5),
@@ -46,6 +48,8 @@ abstract class _DialogBase extends StatelessWidget {
   final double maxDialogWidth;
   final bool cancelAsText;
   final String cancelLabel;
+  final Color? cancelTextColor;
+  final bool showCancelButton;
   final VoidCallback? onCancel;
   final Color backgroundColor;
   final Color foregroundColor;
@@ -61,6 +65,8 @@ abstract class _DialogBase extends StatelessWidget {
   final TextStyle? descriptionStyle;
 
   Widget buildActions();
+
+  bool get cancelAtBottom => false;
 
   @override
   Widget build(BuildContext context) {
@@ -94,7 +100,10 @@ abstract class _DialogBase extends StatelessWidget {
                 cancelLabel: cancelLabel,
                 onCancel: close,
                 centerTitle: centerTitle,
-                showCloseButton: showCloseButton,
+                showCloseButton:
+                    showCloseButton &&
+                    showCancelButton &&
+                    !(cancelAsText && cancelAtBottom),
               ),
               if ((title != null && title!.trim().isNotEmpty) ||
                   (eyebrow != null && eyebrow!.trim().isNotEmpty))

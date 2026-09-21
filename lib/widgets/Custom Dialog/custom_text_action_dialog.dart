@@ -12,6 +12,8 @@ class CustomTextActionDialog extends _DialogBase {
     super.maxDialogWidth,
     super.cancelAsText,
     super.cancelLabel,
+    super.cancelTextColor,
+    super.showCancelButton,
     super.onCancel,
     super.backgroundColor,
     super.foregroundColor,

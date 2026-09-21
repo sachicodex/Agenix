@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:agenix/widgets/Custom%20App%20Bar/custom_app_bar.dart';
 import 'package:agenix/widgets/Custom%20Card/custom_card.dart';
+import 'package:agenix/widgets/Custom%20Dialog/reusable_dialog.dart';
 import 'package:agenix/widgets/Custom%20Surface/custom_surface.dart';
 import 'package:agenix/widgets/Custom%20Text/custom_text.dart';
 import 'package:agenix/widgets/Glass%20Card/glass_carrd.dart';
@@ -13,6 +14,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' show Timestamp;
+import 'package:hugeicons/hugeicons.dart';
 import '../theme/app_colors.dart';
 import '../services/api_key_storage_service.dart';
 import '../services/google_calendar_service.dart';
@@ -322,21 +324,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
         // Show confirmation popup before removing
         final shouldRemove = await showAppDialog<bool>(
           context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Remove API Key'),
-            content: const Text(
-              'Are you sure you want to remove your API key? AI features will be disabled until you add a new API key.',
+          builder: (context) => CustomTwoActionDialog(
+            title: 'Do you Remove?',
+            description:
+                'Are you sure you want to remove your API key? AI features will be disabled until you add a new API key.',
+
+            secondaryButton: (SecondaryButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              label: 'Cancel',
+            )),
+            primaryButton: PrimaryButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              label: 'Yes, Remove',
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Cancel'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                child: const Text('Remove'),
-              ),
-            ],
           ),
         );
 
@@ -950,15 +950,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   void _showErrorPopup(String message) {
     showAppDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Error'),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK'),
-          ),
-        ],
+      builder: (context) => CustomOneActionDialog(
+        centerContent: true,
+        centerTitle: true,
+        cancelAsText: true,
+        titleDescriptionSpacing: 5,
+        cancelTextColor: AppColors.primary,
+        title: 'Error',
+        description: message,
       ),
     );
   }
@@ -967,25 +966,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     // Show confirmation dialog
     final shouldLogout = await showAppDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Logout'),
-        content: const Text('Are you sure you want to logout?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text(
-              'Logout',
-              style: TextStyle(
-                color: AppColors.error,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ],
+      builder: (context) => CustomTwoActionDialog(
+        centerContent: true,
+        centerTitle: true,
+        title: 'Logout',
+        showCancelButton: false,
+        description: 'Are you sure you want to logout?',
+        secondaryButton: SecondaryButton(
+          label: 'Cancel',
+          onPressed: () => Navigator.of(context).pop(false),
+        ),
+        primaryButton: PrimaryButton(
+          label: 'Yes, Log out',
+          onPressed: () => Navigator.of(context).pop(true),
+        ),
       ),
     );
 
@@ -1064,13 +1058,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
         Row(
           children: [
             Container(
-              width: 25,
-              height: 25,
+              width: 22,
+              height: 22,
               decoration: BoxDecoration(
                 color: AppColors.onSurface.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: AppIcon(icon: icon, color: AppColors.primary, size: 10),
+              child: AppIcon(
+                icon: icon,
+                color: AppColors.onBackground,
+                size: 5,
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -1261,17 +1259,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
         ? _userEmail!
         : 'Sign in from the welcome screen to sync your account.';
 
-    return Container(
+    return GlassCard(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [AppColors.surface, AppColors.surface],
-        ),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: AppColors.onSurface.withValues(alpha: 0.08)),
-      ),
       child: Row(
         children: [
           Container(
@@ -1367,10 +1356,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
         width: double.infinity,
         child: SecondaryButton(
           onPressed: _signedIn ? _handleLogout : null,
-          icon: const Icon(Icons.logout_rounded),
+          icon: HugeIcon(icon: HugeIcons.strokeRoundedLogout02),
+          iconSize: 20,
           label: 'Logout',
           padding: EdgeInsets.symmetric(vertical: 20),
           backgroundColor: AppColors.error,
+          foregroundColor: AppColors.card,
         ),
       ),
     );
