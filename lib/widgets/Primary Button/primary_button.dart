@@ -263,7 +263,7 @@ class _PrimaryButtonState extends State<PrimaryButton> {
               ? EdgeInsets.zero
               : EdgeInsets.symmetric(
                   horizontal: 25,
-                  vertical: isMobile ? 15 : 17,
+                  vertical: isMobile ? 13 : 20,
                 )),
       alignment: Alignment.center,
       minimumSize: widget.minimumSize ?? (isIconOnly ? Size.zero : null),

@@ -872,7 +872,6 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
                 ? 'Update Event'
                 : 'Schedule Event',
             loading: _saving,
-            padding: EdgeInsets.symmetric(horizontal: 0, vertical: 20),
             textStyle: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
             icon: isEditing
                 ? HugeIcon(

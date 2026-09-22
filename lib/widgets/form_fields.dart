@@ -678,6 +678,66 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
     final activeList = attributes[Attribute.list.key]?.value;
     final isMobile = MediaQuery.sizeOf(context).width < 700;
 
+    final toolbar = Row(
+      mainAxisSize: isMobile ? MainAxisSize.min : MainAxisSize.max,
+      children: [
+        _formatButton(
+          Icons.format_bold,
+          () => _format(Attribute.bold),
+          isActive: isActive(Attribute.bold),
+        ),
+        _formatButton(
+          Icons.format_italic,
+          () => _format(Attribute.italic),
+          isActive: isActive(Attribute.italic),
+        ),
+        _formatButton(
+          Icons.format_underlined,
+          () => _format(Attribute.underline),
+          isActive: isActive(Attribute.underline),
+        ),
+        const SizedBox(width: 4),
+        Container(width: 1, height: 22, color: AppColors.glassBorder),
+        const SizedBox(width: 4),
+        _formatButton(
+          Icons.format_list_numbered,
+          () => _format(Attribute.ol),
+          isActive: activeList == Attribute.ol.value,
+        ),
+        _formatButton(
+          Icons.format_list_bulleted,
+          () => _format(Attribute.ul),
+          isActive: activeList == Attribute.ul.value,
+        ),
+        const SizedBox(width: 4),
+        Container(width: 1, height: 22, color: AppColors.glassBorder),
+        const SizedBox(width: 4),
+        _formatButton(Icons.link, _addLink),
+        if (!isMobile) _formatButton(Icons.format_clear, _clearFormatting),
+        if (!isMobile) const Spacer(),
+        _formatButton(Icons.keyboard_arrow_up, _toggleExpanded),
+        if (widget.onAIClick != null)
+          IconButton(
+            onPressed: widget.aiLoading ? null : widget.onAIClick,
+            icon: widget.aiLoading
+                ? const SizedBox(
+                    width: 17,
+                    height: 17,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Image.asset(
+                    'assets/img/ai.png',
+                    width: 20,
+                    height: 20,
+                    errorBuilder: (context, error, stackTrace) =>
+                        const Icon(Icons.auto_awesome, size: 19),
+                  ),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+          ),
+      ],
+    );
+
     return Container(
       height: 42,
       padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -685,64 +745,12 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
         color: Colors.transparent,
         border: Border(bottom: BorderSide(color: AppColors.glassBorder)),
       ),
-      child: Row(
-        children: [
-          _formatButton(
-            Icons.format_bold,
-            () => _format(Attribute.bold),
-            isActive: isActive(Attribute.bold),
-          ),
-          _formatButton(
-            Icons.format_italic,
-            () => _format(Attribute.italic),
-            isActive: isActive(Attribute.italic),
-          ),
-          _formatButton(
-            Icons.format_underlined,
-            () => _format(Attribute.underline),
-            isActive: isActive(Attribute.underline),
-          ),
-          const SizedBox(width: 4),
-          Container(width: 1, height: 22, color: AppColors.glassBorder),
-          const SizedBox(width: 4),
-          _formatButton(
-            Icons.format_list_numbered,
-            () => _format(Attribute.ol),
-            isActive: activeList == Attribute.ol.value,
-          ),
-          _formatButton(
-            Icons.format_list_bulleted,
-            () => _format(Attribute.ul),
-            isActive: activeList == Attribute.ul.value,
-          ),
-          const SizedBox(width: 4),
-          Container(width: 1, height: 22, color: AppColors.glassBorder),
-          const SizedBox(width: 4),
-          _formatButton(Icons.link, _addLink),
-          if (!isMobile) _formatButton(Icons.format_clear, _clearFormatting),
-          const Spacer(),
-          _formatButton(Icons.keyboard_arrow_up, _toggleExpanded),
-          if (widget.onAIClick != null)
-            IconButton(
-              onPressed: widget.aiLoading ? null : widget.onAIClick,
-              icon: widget.aiLoading
-                  ? const SizedBox(
-                      width: 17,
-                      height: 17,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Image.asset(
-                      'assets/img/ai.png',
-                      width: 20,
-                      height: 20,
-                      errorBuilder: (context, error, stackTrace) =>
-                          const Icon(Icons.auto_awesome, size: 19),
-                    ),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
-            ),
-        ],
-      ),
+      child: isMobile
+          ? SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: toolbar,
+            )
+          : toolbar,
     );
   }
 
