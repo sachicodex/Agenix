@@ -1354,7 +1354,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
           icon: HugeIcon(icon: HugeIcons.strokeRoundedLogout02),
           iconSize: 20,
           label: 'Logout',
-          padding: EdgeInsets.symmetric(vertical: 20),
           backgroundColor: AppColors.error,
           foregroundColor: AppColors.card,
         ),
