@@ -46,6 +46,7 @@ class PrimaryButton extends StatefulWidget {
   final double iconSize;
   final double iconStrokeWidth;
   final bool loading;
+
   /// Applies the standard destructive button appearance and delete icon.
   /// Explicit visual properties still override these defaults.
   final bool isDeleteButton;
@@ -246,7 +247,9 @@ class _PrimaryButtonState extends State<PrimaryButton> {
     }
     _wasTickerEnabled = tickerEnabled;
     final isDisabled = widget.onPressed == null || _isBusy;
-    final isIconOnly = icon != null && widget.label == null && widget.child == null;
+    final isIconOnly =
+        icon != null && widget.label == null && widget.child == null;
+    final isMobile = MediaQuery.sizeOf(context).width < 700;
     final buttonStyle = FilledButton.styleFrom(
       backgroundColor: backgroundColor,
       foregroundColor: foregroundColor,
@@ -258,7 +261,10 @@ class _PrimaryButtonState extends State<PrimaryButton> {
           widget.padding ??
           (isIconOnly
               ? EdgeInsets.zero
-              : const EdgeInsets.symmetric(horizontal: 25, vertical: 17)),
+              : EdgeInsets.symmetric(
+                  horizontal: 25,
+                  vertical: isMobile ? 15 : 17,
+                )),
       alignment: Alignment.center,
       minimumSize: widget.minimumSize ?? (isIconOnly ? Size.zero : null),
       maximumSize: widget.maximumSize,
@@ -270,7 +276,7 @@ class _PrimaryButtonState extends State<PrimaryButton> {
     final content =
         widget.child ??
         (widget.label != null
-              ? CustomTextBody(
+            ? CustomTextBody(
                 widget.label!,
                 style: TextStyle(
                   fontSize: 16,

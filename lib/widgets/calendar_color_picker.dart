@@ -155,6 +155,7 @@ class _CalendarColorPaletteState extends State<CalendarColorPalette> {
                           primaryButton: PrimaryButton(
                             label: 'Yes, Delete',
                             isDeleteButton: true,
+                            showDeleteIcon: false,
                             onPressed: () => Navigator.of(context).pop(true),
                           ),
                         ),

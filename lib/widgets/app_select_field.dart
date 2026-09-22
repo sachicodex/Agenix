@@ -428,10 +428,11 @@ class _AppSelectDialogState<T> extends State<_AppSelectDialog<T>> {
                                                       ),
                                                 ),
                                                 secondaryButton: SecondaryButton(
-                                                  label: 'Yes, Delete Calendar',
+                                                  label: 'Delete Calendar',
                                                   icon: HugeIcon(
                                                     icon: HugeIcons
                                                         .strokeRoundedDelete03,
+                                                    size: 18,
                                                   ),
                                                   onPressed: () =>
                                                       Navigator.pop(
@@ -645,7 +646,7 @@ class _CalendarColorDialogState extends State<_CalendarColorDialog> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-                    TextField(
+          TextField(
             controller: _name,
             autofocus: shouldAutofocusTextInput,
             decoration: InputDecoration(

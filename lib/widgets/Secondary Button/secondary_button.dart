@@ -4,7 +4,6 @@ import 'package:agenix/widgets/Custom%20Text/custom_text.dart';
 import 'package:flutter/material.dart';
 import 'package:hugeicons/hugeicons.dart';
 
-
 class SecondaryButton extends StatefulWidget {
   const SecondaryButton({
     super.key,
@@ -216,6 +215,7 @@ class _SecondaryButtonState extends State<SecondaryButton> {
     final isIconOnly =
         widget.icon != null && widget.label == null && widget.child == null;
     final icon = _configuredIcon(widget.icon);
+    final isMobile = MediaQuery.sizeOf(context).width < 700;
 
     final buttonStyle = OutlinedButton.styleFrom(
       backgroundColor: widget.backgroundColor,
@@ -228,7 +228,10 @@ class _SecondaryButtonState extends State<SecondaryButton> {
           widget.padding ??
           (isIconOnly
               ? EdgeInsets.zero
-              : const EdgeInsets.symmetric(horizontal: 25, vertical: 17)),
+              : EdgeInsets.symmetric(
+                  horizontal: 25,
+                  vertical: isMobile ? 15 : 17,
+                )),
       alignment: Alignment.center,
       minimumSize: widget.minimumSize ?? (isIconOnly ? Size.zero : null),
       maximumSize: widget.maximumSize,
@@ -240,7 +243,7 @@ class _SecondaryButtonState extends State<SecondaryButton> {
     final content =
         widget.child ??
         (widget.label != null
-              ? CustomTextBody(
+            ? CustomTextBody(
                 widget.label!,
                 style: TextStyle(
                   fontSize: 16,
