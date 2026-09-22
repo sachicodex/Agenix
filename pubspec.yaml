@@ -84,6 +84,7 @@ flutter:
 
   # Assets used by the UI (icons placeholders)
   assets:
+    - .env
     - assets/img/
     - assets/logo/
 

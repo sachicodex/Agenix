@@ -380,7 +380,9 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
           borderSide: const BorderSide(color: AppColors.glassBorder),
         ),
         primaryButton: dialog_buttons.PrimaryButton(
-          label: 'Setup AI Features',
+          label: Theme.of(context).platform == TargetPlatform.android
+              ? 'Setup'
+              : 'Setup AI Features',
           onPressed: () {
             Navigator.of(context).pop();
             Navigator.pushNamed(context, SettingsScreen.routeName);

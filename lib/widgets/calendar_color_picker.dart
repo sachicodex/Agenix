@@ -7,6 +7,9 @@ import '../services/calendar_palette_sync_service.dart';
 import 'app_popup.dart';
 import '../utils/platform_focus.dart';
 import 'Glass Card/glass_carrd.dart';
+import 'Custom Dialog/reusable_dialog.dart';
+import 'Primary Button/primary_button.dart';
+import 'Secondary Button/secondary_button.dart';
 
 const _baseCalendarColors = AppColors.calendarPalette;
 
@@ -134,24 +137,27 @@ class _CalendarColorPaletteState extends State<CalendarColorPalette> {
                   ? () async {
                       final confirmed = await showAppDialog<bool>(
                         context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('Delete custom color?'),
-                          content: const Text(
-                            'Remove this color from the palette?',
+                        builder: (context) => CustomTwoActionDialog(
+                          title: 'Delete custom color?',
+                          description: 'Remove this color from the palette?',
+                          centerTitle: true,
+                          centerContent: true,
+                          titleDescriptionSpacing: 12,
+                          showCloseButton: false,
+                          secondaryButton: SecondaryButton(
+                            label: 'Cancel',
+                            onPressed: () => Navigator.of(context).pop(false),
+                            backgroundColor: Colors.transparent,
+                            borderSide: const BorderSide(
+                              color: AppColors.glassBorder,
+                            ),
                           ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, false),
-                              child: const Text('Cancel'),
-                            ),
-                            FilledButton(
-                              onPressed: () => Navigator.pop(context, true),
-                              style: FilledButton.styleFrom(
-                                backgroundColor: AppColors.error,
-                              ),
-                              child: Text('Delete'),
-                            ),
-                          ],
+                          primaryButton: PrimaryButton(
+                            label: 'Yes, Delete',
+                            onPressed: () => Navigator.of(context).pop(true),
+                            backgroundColor: AppColors.error,
+                            foregroundColor: Colors.white,
+                          ),
                         ),
                       );
                       if (confirmed == true) {

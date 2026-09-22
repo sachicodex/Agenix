@@ -7,7 +7,6 @@ import 'package:hugeicons/hugeicons.dart';
 import 'dart:async';
 
 import '../theme/app_colors.dart';
-import 'app_icon.dart';
 import 'app_popup.dart';
 import 'calendar_color_picker.dart';
 import '../utils/platform_focus.dart';
@@ -376,43 +375,22 @@ class _AppSelectDialogState<T> extends State<_AppSelectDialog<T>> {
                                     if (widget.onDelete == null) return;
                                     final confirmed = await showAppDialog<bool>(
                                       context: context,
-                                      builder: (context) => AlertDialog(
-                                        title: Row(
-                                          children: [
-                                            const Expanded(
-                                              child: Text('Delete calendar?'),
-                                            ),
-                                            IconButton(
+                                      builder: (context) =>
+                                          CustomOneActionDialog(
+                                            title: 'Delete calendar?',
+                                            description:
+                                                'This calendar will be permanently deleted.',
+                                            centerTitle: true,
+                                            centerContent: true,
+                                            titleDescriptionSpacing: 12,
+                                            primaryButton: PrimaryButton(
+                                              label: 'Yes, Delete',
                                               onPressed: () =>
-                                                  Navigator.pop(context, false),
-                                              icon: const AppIcon(
-                                                icon: AppIconData.material(
-                                                  Icons.close,
-                                                ),
-                                                color: AppColors.onSurface,
-                                                size: 20,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        content: const Text(
-                                          'This calendar will be permanently deleted.',
-                                        ),
-                                        actions: [
-                                          SizedBox(
-                                            width: double.infinity,
-                                            child: FilledButton(
-                                              onPressed: () =>
-                                                  Navigator.pop(context, true),
-                                              style: FilledButton.styleFrom(
-                                                backgroundColor:
-                                                    AppColors.error,
-                                              ),
-                                              child: const Text('Delete'),
+                                                  Navigator.of(context).pop(true),
+                                              backgroundColor: AppColors.error,
+                                              foregroundColor: Colors.white,
                                             ),
                                           ),
-                                        ],
-                                      ),
                                     );
                                     if (confirmed == true &&
                                         await widget.onDelete!(option.value) &&
