@@ -89,6 +89,7 @@ class _ContextMenuItemWidget extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
             if (item.icon != null) ...[
               Icon(
@@ -100,7 +101,8 @@ class _ContextMenuItemWidget extends StatelessWidget {
               ),
               const SizedBox(width: 12),
             ],
-            Expanded(
+            Flexible(
+              fit: FlexFit.loose,
               child: Text(
                 item.label,
                 style: TextStyle(

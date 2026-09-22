@@ -1,11 +1,12 @@
-import 'package:agenix/widgets/primary_button/primary_button.dart';
+import 'package:agenix/widgets/Primary%20Button/primary_button.dart';
 import 'package:flutter/material.dart';
 import '../services/google_calendar_service.dart';
 import '../services/google_sign_in_error.dart';
 import '../widgets/app_popup.dart';
+import '../widgets/Custom Dialog/reusable_dialog.dart';
+import '../widgets/Primary Button/primary_button.dart' as dialog_buttons;
 import '../theme/app_colors.dart';
 import '../widgets/app_animations.dart';
-import '../widgets/primary_action_button.dart';
 
 class SignInScreen extends StatefulWidget {
   final VoidCallback? onSignInSuccess;
@@ -22,15 +23,15 @@ class _SignInScreenState extends State<SignInScreen> {
   void _showErrorDialog(String message) {
     showAppDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Error'),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK'),
-          ),
-        ],
+      builder: (context) => CustomOneActionDialog(
+        title: 'Error',
+        description: message,
+        centerTitle: true,
+        centerContent: true,
+        primaryButton: dialog_buttons.PrimaryButton(
+          label: 'OK',
+          onPressed: () => Navigator.of(context).pop(),
+        ),
       ),
     );
   }

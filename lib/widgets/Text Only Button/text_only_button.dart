@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:agenix/widgets/Custom%20Text/custom_text.dart';
 
+
 class TextOnlyButton extends StatefulWidget {
   const TextOnlyButton({
     super.key,
@@ -243,6 +244,9 @@ class _TextOnlyButtonState extends State<TextOnlyButton> {
                   fontWeight: FontWeight.w600,
                   color: widget.foregroundColor,
                 ).merge(widget.textStyle),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                softWrap: false,
               )
             : icon!);
     final hasIconAndContent =

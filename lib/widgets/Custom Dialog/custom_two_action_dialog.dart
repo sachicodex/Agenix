@@ -27,6 +27,7 @@ class CustomTwoActionDialog extends _DialogBase {
     super.titleDescriptionSpacing,
     super.showCloseButton,
     super.descriptionStyle,
+    super.useGlassCard,
     super.centerContent = false,
     super.centerTitle = false,
   });

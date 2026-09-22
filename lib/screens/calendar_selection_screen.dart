@@ -1,12 +1,13 @@
-import 'package:agenix/widgets/app_bar_widget/app_bar.dart';
-import 'package:agenix/widgets/primary_button/primary_button.dart';
+import 'package:agenix/widgets/Custom%20App%20Bar/custom_app_bar.dart';
+import 'package:agenix/widgets/Primary%20Button/primary_button.dart';
 import 'package:flutter/material.dart';
 import '../services/google_calendar_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_animations.dart';
 import '../widgets/modern_splash_screen.dart';
-import '../widgets/primary_action_button.dart';
 import '../widgets/app_popup.dart';
+import '../widgets/Custom Dialog/reusable_dialog.dart';
+import '../widgets/Primary Button/primary_button.dart' as dialog_buttons;
 
 /// Screen for selecting default calendar on first login
 class CalendarSelectionScreen extends StatefulWidget {
@@ -144,15 +145,15 @@ class _CalendarSelectionScreenState extends State<CalendarSelectionScreen> {
   void _showErrorDialog(String message) {
     showAppDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Error'),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK'),
-          ),
-        ],
+      builder: (context) => CustomOneActionDialog(
+        title: 'Error',
+        description: message,
+        centerTitle: true,
+        centerContent: true,
+        primaryButton: dialog_buttons.PrimaryButton(
+          label: 'OK',
+          onPressed: () => Navigator.of(context).pop(),
+        ),
       ),
     );
   }
@@ -164,7 +165,7 @@ class _CalendarSelectionScreenState extends State<CalendarSelectionScreen> {
     }
 
     return Scaffold(
-      appBar: AppBarWidget(
+      appBar: CustomAppBar(
         automaticallyImplyLeading: false, // Remove back button
         title: Text('Select Default Calendar', style: AppTextStyles.headline2),
       ),

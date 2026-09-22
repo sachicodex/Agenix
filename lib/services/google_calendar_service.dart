@@ -26,6 +26,9 @@ import 'app_data_service.dart';
 import 'auth_storage_service.dart';
 import '../data/local/local_event_store.dart';
 import '../widgets/app_popup.dart';
+import '../widgets/Custom Dialog/reusable_dialog.dart';
+import '../widgets/Primary Button/primary_button.dart' as dialog_buttons;
+import '../widgets/Secondary Button/secondary_button.dart';
 import 'firebase_bootstrap.dart';
 
 /// Lightweight service to sign in and insert events into Google Calendar.
@@ -819,8 +822,9 @@ class GoogleCalendarService {
       if (!context.mounted) return;
       await showAppDialog<void>(
         context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('OAuth client not configured'),
+        builder: (ctx) => CustomOneActionDialog(
+          title: 'OAuth client not configured',
+          centerTitle: true,
           content: SingleChildScrollView(
             child: ListBody(
               children: const [
@@ -838,12 +842,10 @@ class GoogleCalendarService {
               ],
             ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('OK'),
-            ),
-          ],
+          primaryButton: dialog_buttons.PrimaryButton(
+            label: 'OK',
+            onPressed: () => Navigator.of(ctx).pop(),
+          ),
         ),
       );
       throw Exception('Desktop OAuth client or proxy URL not configured');
@@ -923,8 +925,9 @@ class GoogleCalendarService {
         if (!context.mounted) rethrow;
         await showAppDialog<void>(
           context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('OAuth client error'),
+          builder: (ctx) => CustomOneActionDialog(
+            title: 'OAuth client error',
+            centerTitle: true,
             content: SingleChildScrollView(
               child: ListBody(
                 children: const [
@@ -937,12 +940,10 @@ class GoogleCalendarService {
                 ],
               ),
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('OK'),
-              ),
-            ],
+            primaryButton: dialog_buttons.PrimaryButton(
+              label: 'OK',
+              onPressed: () => Navigator.of(ctx).pop(),
+            ),
           ),
         );
         rethrow;
@@ -952,8 +953,9 @@ class GoogleCalendarService {
       if (!context.mounted) rethrow;
       await showAppDialog<void>(
         context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Sign-in failed'),
+        builder: (ctx) => CustomTwoActionDialog(
+          title: 'Sign-in failed',
+          centerTitle: true,
           content: SingleChildScrollView(
             child: ListBody(
               children: [
@@ -975,31 +977,30 @@ class GoogleCalendarService {
               ],
             ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('OK'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                showAppDialog<void>(
-                  context: context,
-                  builder: (dCtx) => AlertDialog(
-                    title: const Text('Error details'),
-                    content: SingleChildScrollView(child: Text(err.toString())),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.of(dCtx).pop(),
-                        child: const Text('Close'),
-                      ),
-                    ],
+          secondaryButton: SecondaryButton(
+            label: 'Show details',
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              showAppDialog<void>(
+                context: context,
+                builder: (dCtx) => CustomOneActionDialog(
+                  title: 'Error details',
+                  centerTitle: true,
+                  content: SingleChildScrollView(child: Text(err.toString())),
+                  primaryButton: dialog_buttons.PrimaryButton(
+                    label: 'Close',
+                    onPressed: () => Navigator.of(dCtx).pop(),
                   ),
-                );
-              },
-              child: const Text('Show details'),
-            ),
-          ],
+                ),
+              );
+            },
+            backgroundColor: Colors.transparent,
+            borderSide: const BorderSide(color: Colors.white24),
+          ),
+          primaryButton: dialog_buttons.PrimaryButton(
+            label: 'OK',
+            onPressed: () => Navigator.of(ctx).pop(),
+          ),
         ),
       );
 
@@ -2331,8 +2332,9 @@ class GoogleCalendarService {
     return showAppDialog<String?>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Complete sign-in manually'),
+      builder: (ctx) => CustomTwoActionDialog(
+        title: 'Complete sign-in manually',
+        centerTitle: true,
         content: SingleChildScrollView(
           child: ListBody(
             children: [
@@ -2349,30 +2351,31 @@ class GoogleCalendarService {
                 autofocus: shouldAutofocusTextInput,
                 decoration: const InputDecoration(labelText: 'Paste code here'),
               ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton(
+                  onPressed: () async {
+                    final data = await Clipboard.getData('text/plain');
+                    if (data?.text != null) controller.text = data!.text!;
+                  },
+                  child: const Text('Paste from clipboard'),
+                ),
+              ),
             ],
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              final data = await Clipboard.getData('text/plain');
-              if (data?.text != null) {
-                controller.text = data!.text!;
-              }
-            },
-            child: const Text('Paste from clipboard'),
+        secondaryButton: SecondaryButton(
+          label: 'Cancel',
+          onPressed: () => Navigator.of(ctx).pop(null),
+          backgroundColor: Colors.transparent,
+          borderSide: const BorderSide(color: Colors.white24),
+        ),
+        primaryButton: dialog_buttons.PrimaryButton(
+          label: 'Submit',
+          onPressed: () => Navigator.of(ctx).pop(
+            controller.text.trim().isEmpty ? null : controller.text.trim(),
           ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(null),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(
-              controller.text.trim().isEmpty ? null : controller.text.trim(),
-            ),
-            child: const Text('Submit'),
-          ),
-        ],
+        ),
       ),
     );
   }

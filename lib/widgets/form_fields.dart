@@ -5,6 +5,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 import '../theme/app_colors.dart';
 import '../utils/platform_focus.dart';
+import 'app_popup.dart';
+import 'Custom Dialog/reusable_dialog.dart';
+import 'Primary Button/primary_button.dart' as dialog_buttons;
+import 'Secondary Button/secondary_button.dart';
 
 /// Returns readable text from a rich description or a legacy plain value.
 String plainDescriptionText(String value) {
@@ -140,13 +144,13 @@ class LargeTextField extends StatelessWidget {
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: hasError
-              ? const BorderSide(color: Colors.red, width: 1)
+              ? const BorderSide(color: AppColors.error, width: 1)
               : const BorderSide(color: AppColors.glassBorder),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: hasError
-              ? const BorderSide(color: Colors.red, width: 1)
+              ? const BorderSide(color: AppColors.error, width: 1)
               : const BorderSide(color: AppColors.glassBorder),
         ),
         focusedBorder: OutlineInputBorder(
@@ -436,13 +440,14 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
             selection.end,
           )
         : '';
-    final link = await showDialog<(String text, String url)>(
+    final link = await showAppDialog<(String text, String url)>(
       context: context,
       builder: (context) {
         final textController = TextEditingController(text: selectedText);
         final urlController = TextEditingController();
-        return AlertDialog(
-          title: const Text('Add link'),
+        return CustomTwoActionDialog(
+          title: 'Add link',
+          centerTitle: true,
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -460,19 +465,19 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
               ),
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
+          secondaryButton: SecondaryButton(
+            label: 'Cancel',
+            onPressed: () => Navigator.pop(context),
+            backgroundColor: Colors.transparent,
+            borderSide: const BorderSide(color: Colors.white24),
+          ),
+          primaryButton: dialog_buttons.PrimaryButton(
+            label: 'Apply',
               onPressed: () => Navigator.pop(context, (
                 textController.text.trim(),
                 urlController.text.trim(),
               )),
-              child: const Text('Apply'),
-            ),
-          ],
+          ),
         );
       },
     );

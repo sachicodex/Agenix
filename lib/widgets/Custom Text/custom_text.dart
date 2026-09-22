@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+
 class CustomTextHeading extends StatelessWidget {
   const CustomTextHeading(
     this.text, {

@@ -1,7 +1,7 @@
 import 'dart:async';
 
+import 'package:agenix/widgets/Primary%20Button/primary_button.dart';
 import 'package:agenix/widgets/Secondary%20Button/secondary_button.dart';
-import 'package:agenix/widgets/primary_button/primary_button.dart';
 import 'package:agenix/widgets/Primary%20Button/primary_button.dart'
     as dialog_buttons;
 import 'package:flutter/material.dart';
@@ -19,7 +19,6 @@ import '../../widgets/form_fields.dart';
 import '../../widgets/Glass Card/glass_carrd.dart';
 import '../../widgets/date_time_field.dart';
 import '../../widgets/app_date_picker.dart';
-import '../../widgets/primary_action_button.dart';
 import '../../widgets/app_select_field.dart';
 import '../../widgets/app_popup.dart';
 import '../../widgets/calendar_color_picker.dart';
@@ -235,15 +234,15 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
   void _showErrorDialog(String message) {
     showAppDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Error'),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK'),
-          ),
-        ],
+      builder: (context) => CustomOneActionDialog(
+        title: 'Error',
+        description: message,
+        centerTitle: true,
+        centerContent: true,
+        primaryButton: dialog_buttons.PrimaryButton(
+          label: 'OK',
+          onPressed: () => Navigator.of(context).pop(),
+        ),
       ),
     );
   }
@@ -1066,8 +1065,10 @@ class _CustomRecurrenceDialogState extends State<_CustomRecurrenceDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Custom recurrence'),
+    return CustomTwoActionDialog(
+      title: 'Custom recurrence',
+      centerTitle: true,
+      centerContent: true,
       content: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1097,22 +1098,22 @@ class _CustomRecurrenceDialogState extends State<_CustomRecurrenceDialog> {
           ),
         ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () {
-            final interval = int.tryParse(_intervalController.text) ?? 1;
-            Navigator.pop(
-              context,
-              'RRULE:FREQ=$_unit;INTERVAL=${interval.clamp(1, 99)}',
-            );
-          },
-          child: const Text('Done'),
-        ),
-      ],
+      secondaryButton: SecondaryButton(
+        label: 'Cancel',
+        onPressed: () => Navigator.pop(context),
+        backgroundColor: Colors.transparent,
+        borderSide: const BorderSide(color: AppColors.glassBorder),
+      ),
+      primaryButton: dialog_buttons.PrimaryButton(
+        label: 'Done',
+        onPressed: () {
+          final interval = int.tryParse(_intervalController.text) ?? 1;
+          Navigator.pop(
+            context,
+            'RRULE:FREQ=$_unit;INTERVAL=${interval.clamp(1, 99)}',
+          );
+        },
+      ),
     );
   }
 }

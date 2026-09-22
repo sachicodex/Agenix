@@ -70,7 +70,7 @@ class AppSelectField<T> extends StatelessWidget {
         .where((option) => option.value == value)
         .firstOrNull;
     final borderSide = hasError
-        ? const BorderSide(color: Colors.red, width: 1)
+        ? const BorderSide(color: AppColors.error, width: 1)
         : const BorderSide(color: AppColors.glassBorder);
     return InkWell(
       onTap: !enabled || onChanged == null
@@ -126,7 +126,9 @@ class AppSelectField<T> extends StatelessWidget {
         ),
         child: _OptionRow(
           option: selected,
-          fallback: hint,
+          // InputDecorator already displays labelText while the field is
+          // empty. Rendering the hint here as well makes both strings overlap.
+          fallback: selected == null ? null : hint,
           textStyle: fieldTextStyle,
         ),
       ),
@@ -375,22 +377,22 @@ class _AppSelectDialogState<T> extends State<_AppSelectDialog<T>> {
                                     if (widget.onDelete == null) return;
                                     final confirmed = await showAppDialog<bool>(
                                       context: context,
-                                      builder: (context) =>
-                                          CustomOneActionDialog(
-                                            title: 'Delete calendar?',
-                                            description:
-                                                'This calendar will be permanently deleted.',
-                                            centerTitle: true,
-                                            centerContent: true,
-                                            titleDescriptionSpacing: 12,
-                                            primaryButton: PrimaryButton(
-                                              label: 'Yes, Delete',
-                                              onPressed: () =>
-                                                  Navigator.of(context).pop(true),
-                                              backgroundColor: AppColors.error,
-                                              foregroundColor: Colors.white,
-                                            ),
-                                          ),
+                                      builder: (context) => CustomOneActionDialog(
+                                        title: 'Delete calendar?',
+                                        description:
+                                            'This calendar will be permanently deleted.',
+                                        centerTitle: true,
+                                        centerContent: true,
+                                        titleDescriptionSpacing: 12,
+                                        primaryButton: PrimaryButton(
+                                          label: 'Yes, Delete Calendar',
+                                          isDeleteButton: true,
+                                          showDeleteIcon: true,
+                                          onPressed: () =>
+                                              Navigator.of(context).pop(true),
+                                          width: double.infinity,
+                                        ),
+                                      ),
                                     );
                                     if (confirmed == true &&
                                         await widget.onDelete!(option.value) &&
@@ -643,7 +645,7 @@ class _CalendarColorDialogState extends State<_CalendarColorDialog> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          TextField(
+                    TextField(
             controller: _name,
             autofocus: shouldAutofocusTextInput,
             decoration: InputDecoration(

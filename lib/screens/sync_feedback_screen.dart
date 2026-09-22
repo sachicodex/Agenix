@@ -1,10 +1,11 @@
-import 'package:agenix/widgets/primary_button/primary_button.dart';
+import 'package:agenix/widgets/Primary%20Button/primary_button.dart';
 import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_animations.dart';
 import '../widgets/app_popup.dart';
-import '../widgets/primary_action_button.dart';
+import '../widgets/Custom Dialog/reusable_dialog.dart';
+import '../widgets/Primary Button/primary_button.dart' as dialog_buttons;
 
 class SyncFeedbackScreen extends StatefulWidget {
   static const routeName = '/sync';
@@ -36,15 +37,15 @@ class _SyncFeedbackScreenState extends State<SyncFeedbackScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         showAppDialog(
           context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Sync Failed'),
-            content: const Text('Failed to sync: network error'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('OK'),
-              ),
-            ],
+          builder: (context) => CustomOneActionDialog(
+            title: 'Sync Failed',
+            description: 'Failed to sync: network error',
+            centerTitle: true,
+            centerContent: true,
+            primaryButton: dialog_buttons.PrimaryButton(
+              label: 'OK',
+              onPressed: () => Navigator.of(context).pop(),
+            ),
           ),
         );
       });

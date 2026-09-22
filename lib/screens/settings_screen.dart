@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:agenix/widgets/Custom%20App%20Bar/custom_app_bar.dart';
 import 'package:agenix/widgets/Custom%20Card/custom_card.dart';
 import 'package:agenix/widgets/Custom%20Dialog/reusable_dialog.dart';
+import 'package:agenix/widgets/Custom%20Input/custom_input.dart';
 import 'package:agenix/widgets/Custom%20Text/custom_text.dart';
 import 'package:agenix/widgets/Glass%20Card/glass_carrd.dart';
 import 'package:agenix/widgets/Primary%20Button/primary_button.dart';
@@ -29,8 +30,6 @@ import '../widgets/modern_splash_screen.dart';
 import '../widgets/app_select_field.dart';
 import '../widgets/app_popup.dart';
 import '../widgets/calendar_color_picker.dart';
-import '../widgets/app_bar_widget/app_bar.dart';
-import '../widgets/app_input/input.dart';
 import '../navigation/app_route_observer.dart';
 import '../utils/platform_focus.dart';
 
@@ -1204,7 +1203,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   }
 
   Widget _buildAiContent() {
-    return AppInput(
+    return CustomInput(
       controller: _apiKeyController,
       autofocus: shouldAutofocusTextInput,
       hintText: 'Enter your API key',

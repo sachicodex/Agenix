@@ -25,6 +25,7 @@ class CustomTextActionDialog extends _DialogBase {
     super.titleDescriptionSpacing,
     super.showCloseButton,
     super.descriptionStyle,
+    super.useGlassCard,
     super.centerContent = true,
     super.centerTitle = true,
   });

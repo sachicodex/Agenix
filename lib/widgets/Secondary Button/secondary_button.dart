@@ -4,6 +4,7 @@ import 'package:agenix/widgets/Custom%20Text/custom_text.dart';
 import 'package:flutter/material.dart';
 import 'package:hugeicons/hugeicons.dart';
 
+
 class SecondaryButton extends StatefulWidget {
   const SecondaryButton({
     super.key,
@@ -239,13 +240,16 @@ class _SecondaryButtonState extends State<SecondaryButton> {
     final content =
         widget.child ??
         (widget.label != null
-            ? CustomTextBody(
+              ? CustomTextBody(
                 widget.label!,
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
                   color: widget.foregroundColor,
                 ).merge(widget.textStyle),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                softWrap: false,
               )
             : icon!);
     final hasIconAndContent =

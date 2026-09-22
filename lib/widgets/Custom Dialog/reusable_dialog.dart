@@ -2,6 +2,7 @@ import 'package:agenix/widgets/Custom%20Text/custom_text.dart';
 import 'package:agenix/widgets/Primary%20Button/primary_button.dart';
 import 'package:flutter/material.dart';
 
+
 import '../Secondary Button/secondary_button.dart';
 import '../Text Only Button/text_only_button.dart';
 import '../Glass Card/glass_carrd.dart';
@@ -39,6 +40,7 @@ abstract class _DialogBase extends StatelessWidget {
     this.titleDescriptionSpacing = 0,
     this.showCloseButton = true,
     this.descriptionStyle,
+    this.useGlassCard = true,
   });
 
   final String? title;
@@ -64,6 +66,7 @@ abstract class _DialogBase extends StatelessWidget {
   final double titleDescriptionSpacing;
   final bool showCloseButton;
   final TextStyle? descriptionStyle;
+  final bool useGlassCard;
 
   Widget buildActions();
 
@@ -77,76 +80,84 @@ abstract class _DialogBase extends StatelessWidget {
         .clamp(0.0, availableWidth);
     final close = onCancel ?? () => Navigator.of(context).pop();
 
+    final dialogContent = Padding(
+      padding: contentPadding,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _DialogTitle(
+            eyebrow: eyebrow,
+            title: title,
+            titleStyle: titleStyle,
+            foregroundColor: foregroundColor,
+            cancelAsText: cancelAsText,
+            cancelLabel: cancelLabel,
+            onCancel: close,
+            centerTitle: centerTitle,
+            showCloseButton:
+                showCloseButton &&
+                showCancelButton &&
+                !(cancelAsText && cancelAtBottom),
+          ),
+          if ((title != null && title!.trim().isNotEmpty) ||
+              (eyebrow != null && eyebrow!.trim().isNotEmpty))
+            SizedBox(height: titleDescriptionSpacing),
+          if (description != null && description!.trim().isNotEmpty)
+            centerContent
+                ? SizedBox(
+                    width: double.infinity,
+                    child: CustomTextDescription(
+                      description!,
+                      textAlign: TextAlign.center,
+                      style: descriptionStyle,
+                    ),
+                  )
+                : CustomTextDescription(description!, style: descriptionStyle),
+          if (description != null &&
+              description!.trim().isNotEmpty &&
+              content != null)
+            const SizedBox(height: 12),
+          if (content != null)
+            centerContent
+                ? Center(child: content)
+                : Align(alignment: Alignment.centerLeft, child: content),
+          if ((description != null && description!.trim().isNotEmpty) ||
+              content != null)
+            const SizedBox(height: 22),
+          Padding(padding: actionsPadding, child: buildActions()),
+        ],
+      ),
+    );
+    final surface = useGlassCard
+        ? GlassCard(
+            width: width,
+            padding: EdgeInsets.zero,
+            borderRadius: borderRadius is BorderRadius
+                ? borderRadius as BorderRadius
+                : BorderRadius.circular(18),
+            tintColor: Colors.white,
+            tintOpacity: 0.075,
+            borderColor: Colors.white,
+            borderOpacity: 0.16,
+            blurSigma: 22,
+            child: dialogContent,
+          )
+        : Container(
+            width: width,
+            decoration: BoxDecoration(
+              color: backgroundColor,
+              borderRadius: borderRadius,
+              border: Border.all(color: borderColor),
+            ),
+            child: dialogContent,
+          );
+
     return Dialog(
       backgroundColor: Colors.transparent,
       elevation: 0,
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-      child: GlassCard(
-        width: width,
-        padding: EdgeInsets.zero,
-        borderRadius: borderRadius is BorderRadius
-            ? borderRadius as BorderRadius
-            : BorderRadius.circular(18),
-        // Keep reusable action dialogs visibly glass even when the backdrop is
-        // mostly dark or empty.
-        tintColor: Colors.white,
-        tintOpacity: 0.075,
-        borderColor: Colors.white,
-        borderOpacity: 0.16,
-        blurSigma: 22,
-        child: Padding(
-          padding: contentPadding,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _DialogTitle(
-                eyebrow: eyebrow,
-                title: title,
-                titleStyle: titleStyle,
-                foregroundColor: foregroundColor,
-                cancelAsText: cancelAsText,
-                cancelLabel: cancelLabel,
-                onCancel: close,
-                centerTitle: centerTitle,
-                showCloseButton:
-                    showCloseButton &&
-                    showCancelButton &&
-                    !(cancelAsText && cancelAtBottom),
-              ),
-              if ((title != null && title!.trim().isNotEmpty) ||
-                  (eyebrow != null && eyebrow!.trim().isNotEmpty))
-                SizedBox(height: titleDescriptionSpacing),
-              if (description != null && description!.trim().isNotEmpty)
-                centerContent
-                    ? SizedBox(
-                        width: double.infinity,
-                        child: CustomTextDescription(
-                          description!,
-                          textAlign: TextAlign.center,
-                          style: descriptionStyle,
-                        ),
-                      )
-                    : CustomTextDescription(
-                        description!,
-                        style: descriptionStyle,
-                      ),
-              if (description != null &&
-                  description!.trim().isNotEmpty &&
-                  content != null)
-                const SizedBox(height: 12),
-              if (content != null)
-                centerContent
-                    ? Center(child: content)
-                    : Align(alignment: Alignment.centerLeft, child: content),
-              if ((description != null && description!.trim().isNotEmpty) ||
-                  content != null)
-                const SizedBox(height: 22),
-              Padding(padding: actionsPadding, child: buildActions()),
-            ],
-          ),
-        ),
-      ),
+      child: surface,
     );
   }
 }

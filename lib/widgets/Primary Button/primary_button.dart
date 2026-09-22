@@ -11,14 +11,16 @@ class PrimaryButton extends StatefulWidget {
     this.child,
     required this.onPressed,
     this.icon,
-    this.iconSize = 17,
+    this.iconSize = 18,
     this.iconStrokeWidth = 2,
     this.loading = false,
+    this.isDeleteButton = false,
+    this.showDeleteIcon = true,
     this.width,
     this.height,
     this.padding,
-    this.backgroundColor = const Color(0xFFC8F902),
-    this.foregroundColor = Colors.black,
+    this.backgroundColor,
+    this.foregroundColor,
     this.disabledBackgroundColor,
     this.disabledForegroundColor,
     this.borderSide,
@@ -29,7 +31,10 @@ class PrimaryButton extends StatefulWidget {
     this.elevation,
     this.style,
   }) : assert(
-         label != null || child != null || icon != null,
+         label != null ||
+             child != null ||
+             icon != null ||
+             (isDeleteButton && showDeleteIcon),
          'Provide label, child, or icon.',
        ),
        assert(label == null || child == null, 'Use label or child, not both.');
@@ -41,6 +46,10 @@ class PrimaryButton extends StatefulWidget {
   final double iconSize;
   final double iconStrokeWidth;
   final bool loading;
+  /// Applies the standard destructive button appearance and delete icon.
+  /// Explicit visual properties still override these defaults.
+  final bool isDeleteButton;
+  final bool showDeleteIcon;
   final double? width;
   final double? height;
   final EdgeInsetsGeometry? padding;
@@ -205,6 +214,30 @@ class _PrimaryButtonState extends State<PrimaryButton> {
 
   @override
   Widget build(BuildContext context) {
+    final foregroundColor =
+        widget.foregroundColor ??
+        (widget.isDeleteButton
+            ? const Color(0xFFEF4444)
+            : const Color(0xFF1A1614));
+    final backgroundColor =
+        widget.backgroundColor ??
+        (widget.isDeleteButton
+            ? const Color(0x1AEF4444)
+            : const Color(0xFFC8F902));
+    final borderSide =
+        widget.borderSide ??
+        (widget.isDeleteButton
+            ? const BorderSide(color: Color(0xFFEF4444))
+            : null);
+    final icon = _configuredIcon(
+      widget.icon ??
+          (widget.isDeleteButton && widget.showDeleteIcon
+              ? HugeIcon(
+                  icon: HugeIcons.strokeRoundedDelete03,
+                  color: foregroundColor,
+                )
+              : null),
+    );
     final tickerEnabled = TickerMode.valuesOf(context).enabled;
     if (!_wasTickerEnabled && tickerEnabled) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -213,17 +246,14 @@ class _PrimaryButtonState extends State<PrimaryButton> {
     }
     _wasTickerEnabled = tickerEnabled;
     final isDisabled = widget.onPressed == null || _isBusy;
-    final isIconOnly =
-        widget.icon != null && widget.label == null && widget.child == null;
-    final icon = _configuredIcon(widget.icon);
-
+    final isIconOnly = icon != null && widget.label == null && widget.child == null;
     final buttonStyle = FilledButton.styleFrom(
-      backgroundColor: widget.backgroundColor,
-      foregroundColor: widget.foregroundColor,
+      backgroundColor: backgroundColor,
+      foregroundColor: foregroundColor,
       disabledBackgroundColor:
-          widget.disabledBackgroundColor ?? widget.backgroundColor,
+          widget.disabledBackgroundColor ?? backgroundColor,
       disabledForegroundColor:
-          widget.disabledForegroundColor ?? widget.foregroundColor,
+          widget.disabledForegroundColor ?? foregroundColor,
       padding:
           widget.padding ??
           (isIconOnly
@@ -233,29 +263,32 @@ class _PrimaryButtonState extends State<PrimaryButton> {
       minimumSize: widget.minimumSize ?? (isIconOnly ? Size.zero : null),
       maximumSize: widget.maximumSize,
       elevation: widget.elevation,
-      side: widget.borderSide,
+      side: borderSide,
       shape: RoundedRectangleBorder(borderRadius: widget.borderRadius),
     ).merge(widget.style);
 
     final content =
         widget.child ??
         (widget.label != null
-            ? CustomTextBody(
+              ? CustomTextBody(
                 widget.label!,
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
-                  color: widget.foregroundColor,
+                  color: foregroundColor,
                 ).merge(widget.textStyle),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                softWrap: false,
               )
             : icon!);
     final hasIconAndContent =
-        widget.icon != null && (widget.label != null || widget.child != null);
+        icon != null && (widget.label != null || widget.child != null);
     final normalContent = hasIconAndContent
         ? Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              icon!,
+              icon,
               const SizedBox(width: 8),
               Flexible(child: content),
             ],
@@ -267,7 +300,7 @@ class _PrimaryButtonState extends State<PrimaryButton> {
       height: 20,
       child: CircularProgressIndicator(
         strokeWidth: 2,
-        color: widget.disabledForegroundColor ?? widget.foregroundColor,
+        color: widget.disabledForegroundColor ?? foregroundColor,
         semanticsLabel: 'Loading',
       ),
     );

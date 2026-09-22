@@ -7,6 +7,9 @@ import 'package:http/http.dart' as http;
 
 import '../services/google_calendar_service.dart';
 import '../widgets/app_popup.dart';
+import '../widgets/Custom Dialog/reusable_dialog.dart';
+import '../widgets/Primary Button/primary_button.dart';
+import '../widgets/Secondary Button/secondary_button.dart';
 import '../widgets/modern_splash_screen.dart';
 import 'calendar_day_view_screen.dart';
 import 'calendar_selection_screen.dart';
@@ -153,45 +156,30 @@ class _AuthWrapperState extends State<AuthWrapper> {
     final choice = await showAppDialog<String>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
-        contentPadding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-        actionsPadding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
-        title: Row(
-          children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.16),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(
-                Icons.wifi_off_rounded,
-                size: 20,
-                color: AppColors.secondary,
-              ),
-            ),
-            const SizedBox(width: 10),
-            const Text('No Internet'),
-            const SizedBox(height: 50),
-          ],
+      builder: (ctx) => CustomTwoActionDialog(
+        title: 'No Internet',
+        description:
+            'You are offline now.\n\nContinue to use the app offline. It will auto sync when internet returns.',
+        content: const Icon(
+          Icons.wifi_off_rounded,
+          size: 34,
+          color: AppColors.secondary,
         ),
-        content: const Text(
-          'You are offline now.\n\n'
-          'Continue to use the app offline. It will auto sync when internet returns.',
+        centerTitle: true,
+        centerContent: true,
+        titleDescriptionSpacing: 12,
+        showCloseButton: false,
+        secondaryButton: SecondaryButton(
+          label: 'Continue',
+          onPressed: () => Navigator.of(ctx).pop('continue'),
+          backgroundColor: Colors.transparent,
+          borderSide: const BorderSide(color: AppColors.glassBorder),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop('continue'),
-            child: const Text('Continue'),
-          ),
-          ElevatedButton.icon(
-            onPressed: () => Navigator.of(ctx).pop('retry'),
-            icon: const Icon(Icons.refresh_rounded, size: 18),
-            label: const Text('Retry'),
-          ),
-        ],
+        primaryButton: PrimaryButton(
+          label: 'Retry',
+          icon: const Icon(Icons.refresh_rounded, size: 18),
+          onPressed: () => Navigator.of(ctx).pop('retry'),
+        ),
       ),
     );
     _offlineDialogActive = false;

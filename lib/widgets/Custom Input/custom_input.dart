@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../../theme/app_colors.dart';
+import 'package:hugeicons/hugeicons.dart';
 
-/// Reusable text input with configurable icons and dark app defaults.
-class AppInput extends StatelessWidget {
-  const AppInput({
+class CustomInput extends StatelessWidget {
+  const CustomInput({
     super.key,
     this.controller,
     this.focusNode,
@@ -19,9 +18,16 @@ class AppInput extends StatelessWidget {
     this.suffixIcon,
     this.showPrefixIcon = true,
     this.showSuffixIcon = true,
+    this.width = double.infinity,
     this.backgroundColor = Colors.transparent,
-    this.borderColor = AppColors.glassBorder,
-    this.focusedBorderColor = AppColors.glassBorderFocus,
+    this.borderColor = const Color(0x24F4F4F5),
+    this.focusedBorderColor = const Color(0x52F4F4F5),
+    this.errorColor = const Color(0xFFEF4444),
+    this.iconColor = const Color(0xFFD4D4D8),
+    this.iconSize = 20,
+    this.iconStrokeWidth = 2,
+    this.cursorColor = const Color(0xFFC8F902),
+    this.selectionColor = const Color(0x4DC8F902),
     this.borderRadius = const BorderRadius.all(Radius.circular(12)),
     this.borderWidth = 1,
     this.focusedBorderWidth = 1.2,
@@ -29,9 +35,15 @@ class AppInput extends StatelessWidget {
       horizontal: 16,
       vertical: 14,
     ),
-    this.textStyle,
-    this.hintStyle,
-    this.labelStyle,
+    this.textStyle = const TextStyle(
+      fontFamily: 'GoogleSans',
+      color: Color(0xFFF4F4F5),
+    ),
+    this.hintStyle = const TextStyle(
+      fontFamily: 'GoogleSans',
+      color: Color(0x99D4D4D8),
+    ),
+    this.labelStyle = const TextStyle(fontFamily: 'GoogleSans'),
     this.enabled = true,
     this.autofocus = false,
     this.obscureText = false,
@@ -60,9 +72,16 @@ class AppInput extends StatelessWidget {
   final Widget? suffixIcon;
   final bool showPrefixIcon;
   final bool showSuffixIcon;
+  final double width;
   final Color backgroundColor;
   final Color? borderColor;
   final Color? focusedBorderColor;
+  final Color errorColor;
+  final Color iconColor;
+  final double iconSize;
+  final double iconStrokeWidth;
+  final Color cursorColor;
+  final Color selectionColor;
   final BorderRadius borderRadius;
   final double borderWidth;
   final double focusedBorderWidth;
@@ -88,6 +107,34 @@ class AppInput extends StatelessWidget {
         : BorderSide(color: color, width: width),
   );
 
+  Widget? _icon(Widget? icon) {
+    if (icon == null) return null;
+    if (icon is HugeIcon) {
+      return SizedBox(
+        width: 48,
+        child: Center(
+          child: HugeIcon(
+            icon: icon.icon,
+            color: icon.color ?? iconColor,
+            secondaryColor: icon.secondaryColor,
+            disableSecondaryOpacity: icon.disableSecondaryOpacity,
+            size: icon.size == 24.0 ? iconSize : icon.size,
+            strokeWidth: icon.strokeWidth ?? iconStrokeWidth,
+          ),
+        ),
+      );
+    }
+    return SizedBox(
+      width: 48,
+      child: Center(
+        child: IconTheme(
+          data: IconThemeData(color: iconColor, size: iconSize),
+          child: icon,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final decoration = InputDecoration(
@@ -95,8 +142,8 @@ class AppInput extends StatelessWidget {
       labelText: labelText,
       helperText: helperText,
       errorText: errorText,
-      prefixIcon: showPrefixIcon ? prefixIcon : null,
-      suffixIcon: showSuffixIcon ? suffixIcon : null,
+      prefixIcon: showPrefixIcon ? _icon(prefixIcon) : null,
+      suffixIcon: showSuffixIcon ? _icon(suffixIcon) : null,
       filled: true,
       fillColor: backgroundColor,
       contentPadding: contentPadding,
@@ -108,27 +155,35 @@ class AppInput extends StatelessWidget {
         focusedBorderColor ?? borderColor,
         focusedBorderWidth,
       ),
-      errorBorder: _border(Colors.red, borderWidth),
-      focusedErrorBorder: _border(Colors.red, focusedBorderWidth),
+      errorBorder: _border(errorColor, borderWidth),
+      focusedErrorBorder: _border(errorColor, focusedBorderWidth),
     );
-    return TextFormField(
-      controller: controller,
-      focusNode: focusNode,
-      initialValue: initialValue,
-      onChanged: onChanged,
-      onFieldSubmitted: onSubmitted,
-      decoration: decoration,
-      style: textStyle,
-      enabled: enabled,
-      autofocus: autofocus,
-      obscureText: obscureText,
-      keyboardType: keyboardType,
-      textInputAction: textInputAction,
-      minLines: minLines,
-      maxLines: obscureText ? 1 : maxLines,
-      readOnly: readOnly,
-      inputFormatters: inputFormatters,
-      validator: validator,
+    return SizedBox(
+      width: width,
+      child: DefaultSelectionStyle.merge(
+        cursorColor: cursorColor,
+        selectionColor: selectionColor,
+        child: TextFormField(
+          controller: controller,
+          focusNode: focusNode,
+          initialValue: initialValue,
+          onChanged: onChanged,
+          onFieldSubmitted: onSubmitted,
+          decoration: decoration,
+          style: textStyle,
+          enabled: enabled,
+          autofocus: autofocus,
+          obscureText: obscureText,
+          keyboardType: keyboardType,
+          textInputAction: textInputAction,
+          minLines: minLines,
+          maxLines: obscureText ? 1 : maxLines,
+          readOnly: readOnly,
+          inputFormatters: inputFormatters,
+          validator: validator,
+          cursorColor: cursorColor,
+        ),
+      ),
     );
   }
 }
