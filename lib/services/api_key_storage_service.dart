@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-/// Service for securely storing and retrieving AI API keys.
+/// Service for securely storing and retrieving API keys.
 /// Uses flutter_secure_storage which provides encrypted storage on both
 /// Windows and Android.
 class ApiKeyStorageService {
@@ -19,7 +19,7 @@ class ApiKeyStorageService {
   // Storage keys
   static const String _keyAiApiKey = 'ai_api_key';
 
-  /// Save AI API key securely
+  /// Save API key securely
   Future<void> saveApiKey(String apiKey) async {
     try {
       if (apiKey.trim().isNotEmpty) {
@@ -31,7 +31,7 @@ class ApiKeyStorageService {
     }
   }
 
-  /// Retrieve stored AI API key
+  /// Retrieve stored API key
   Future<String?> getApiKey() async {
     try {
       return await _storage.read(key: _keyAiApiKey);

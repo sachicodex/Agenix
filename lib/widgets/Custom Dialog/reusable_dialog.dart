@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../Secondary Button/secondary_button.dart';
 import '../Text Only Button/text_only_button.dart';
+import '../Glass Card/glass_carrd.dart';
 
 part 'custom_one_action_dialog.dart';
 part 'custom_two_action_dialog.dart';
@@ -77,14 +78,22 @@ abstract class _DialogBase extends StatelessWidget {
     final close = onCancel ?? () => Navigator.of(context).pop();
 
     return Dialog(
-      backgroundColor: backgroundColor,
+      backgroundColor: Colors.transparent,
+      elevation: 0,
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-      shape: RoundedRectangleBorder(
-        borderRadius: borderRadius,
-        side: BorderSide(color: borderColor),
-      ),
-      child: SizedBox(
+      child: GlassCard(
         width: width,
+        padding: EdgeInsets.zero,
+        borderRadius: borderRadius is BorderRadius
+            ? borderRadius as BorderRadius
+            : BorderRadius.circular(18),
+        // Keep reusable action dialogs visibly glass even when the backdrop is
+        // mostly dark or empty.
+        tintColor: Colors.white,
+        tintOpacity: 0.075,
+        borderColor: Colors.white,
+        borderOpacity: 0.16,
+        blurSigma: 22,
         child: Padding(
           padding: contentPadding,
           child: Column(

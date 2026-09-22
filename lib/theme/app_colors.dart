@@ -74,6 +74,9 @@ class AppColors {
   // Supporting UI colors
   static const Color borderColor = Color(0XFF2a2a2a);
   static const Color borderFocusColor = Color(0XFF3a3a3a);
+  // Translucent borders for controls placed over GlassCard backgrounds.
+  static const Color glassBorder = Color(0x24F4F4F5);
+  static const Color glassBorderFocus = Color(0x52F4F4F5);
   static const Color dividerColor = Color(0xFF222222);
   static const Color selectedColor = Color(
     0x55789501,

@@ -15,7 +15,6 @@ class ReusableFloatingActionButton extends StatefulWidget {
     this.icon = Icons.add,
     this.visible = true,
     this.keyboardCloseDelay = const Duration(seconds: 1),
-    this.tooltip,
     this.backgroundColor,
     this.foregroundColor,
     this.focusColor,
@@ -40,7 +39,6 @@ class ReusableFloatingActionButton extends StatefulWidget {
   final IconData? icon;
   final bool visible;
   final Duration keyboardCloseDelay;
-  final String? tooltip;
   final Color? backgroundColor;
   final Color? foregroundColor;
   final Color? focusColor;
@@ -90,7 +88,6 @@ class _ReusableFloatingActionButtonState
 
     return FloatingActionButton(
       onPressed: widget.onPressed,
-      tooltip: widget.tooltip,
       backgroundColor: widget.backgroundColor,
       foregroundColor: widget.foregroundColor,
       focusColor: widget.focusColor,

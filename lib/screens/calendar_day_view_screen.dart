@@ -4,10 +4,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hugeicons/hugeicons.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
 import 'dart:io';
-import 'dart:math' as math;
 import '../models/calendar_event.dart';
 import '../services/google_calendar_service.dart';
 import '../providers/event_providers.dart';
@@ -27,6 +27,8 @@ import '../utils/platform_focus.dart';
 import '../widgets/timeline_event_block_content.dart';
 import '../widgets/timeline_hour_ruler.dart';
 import '../widgets/timeline_zoom_viewport.dart';
+import '../widgets/form_fields.dart';
+import '../widgets/Glass Card/glass_carrd.dart';
 import 'settings_screen.dart';
 
 class _NoStretchScrollBehavior extends MaterialScrollBehavior {
@@ -69,7 +71,7 @@ class _YearPickerDialogState extends State<_YearPickerDialog> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scrollController.hasClients) return;
-      const rowHeight = 48.0;
+      const rowHeight = 52.0;
       final selectedIndex = widget.years.indexOf(widget.initialYear);
       if (selectedIndex < 0) return;
       final selectedRow = selectedIndex ~/ columns;
@@ -84,18 +86,30 @@ class _YearPickerDialogState extends State<_YearPickerDialog> {
   }
 
   @override
-  Widget build(BuildContext context) => Dialog(
-    backgroundColor: AppColors.surface,
-    child: ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 520, maxHeight: 560),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 18, 24, 20),
+  Widget build(BuildContext context) {
+    final pickerHeight = (MediaQuery.sizeOf(context).height - 48)
+        .clamp(360.0, 560.0)
+        .toDouble();
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      child: GlassCard(
+        width: double.infinity,
+        height: pickerHeight,
+        constraints: const BoxConstraints(maxWidth: 520),
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+        borderRadius: BorderRadius.circular(24),
+        tintOpacity: 0.075,
+        borderOpacity: 0.16,
+        blurSigma: 22,
         child: Column(
           children: [
             Row(
               children: [
                 const Expanded(
-                  child: Text('Select year', style: AppTextStyles.headline3),
+                  child: Text('Time Travel', style: AppTextStyles.headline3),
                 ),
                 IconButton(
                   onPressed: () => Navigator.of(context).pop(),
@@ -103,7 +117,7 @@ class _YearPickerDialogState extends State<_YearPickerDialog> {
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             Expanded(
               child: LayoutBuilder(
                 builder: (context, constraints) {
@@ -111,32 +125,55 @@ class _YearPickerDialogState extends State<_YearPickerDialog> {
                       .clamp(1, 4)
                       .toInt();
                   _centerSelectedYear(columns, constraints.maxHeight);
-                  return GridView.builder(
+                  return Scrollbar(
                     controller: _scrollController,
-                    padding: EdgeInsets.zero,
-                    itemCount: widget.years.length,
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: columns,
-                      mainAxisExtent: 48,
-                    ),
-                    itemBuilder: (context, index) {
-                      final year = widget.years[index];
-                      final selected = year == widget.initialYear;
-                      return TextButton(
-                        onPressed: () => Navigator.of(context).pop(year),
-                        child: Text(
-                          '$year',
-                          style: TextStyle(
-                            color: selected
-                                ? AppColors.primary
-                                : AppColors.onBackground,
-                            fontWeight: selected
-                                ? FontWeight.w700
-                                : FontWeight.w500,
+                    thumbVisibility: true,
+                    child: GridView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 4,
+                      ),
+                      itemCount: widget.years.length,
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: columns,
+                        mainAxisExtent: 52,
+                      ),
+                      itemBuilder: (context, index) {
+                        final year = widget.years[index];
+                        final selected = year == widget.initialYear;
+                        return Padding(
+                          padding: const EdgeInsets.all(3),
+                          child: TextButton(
+                            onPressed: () => Navigator.of(context).pop(year),
+                            style: TextButton.styleFrom(
+                              foregroundColor: selected
+                                  ? AppColors.primary
+                                  : AppColors.onBackground,
+                              backgroundColor: selected
+                                  ? AppColors.primary.withValues(alpha: 0.14)
+                                  : Colors.transparent,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                side: selected
+                                    ? BorderSide(
+                                        color: AppColors.primary.withValues(
+                                          alpha: 0.55,
+                                        ),
+                                      )
+                                    : BorderSide.none,
+                              ),
+                              textStyle: TextStyle(
+                                fontWeight: selected
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                              ),
+                            ),
+                            child: Text('$year'),
                           ),
-                        ),
-                      );
-                    },
+                        );
+                      },
+                    ),
                   );
                 },
               ),
@@ -144,9 +181,18 @@ class _YearPickerDialogState extends State<_YearPickerDialog> {
           ],
         ),
       ),
-    ),
-  );
+    );
+  }
 }
+
+class _TimedEventLayout {
+  const _TimedEventLayout({required this.column, required this.columnCount});
+
+  final int column;
+  final int columnCount;
+}
+
+enum _EventSearchRange { day, week, month, weekAfter, forever }
 
 class CalendarDayViewScreen extends ConsumerStatefulWidget {
   final VoidCallback? onSignOut;
@@ -296,6 +342,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   bool _screenInitialized = false;
   ModalRoute<dynamic>? _subscribedRoute;
   late final AnimationController _syncRotationController;
+  late final CurvedAnimation _syncRotationAnimation;
 
   // Mini calendar range-selection state
   bool _isMiniCalendarRangeSelecting = false;
@@ -321,7 +368,11 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     _keyboardListenerFocusNode = FocusNode();
     _syncRotationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 900),
+      duration: const Duration(milliseconds: 1200),
+    );
+    _syncRotationAnimation = CurvedAnimation(
+      parent: _syncRotationController,
+      curve: Curves.easeInOutCubic,
     );
     _timelineZoom = TimelineZoomController(
       scrollController: _dayGridScrollController,
@@ -394,6 +445,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     _gridLongPressTimer?.cancel();
     _pendingMobileDoubleTapTimer?.cancel();
     _pendingDesktopSingleTapTimer?.cancel();
+    _syncRotationAnimation.dispose();
     _syncRotationController.dispose();
     super.dispose();
   }
@@ -466,7 +518,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
 
   void _handleSyncStatusChanged(AsyncValue<SyncStatus> syncState) {
     final nextSyncing = _syncingFromState(syncState);
-    if (_isUserTriggeredSyncActive && nextSyncing) {
+    if (nextSyncing) {
       if (!_syncRotationController.isAnimating) {
         _syncRotationController.repeat();
       }
@@ -482,10 +534,14 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     });
   }
 
-  Widget _buildSyncIcon({double size = 20, Color? color}) {
-    final icon = Icon(Icons.sync_rounded, size: size, color: color);
-    if (!_isUserTriggeredSyncActive) return icon;
-    return RotationTransition(turns: _syncRotationController, child: icon);
+  Widget _buildSyncIcon({double size = 18, Color? color}) {
+    final icon = HugeIcon(
+      icon: HugeIcons.strokeRoundedRotate01,
+      size: 18,
+      color: color,
+      strokeWidth: 2.2,
+    );
+    return RotationTransition(turns: _syncRotationAnimation, child: icon);
   }
 
   Future<void> _openSettings() async {
@@ -536,7 +592,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                   ),
                 ),
         ),
-        tooltip: 'Settings',
         padding: EdgeInsets.zero,
         constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
         splashRadius: 18,
@@ -1713,6 +1768,13 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                 parent: AlwaysScrollableScrollPhysics(),
               );
         final timeColumnWidth = _timeColumnWidthFor(context);
+        // The desktop mini-calendar is added beside the timeline after this
+        // layout is built. Reserve its width here as well, otherwise the
+        // overlap columns are calculated from the full window width and the
+        // right-hand lanes are pushed outside the visible timeline.
+        final timelineWidth = isDesktopLike
+            ? (constraints.maxWidth - 322).clamp(0.0, double.infinity)
+            : constraints.maxWidth;
         final allDayRowHeight = _allDayEvents.isNotEmpty ? 44.0 : 0.0;
         final timelineTopGap = _allDayEvents.isNotEmpty ? 16.0 : 16.0;
         final noScrollbarBehavior = ScrollConfiguration.of(
@@ -1746,7 +1808,15 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                     horizontal: 0,
                     vertical: 6,
                   ),
-                  decoration: BoxDecoration(color: AppColors.error),
+                  // The row is a shared container, not an event. Keeping the
+                  // error color here made every full-day event paint the
+                  // entire strip red, regardless of its calendar color.
+                  decoration: BoxDecoration(
+                    color: AppColors.card,
+                    border: Border(
+                      bottom: BorderSide(color: AppColors.dividerColor),
+                    ),
+                  ),
                   child: Row(
                     children: [
                       SizedBox(
@@ -1890,8 +1960,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                                     child: _buildDayGrid(
                                       BoxConstraints(
                                         maxWidth:
-                                            constraints.maxWidth -
-                                            timeColumnWidth,
+                                            timelineWidth - timeColumnWidth,
                                         maxHeight: gridHeight,
                                       ),
                                       hourHeight: hourHeight,
@@ -1953,43 +2022,54 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
               gridWidth: gridWidth,
             ),
             Expanded(
-              child: _buildTimelineScrollArea(
-                scrollBehavior: noScrollbarBehavior,
-                physics: _timelineScrollPhysics(),
-                timelineBuilder: (context, hourHeight, gridHeight) {
-                  return SizedBox(
-                    height: gridHeight,
-                    child: ColoredBox(
-                      color: AppColors.card,
-                      child: Stack(
-                        children: [
-                          Positioned.fill(
-                            child: TimelineHourRuler(
-                              hourHeight: hourHeight,
-                              labelAreaWidth: timeColumnWidth,
-                            ),
-                          ),
-                          Row(
-                            children: [
-                              SizedBox(width: timeColumnWidth),
-                              SizedBox(
-                                width: gridWidth,
-                                child: _buildMultiDayGrid(
-                                  BoxConstraints(
-                                    maxWidth: gridWidth,
-                                    maxHeight: gridHeight,
-                                  ),
-                                  days,
-                                  hourHeight: hourHeight,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
+              child: Listener(
+                behavior: HitTestBehavior.translucent,
+                onPointerMove: (event) {
+                  _handleMultiDayActivePointerMove(
+                    event,
+                    dayWidth: days.isEmpty ? 0 : gridWidth / days.length,
                   );
                 },
+                onPointerUp: _finishMultiDayPointerInteraction,
+                onPointerCancel: (_) => _cancelMultiDayPointerInteraction(),
+                child: _buildTimelineScrollArea(
+                  scrollBehavior: noScrollbarBehavior,
+                  physics: _timelineScrollPhysics(),
+                  timelineBuilder: (context, hourHeight, gridHeight) {
+                    return SizedBox(
+                      height: gridHeight,
+                      child: ColoredBox(
+                        color: AppColors.card,
+                        child: Stack(
+                          children: [
+                            Positioned.fill(
+                              child: TimelineHourRuler(
+                                hourHeight: hourHeight,
+                                labelAreaWidth: timeColumnWidth,
+                              ),
+                            ),
+                            Row(
+                              children: [
+                                SizedBox(width: timeColumnWidth),
+                                SizedBox(
+                                  width: gridWidth,
+                                  child: _buildMultiDayGrid(
+                                    BoxConstraints(
+                                      maxWidth: gridWidth,
+                                      maxHeight: gridHeight,
+                                    ),
+                                    days,
+                                    hourHeight: hourHeight,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
               ),
             ),
           ],
@@ -2107,10 +2187,23 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     double dayWidth,
   ) {
     final widgets = <Widget>[];
-    for (final event in _timedEvents) {
+    final preview = _isDraggingEvent ? _dragPreviewEvent : null;
+    final events = _timedEvents
+        .map((event) => preview?.id == event.id ? preview : event)
+        .whereType<CalendarEvent>()
+        .toList();
+    final layoutsByDay = <DateTime, Map<String, _TimedEventLayout>>{
+      for (final day in days)
+        day: _calculateMultiDayLayouts(day, events: events),
+    };
+
+    for (final event in events) {
       for (var dayIndex = 0; dayIndex < days.length; dayIndex++) {
-        final segment = _eventVisibleSegmentForDay(event, days[dayIndex]);
+        final day = days[dayIndex];
+        final segment = _eventVisibleSegmentForDay(event, day);
         if (segment == null) continue;
+        final layout = layoutsByDay[day]?[event.id];
+        if (layout == null) continue;
 
         final dayStart = DateTime(
           days[dayIndex].year,
@@ -2124,19 +2217,274 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
           1.0,
           24 * _hourHeight,
         );
+        final laneWidth = dayWidth / layout.columnCount;
+        final isPreview = preview?.id == event.id;
 
         widgets.add(
           Positioned(
-            left: dayIndex * dayWidth + 2,
+            left: dayIndex * dayWidth + laneWidth * layout.column + 2,
             top: top,
-            width: dayWidth - 4,
+            width: (laneWidth - 4).clamp(0.0, dayWidth),
             height: height,
-            child: _buildReadOnlyEventCard(event, height: height),
+            child: isPreview
+                ? _buildReadOnlyEventCard(event, height: height)
+                : _buildMultiDayInteractiveEventCard(
+                    event,
+                    dayWidth: dayWidth,
+                    height: height,
+                  ),
           ),
         );
       }
     }
     return widgets;
+  }
+
+  Widget _buildMultiDayInteractiveEventCard(
+    CalendarEvent event, {
+    required double dayWidth,
+    required double height,
+  }) {
+    const resizeHandleHeight = 14.0;
+
+    return Listener(
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: (pointer) {
+        if (_eventActionsPopoverEventId != null || _isDraggingEvent) return;
+        if (pointer.kind == PointerDeviceKind.mouse &&
+            pointer.buttons == kSecondaryMouseButton) {
+          _showContextMenu(event, pointer.position);
+          return;
+        }
+        final isResize =
+            pointer.localPosition.dy >= height - resizeHandleHeight;
+        _isPointerDownOnEvent = true;
+        _pointerDownGlobalPosition = pointer.position;
+        _dragStartGlobalPosition = pointer.position;
+        _dragStartTime = event.startDateTime;
+        _draggedEventOriginal = event;
+        if (pointer.kind == PointerDeviceKind.touch) {
+          _trackMobileTapSequenceOnPointerDown(event.id, pointer.position);
+        }
+        _pendingPointerEventId = event.id;
+        if (isResize) {
+          _startEventResizeInteraction(event, pointer.position.dy);
+        }
+        _armMobileInteractionWatchdog();
+      },
+      onPointerMove: (pointer) {
+        if (!_isPointerDownOnEvent) return;
+        if (_resizingEventId == event.id) {
+          final resizeStart = _resizeStartGlobalY;
+          if (resizeStart != null) {
+            _handleEventResizeByDelta(
+              event,
+              deltaY: pointer.position.dy - resizeStart,
+              fromTop: false,
+            );
+          }
+          return;
+        }
+        final down = _pointerDownGlobalPosition;
+        if (down == null) return;
+        if (!_isDraggingEvent &&
+            (pointer.position - down).distance >= _dragActivationDistance) {
+          setState(() {
+            _draggedEventId = event.id;
+            _isDraggingEvent = true;
+            _dragPreviewEvent = event;
+          });
+        }
+        if (_isDraggingEvent && _draggedEventId == event.id) {
+          _updateMultiDayEventDragPreview(
+            event,
+            pointer.position,
+            dayWidth: dayWidth,
+          );
+        }
+      },
+      onPointerUp: (pointer) {
+        if (!_isPointerDownOnEvent) return;
+        if (_resizingEventId == event.id || _isDraggingEvent) {
+          // The shared global pointer handler finalizes these interactions.
+          return;
+        }
+        _isPointerDownOnEvent = false;
+        if (pointer.kind == PointerDeviceKind.touch) {
+          _handleMobileTapUp(event.id);
+        } else if (_isDesktopDoubleClick(event.id, pointer.position)) {
+          _pendingDesktopSingleTapTimer?.cancel();
+          _showEditEventModal(event);
+        } else {
+          _openEventForSingleTap(event);
+        }
+        _clearMobileInteractionWatchdog();
+      },
+      onPointerCancel: (_) {
+        _isPointerDownOnEvent = false;
+        _cancelMultiDayPointerInteraction();
+      },
+      child: _buildReadOnlyEventCard(event, height: height),
+    );
+  }
+
+  void _handleMultiDayActivePointerMove(
+    PointerMoveEvent pointer, {
+    required double dayWidth,
+  }) {
+    if (!_isPointerDownOnEvent || dayWidth <= 0) return;
+
+    final eventId =
+        _resizingEventId ?? _draggedEventId ?? _pendingPointerEventId;
+    if (eventId == null) return;
+    final event = _eventsMap[eventId];
+    if (event == null) return;
+
+    if (_resizingEventId == event.id) {
+      final resizeStart = _resizeStartGlobalY;
+      if (resizeStart != null) {
+        _handleEventResizeByDelta(
+          event,
+          deltaY: pointer.position.dy - resizeStart,
+          fromTop: false,
+        );
+      }
+      return;
+    }
+
+    final down = _pointerDownGlobalPosition;
+    if (down == null) return;
+    if (!_isDraggingEvent &&
+        (pointer.position - down).distance >= _dragActivationDistance) {
+      setState(() {
+        _draggedEventId = event.id;
+        _isDraggingEvent = true;
+        _dragPreviewEvent = _draggedEventOriginal ?? event;
+      });
+    }
+    if (_isDraggingEvent && _draggedEventId == event.id) {
+      _updateMultiDayEventDragPreview(
+        _draggedEventOriginal ?? event,
+        pointer.position,
+        dayWidth: dayWidth,
+      );
+    }
+  }
+
+  void _finishMultiDayPointerInteraction(PointerUpEvent _) {
+    if (_resizingEventId != null) {
+      _isPointerDownOnEvent = false;
+      _finalizeEventResize();
+      return;
+    }
+    if (_isDraggingEvent && _draggedEventId != null) {
+      _isPointerDownOnEvent = false;
+      _pendingPointerEventId = null;
+      _clearEventTouchPressState();
+      _finalizeEventDrag();
+      return;
+    }
+    if (_isPointerDownOnEvent) {
+      _isPointerDownOnEvent = false;
+      _pendingPointerEventId = null;
+      _pointerDownGlobalPosition = null;
+      _dragStartGlobalPosition = null;
+      _dragStartTime = null;
+      _draggedEventOriginal = null;
+      _clearEventTouchPressState();
+    }
+  }
+
+  void _cancelMultiDayPointerInteraction() {
+    if (_resizingEventId != null) {
+      final original = _resizingEventOriginal;
+      if (original != null) {
+        _eventsMap[original.id] = original;
+        _updateEventLists();
+      }
+      setState(() {
+        _resizingEventId = null;
+        _resizingFromTop = null;
+        _resizingEventOriginal = null;
+        _resizeStartGlobalY = null;
+        _resizeAnchorStart = null;
+        _resizeAnchorEnd = null;
+        _isPointerDownOnEvent = false;
+        _pendingPointerEventId = null;
+      });
+    } else if (_isDraggingEvent || _isPointerDownOnEvent) {
+      setState(() {
+        _clearDragState();
+        _isPointerDownOnEvent = false;
+        _pendingPointerEventId = null;
+      });
+    }
+    _clearEventTouchPressState();
+    _clearPendingResizeTouch();
+    _clearMobileInteractionWatchdog();
+  }
+
+  Map<String, _TimedEventLayout> _calculateMultiDayLayouts(
+    DateTime day, {
+    Iterable<CalendarEvent>? events,
+  }) {
+    final entries = <({CalendarEvent event, DateTimeRange segment})>[];
+    for (final event in events ?? _timedEvents) {
+      final segment = _eventVisibleSegmentForDay(event, day);
+      if (segment != null) entries.add((event: event, segment: segment));
+    }
+    entries.sort((a, b) {
+      final start = a.segment.start.compareTo(b.segment.start);
+      if (start != 0) return start;
+      final end = b.segment.end.compareTo(a.segment.end);
+      if (end != 0) return end;
+      return a.event.id.compareTo(b.event.id);
+    });
+
+    final layouts = <String, _TimedEventLayout>{};
+    var group = <({CalendarEvent event, DateTimeRange segment})>[];
+    DateTime? groupEnd;
+
+    void layoutGroup(
+      List<({CalendarEvent event, DateTimeRange segment})> items,
+    ) {
+      if (items.isEmpty) return;
+      final laneEnds = <DateTime>[];
+      final assignments = <String, int>{};
+      for (final item in items) {
+        var lane = laneEnds.indexWhere(
+          (laneEnd) => !laneEnd.isAfter(item.segment.start),
+        );
+        if (lane == -1) {
+          lane = laneEnds.length;
+          laneEnds.add(item.segment.end);
+        } else {
+          laneEnds[lane] = item.segment.end;
+        }
+        assignments[item.event.id] = lane;
+      }
+      for (final item in items) {
+        layouts[item.event.id] = _TimedEventLayout(
+          column: assignments[item.event.id]!,
+          columnCount: laneEnds.length,
+        );
+      }
+    }
+
+    for (final item in entries) {
+      if (groupEnd == null || item.segment.start.isBefore(groupEnd)) {
+        group.add(item);
+        if (groupEnd == null || item.segment.end.isAfter(groupEnd)) {
+          groupEnd = item.segment.end;
+        }
+      } else {
+        layoutGroup(group);
+        group = [item];
+        groupEnd = item.segment.end;
+      }
+    }
+    layoutGroup(group);
+    return layouts;
   }
 
   bool _isPastEvent(CalendarEvent event) {
@@ -2362,52 +2710,60 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                               day.year == now.year &&
                               day.month == now.month &&
                               day.day == now.day;
-
                           return Padding(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 2.4,
                               vertical: 3.2,
                             ),
                             child: Container(
-                              decoration: BoxDecoration(
-                                color: isInRange && !isRangeEdge
-                                    ? AppColors.selectedColor
-                                    : Colors.transparent,
-                                borderRadius: BorderRadius.circular(999),
+                              decoration: const BoxDecoration(
+                                color: Colors.transparent,
                               ),
                               child: Material(
                                 color: Colors.transparent,
                                 child: InkWell(
-                                  borderRadius: BorderRadius.circular(999),
+                                  borderRadius: BorderRadius.circular(10),
                                   onTap: () {
                                     _handleDateChange(day);
                                   },
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      color: isRangeEdge
-                                          ? AppColors.primary
-                                          : Colors.transparent,
-                                      borderRadius: BorderRadius.circular(999),
-                                      border: isToday && !isRangeEdge
-                                          ? Border.all(
-                                              color: AppColors.primary,
-                                              width: 1,
-                                            )
-                                          : null,
-                                    ),
-                                    alignment: Alignment.center,
-                                    child: Text(
-                                      '${day.day}',
-                                      style: TextStyle(
-                                        color: isRangeEdge
-                                            ? AppColors.onPrimary
-                                            : isInVisibleMonth
-                                            ? AppColors.onBackground
-                                            : AppColors.timeTextSecondaryColor,
-                                        fontSize: 16,
-                                        fontWeight: isRangeEdge
-                                            ? FontWeight.w700
-                                            : FontWeight.w500,
+                                  child: Center(
+                                    child: SizedBox(
+                                      width: 34,
+                                      height: 32,
+                                      child: DecoratedBox(
+                                        decoration: BoxDecoration(
+                                          color: isRangeEdge
+                                              ? AppColors.primary
+                                              : isInRange
+                                              ? AppColors.selectedColor
+                                              : Colors.transparent,
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                          border: isToday && !isRangeEdge
+                                              ? Border.all(
+                                                  color: AppColors.primary,
+                                                  width: 1.5,
+                                                )
+                                              : null,
+                                        ),
+                                        child: Center(
+                                          child: Text(
+                                            '${day.day}',
+                                            style: TextStyle(
+                                              color: isRangeEdge
+                                                  ? AppColors.onPrimary
+                                                  : isInVisibleMonth
+                                                  ? AppColors.onBackground
+                                                  : AppColors
+                                                        .timeTextSecondaryColor,
+                                              fontSize: 16,
+                                              fontWeight: isRangeEdge
+                                                  ? FontWeight.w700
+                                                  : FontWeight.w500,
+                                            ),
+                                          ),
+                                        ),
                                       ),
                                     ),
                                   ),
@@ -2434,20 +2790,37 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
 
   Widget _buildSidebarQuickActions() {
     final buttons =
-        <({IconData icon, String label, Future<void> Function() onTap})>[
-          (icon: Icons.add, label: 'Create', onTap: _handleSidebarAddEvent),
+        <({Object icon, String label, Future<void> Function() onTap})>[
           (
-            icon: Icons.today_rounded,
+            icon: HugeIcon(
+              icon: HugeIcons.strokeRoundedAdd01,
+              size: 20,
+              strokeWidth: 2.8,
+            ),
+            label: 'Create',
+            onTap: _handleSidebarAddEvent,
+          ),
+          (
+            icon: HugeIcon(icon: HugeIcons.strokeRoundedCalendar05, size: 20),
             label: 'Today',
+
             onTap: _handleSidebarJumpToToday,
           ),
           (
-            icon: Icons.search,
+            icon: HugeIcon(
+              icon: HugeIcons.strokeRoundedSearch01,
+              strokeWidth: 2,
+              size: 20,
+            ),
             label: 'Search',
             onTap: _handleSidebarSearchEvent,
           ),
           (
-            icon: Icons.sync_rounded,
+            icon: HugeIcon(
+              icon: HugeIcons.strokeRoundedRotate01,
+              strokeWidth: 2.2,
+              size: 18,
+            ),
             label: 'Sync',
             onTap: _handleSidebarSyncNow,
           ),
@@ -2487,9 +2860,9 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
               final item = buttons[index];
               return SecondaryButton(
                 onPressed: () => unawaited(item.onTap()),
-                icon: item.label == 'Sync'
+                icon: item.label == 'Sync' && _isSyncing
                     ? _buildSyncIcon(size: 20)
-                    : Icon(item.icon),
+                    : _buildQuickActionIcon(item.icon),
                 label: item.label,
               );
             },
@@ -2497,6 +2870,12 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
         ],
       ),
     );
+  }
+
+  Widget _buildQuickActionIcon(Object icon) {
+    if (icon is IconData) return Icon(icon);
+    if (icon is Widget) return icon;
+    return const SizedBox.shrink();
   }
 
   Future<void> _handleSidebarAddEvent() async {
@@ -2512,10 +2891,15 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   }
 
   Future<void> _handleSidebarSearchEvent() async {
-    final allEvents = _eventsMap.values.toList()
-      ..sort((a, b) => a.startDateTime.compareTo(b.startDateTime));
+    final cachedEvents = await _repository.getAllActiveEvents();
+    final allEvents =
+        <String, CalendarEvent>{
+            for (final event in cachedEvents) event.id: event,
+            ..._eventsMap,
+          }.values.toList()
+          ..sort((a, b) => a.startDateTime.compareTo(b.startDateTime));
+    if (!mounted) return;
     if (allEvents.isEmpty) {
-      if (!mounted) return;
       _showCompactSnackBar('No events to search');
       return;
     }
@@ -2525,9 +2909,55 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       builder: (dialogContext) {
         final controller = TextEditingController();
         var query = '';
+        var range = _EventSearchRange.day;
+        final dayStart = DateTime(
+          _currentDate.year,
+          _currentDate.month,
+          _currentDate.day,
+        );
+        final dayEnd = dayStart.add(const Duration(days: 1));
+
+        ({DateTime? start, DateTime? end}) rangeBounds() {
+          switch (range) {
+            case _EventSearchRange.day:
+              return (
+                start: dayStart.subtract(const Duration(days: 1)),
+                end: dayEnd,
+              );
+            case _EventSearchRange.week:
+              return (
+                start: dayStart.subtract(const Duration(days: 7)),
+                end: dayEnd,
+              );
+            case _EventSearchRange.month:
+              return (
+                start: DateTime(
+                  dayStart.year,
+                  dayStart.month - 1,
+                  dayStart.day,
+                ),
+                end: dayEnd,
+              );
+            case _EventSearchRange.weekAfter:
+              return (
+                start: dayStart,
+                end: dayStart.add(const Duration(days: 8)),
+              );
+            case _EventSearchRange.forever:
+              return (start: null, end: null);
+          }
+        }
+
         return StatefulBuilder(
           builder: (context, setStateDialog) {
+            final bounds = rangeBounds();
             final filtered = allEvents.where((event) {
+              final inRange =
+                  (bounds.start == null ||
+                      !event.startDateTime.isBefore(bounds.start!)) &&
+                  (bounds.end == null ||
+                      event.startDateTime.isBefore(bounds.end!));
+              if (!inRange) return false;
               if (query.isEmpty) return true;
               final q = query.toLowerCase();
               return event.title.toLowerCase().contains(q) ||
@@ -2535,17 +2965,44 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                   event.location.toLowerCase().contains(q);
             }).toList();
 
-            return AlertDialog(
-              backgroundColor: AppColors.surface,
-              title: const Text(
-                'Search Events',
-                style: TextStyle(color: AppColors.onBackground),
+            final dialogHeight = (MediaQuery.sizeOf(context).height - 48)
+                .clamp(420.0, 620.0)
+                .toDouble();
+            return Dialog(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 24,
               ),
-              content: SizedBox(
-                width: appPopupWidth(context, 440),
-                height: 420,
+              child: GlassCard(
+                width: appPopupWidth(context, 500),
+                height: dialogHeight,
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 18),
+                borderRadius: BorderRadius.circular(26),
+                tintOpacity: 0.075,
+                borderOpacity: 0.16,
+                blurSigma: 22,
                 child: Column(
                   children: [
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'Search Events',
+                            style: AppTextStyles.headline3,
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.of(dialogContext).pop(),
+                          icon: const Icon(
+                            Icons.close,
+                            color: AppColors.onSurface,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
                     TextField(
                       controller: controller,
                       autofocus: shouldAutofocusTextInput,
@@ -2554,13 +3011,24 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                         hintText: 'Type title or description',
                         hintStyle: TextStyle(color: AppColors.timeTextColor),
                         filled: true,
-                        fillColor: AppColors.background,
+                        fillColor: Colors.transparent,
                         border: OutlineInputBorder(
-                          borderSide: BorderSide(color: AppColors.borderColor),
+                          borderSide: const BorderSide(
+                            color: AppColors.glassBorder,
+                          ),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         enabledBorder: OutlineInputBorder(
-                          borderSide: BorderSide(color: AppColors.borderColor),
+                          borderSide: const BorderSide(
+                            color: AppColors.glassBorder,
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderSide: const BorderSide(
+                            color: AppColors.glassBorderFocus,
+                            width: 1.2,
+                          ),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         prefixIcon: Icon(
@@ -2574,23 +3042,100 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                         });
                       },
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 18),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      primary: false,
+                      physics: const BouncingScrollPhysics(),
+                      clipBehavior: Clip.none,
+                      child: Row(
+                        children: _EventSearchRange.values.map((option) {
+                          final selected = option == range;
+                          final label = switch (option) {
+                            _EventSearchRange.day => 'Day',
+                            _EventSearchRange.week => 'Week',
+                            _EventSearchRange.month => 'Month',
+                            _EventSearchRange.weekAfter => 'Next week',
+                            _EventSearchRange.forever => 'All time',
+                          };
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: ChoiceChip(
+                              label: Text(label),
+                              avatar: HugeIcon(
+                                icon: switch (option) {
+                                  _EventSearchRange.day =>
+                                    HugeIcons.strokeRoundedCalendar01,
+                                  _EventSearchRange.week =>
+                                    HugeIcons.strokeRoundedCalendars,
+                                  _EventSearchRange.month =>
+                                    HugeIcons.strokeRoundedCalendarFold,
+                                  _EventSearchRange.weekAfter =>
+                                    HugeIcons.strokeRoundedArrowRight01,
+                                  _EventSearchRange.forever =>
+                                    HugeIcons.strokeRoundedInfinity01,
+                                },
+                                size: 18,
+                                color: selected
+                                    ? AppColors.primary
+                                    : AppColors.timeTextColor,
+                              ),
+                              selected: selected,
+                              showCheckmark: false,
+                              onSelected: (_) {
+                                setStateDialog(() => range = option);
+                              },
+                              selectedColor: AppColors.primary.withValues(
+                                alpha: 0.18,
+                              ),
+                              backgroundColor: Colors.transparent,
+                              side: BorderSide(
+                                color: selected
+                                    ? AppColors.primary.withValues(alpha: 0.6)
+                                    : AppColors.glassBorder,
+                              ),
+                              labelStyle: TextStyle(
+                                color: selected
+                                    ? AppColors.primary
+                                    : AppColors.onSurface,
+                                fontWeight: selected
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                     Expanded(
                       child: filtered.isEmpty
                           ? Center(
                               child: Text(
-                                'No matching events',
+                                query.isEmpty
+                                    ? 'No events in this time range'
+                                    : 'No matching events',
                                 style: TextStyle(
                                   color: AppColors.timeTextColor,
                                 ),
                               ),
                             )
-                          : ListView.builder(
+                          : ListView.separated(
                               itemCount: filtered.length,
+                              separatorBuilder: (context, index) =>
+                                  const Divider(
+                                    height: 1,
+                                    thickness: 1,
+                                    color: AppColors.glassBorder,
+                                  ),
                               itemBuilder: (context, index) {
                                 final event = filtered[index];
                                 return ListTile(
                                   dense: true,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 10,
+                                  ),
                                   onTap: () {
                                     Navigator.of(dialogContext).pop(event);
                                   },
@@ -2616,12 +3161,6 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
                   ],
                 ),
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: const Text('Close'),
-                ),
-              ],
             );
           },
         );
@@ -2759,30 +3298,48 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     BoxConstraints constraints, {
     required double hourHeight,
   }) {
-    _dayGridWidth = constraints.maxWidth;
-    return RepaintBoundary(
-      child: Stack(
-        clipBehavior: Clip.hardEdge,
-        children: [
-          // Clickable grid for creating events (under events)
-          IgnorePointer(
-            ignoring:
-                _isPointerDownOnEvent ||
-                _isDraggingEvent ||
-                _eventActionsPopoverEventId != null,
-            child: _buildClickableGrid(constraints),
-          ),
-          if ((_isDraggingToCreate &&
-                  _gridDragStartTime != null &&
-                  _gridDragEndTime != null) ||
-              (_pendingCreateStartTime != null &&
-                  _pendingCreateEndTime != null))
-            _buildDragCreateSelection(),
-          // Events (top-most)
-          ..._buildEventWidgets(constraints),
-          // Keep current-time indicator above event blocks.
-          _buildCurrentTimeIndicator(constraints),
-        ],
+    // The timeline can receive a wider horizontal constraint than the visible
+    // viewport from the scroll host. Use the actual viewport width so overlap
+    // lanes stay inside the day column instead of pushing the last lane off
+    // screen.
+    final viewportGridWidth =
+        MediaQuery.sizeOf(context).width - _timeColumnWidthFor(context);
+    final gridWidth = constraints.maxWidth > viewportGridWidth
+        ? viewportGridWidth
+        : constraints.maxWidth;
+    final gridConstraints = BoxConstraints(
+      minWidth: gridWidth,
+      maxWidth: gridWidth,
+      minHeight: constraints.maxHeight,
+      maxHeight: constraints.maxHeight,
+    );
+    _dayGridWidth = gridWidth;
+    return SizedBox(
+      width: gridWidth,
+      child: RepaintBoundary(
+        child: Stack(
+          clipBehavior: Clip.hardEdge,
+          children: [
+            // Clickable grid for creating events (under events)
+            IgnorePointer(
+              ignoring:
+                  _isPointerDownOnEvent ||
+                  _isDraggingEvent ||
+                  _eventActionsPopoverEventId != null,
+              child: _buildClickableGrid(gridConstraints),
+            ),
+            if ((_isDraggingToCreate &&
+                    _gridDragStartTime != null &&
+                    _gridDragEndTime != null) ||
+                (_pendingCreateStartTime != null &&
+                    _pendingCreateEndTime != null))
+              _buildDragCreateSelection(),
+            // Events (top-most)
+            ..._buildEventWidgets(gridConstraints),
+            // Keep current-time indicator above event blocks.
+            _buildCurrentTimeIndicator(gridConstraints),
+          ],
+        ),
       ),
     );
   }
@@ -2869,6 +3426,17 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
 
   List<Widget> _buildEventWidgets(BoxConstraints constraints) {
     final widgets = <Widget>[];
+    final preview = _isDraggingEvent ? _dragPreviewEvent : null;
+    // Layout the live event at its new time as part of the same overlap
+    // calculation. Otherwise the preview has no lane and gets rendered at
+    // the full timeline width, which makes it look like a second, stretched
+    // event while dragging.
+    final layoutEvents = preview != null && !_dragCreatesDuplicate
+        ? _timedEvents
+              .map((event) => event.id == preview.id ? preview : event)
+              .toList()
+        : _timedEvents;
+    final layouts = _calculateTimedEventLayouts(events: layoutEvents);
     final renderEvents = [..._timedEvents]
       ..sort((a, b) {
         if (a.id == _eventInteractionPriorityId) return 1;
@@ -2877,12 +3445,10 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       });
 
     for (final event in renderEvents) {
-      final eventIndex = _timedEvents.indexOf(event);
-      final overlapDepth = _eventOverlapDepth(event, eventIndex);
-      final stackStep = math.min(overlapDepth, 3) * 72.0;
-      final trailingInset = overlapDepth.isOdd ? 56.0 : 0.0;
-      final eventWidth = (constraints.maxWidth - stackStep - trailingInset)
-          .clamp(80.0, constraints.maxWidth);
+      final layout = layouts[event.id];
+      if (layout == null) continue;
+      final eventWidth = constraints.maxWidth / layout.columnCount;
+      final leftOffset = eventWidth * layout.column;
       final isDraggingOriginal =
           _isDraggingEvent &&
           _draggedEventId == event.id &&
@@ -2896,20 +3462,24 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
             event,
             constraints,
             eventWidth,
-            stackStep,
+            leftOffset,
             isDraggingOriginal: isDraggingOriginal,
           ),
         );
       }
     }
 
-    if (_dragPreviewEvent != null && _draggedEventId == _dragPreviewEvent!.id) {
+    if (preview != null && _draggedEventId == preview.id) {
+      final layout = layouts[preview.id];
+      if (layout == null) return widgets;
+      final eventWidth = constraints.maxWidth / layout.columnCount;
+      final leftOffset = eventWidth * layout.column;
       widgets.add(
         _buildEventWidget(
-          _dragPreviewEvent!,
+          preview,
           constraints,
-          constraints.maxWidth,
-          0,
+          eventWidth,
+          leftOffset,
           isPreview: true,
         ),
       );
@@ -2940,16 +3510,70 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     });
   }
 
-  int _eventOverlapDepth(CalendarEvent event, int eventIndex) {
-    var depth = 0;
-    for (var index = 0; index < eventIndex; index++) {
-      final previous = _timedEvents[index];
-      final overlaps =
-          previous.startDateTime.isBefore(event.endDateTime) &&
-          event.startDateTime.isBefore(previous.endDateTime);
-      if (overlaps) depth++;
+  Map<String, _TimedEventLayout> _calculateTimedEventLayouts({
+    Iterable<CalendarEvent>? events,
+  }) {
+    final candidates =
+        (events ?? _timedEvents)
+            .where((event) => _eventVisibleSegmentForCurrentDay(event) != null)
+            .toList()
+          ..sort((a, b) {
+            final start = a.startDateTime.compareTo(b.startDateTime);
+            if (start != 0) return start;
+            // Longer events get the first lane when they start together. This
+            // keeps shorter events beside them instead of creating nesting.
+            final end = b.endDateTime.compareTo(a.endDateTime);
+            if (end != 0) return end;
+            return a.id.compareTo(b.id);
+          });
+
+    final layouts = <String, _TimedEventLayout>{};
+    var group = <CalendarEvent>[];
+    DateTime? groupEnd;
+
+    void layoutGroup(List<CalendarEvent> events) {
+      if (events.isEmpty) return;
+      final laneEnds = <DateTime>[];
+      final assignments = <String, int>{};
+
+      for (final event in events) {
+        final segment = _eventVisibleSegmentForCurrentDay(event)!;
+        var lane = laneEnds.indexWhere(
+          (laneEnd) => !laneEnd.isAfter(segment.start),
+        );
+        if (lane == -1) {
+          lane = laneEnds.length;
+          laneEnds.add(segment.end);
+        } else {
+          laneEnds[lane] = segment.end;
+        }
+        assignments[event.id] = lane;
+      }
+
+      final columnCount = laneEnds.length;
+      for (final event in events) {
+        layouts[event.id] = _TimedEventLayout(
+          column: assignments[event.id]!,
+          columnCount: columnCount,
+        );
+      }
     }
-    return depth;
+
+    for (final event in candidates) {
+      final segment = _eventVisibleSegmentForCurrentDay(event)!;
+      if (groupEnd == null || segment.start.isBefore(groupEnd)) {
+        group.add(event);
+        if (groupEnd == null || segment.end.isAfter(groupEnd)) {
+          groupEnd = segment.end;
+        }
+      } else {
+        layoutGroup(group);
+        group = [event];
+        groupEnd = segment.end;
+      }
+    }
+    layoutGroup(group);
+    return layouts;
   }
 
   Widget _buildEventWidget(
@@ -2989,14 +3613,12 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     );
     final visualTopInset = startPosition - interactionTop;
     const horizontalInset = 2.0;
-    final rightInset =
-        (constraints.maxWidth - (leftOffset + width) + horizontalInset).clamp(
-          horizontalInset,
-          constraints.maxWidth,
-        );
-    final resolvedCardWidth =
-        (constraints.maxWidth - (leftOffset + horizontalInset) - rightInset)
-            .clamp(0.0, constraints.maxWidth);
+    // Use an explicit width for each lane. Computing the right inset from the
+    // lane width can shrink/shift cards when multiple overlap groups exist.
+    final resolvedCardWidth = (width - (horizontalInset * 2)).clamp(
+      0.0,
+      constraints.maxWidth,
+    );
 
     final isZooming = _isTouchPinchZoomActive || _timelineZoom.isZooming;
     // Only the event currently being manipulated gets animated. Other event
@@ -3021,7 +3643,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     return Positioned(
       key: eventWidgetKey,
       left: leftOffset + horizontalInset,
-      right: rightInset,
+      width: resolvedCardWidth,
       top: interactionTop,
       height: interactionHeight,
       child: RepaintBoundary(
@@ -3456,6 +4078,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   bool _isPointerOverEvent(Offset localPosition) {
     final gridWidth = _dayGridWidth;
     if (gridWidth == null) return false;
+    final layouts = _calculateTimedEventLayouts();
 
     // All-day events rendered at top of grid
     if (_allDayEvents.isNotEmpty) {
@@ -3468,6 +4091,8 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     for (final event in _timedEvents) {
       final visibleSegment = _eventVisibleSegmentForCurrentDay(event);
       if (visibleSegment == null) continue;
+      final layout = layouts[event.id];
+      if (layout == null) continue;
 
       final dayStart = DateTime(
         _currentDate.year,
@@ -3479,8 +4104,15 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       final top = (startMinutes / 60) * _hourHeight;
       final rawHeight = ((endMinutes - startMinutes) / 60) * _hourHeight;
       final height = rawHeight < 1.0 ? 1.0 : rawHeight;
+      final laneWidth = gridWidth / layout.columnCount;
+      final left = laneWidth * layout.column;
 
-      final rect = Rect.fromLTWH(2, top, gridWidth - 4, height);
+      final rect = Rect.fromLTWH(
+        left + 2,
+        top,
+        (laneWidth - 4).clamp(0.0, gridWidth),
+        height,
+      );
       if (rect.contains(localPosition)) {
         return true;
       }
@@ -3717,6 +4349,32 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       _dragPreviewEvent = event.copyWith(
         startDateTime: newStart,
         endDateTime: newEnd,
+      );
+    });
+  }
+
+  void _updateMultiDayEventDragPreview(
+    CalendarEvent event,
+    Offset globalPosition, {
+    required double dayWidth,
+  }) {
+    if (_dragStartTime == null || _dragStartGlobalPosition == null) return;
+
+    final deltaY = globalPosition.dy - _dragStartGlobalPosition!.dy;
+    final deltaMinutes = (deltaY / _hourHeight) * 60;
+    final deltaDuration = Duration(
+      microseconds: (deltaMinutes * Duration.microsecondsPerMinute).round(),
+    );
+    final deltaDays =
+        ((globalPosition.dx - _dragStartGlobalPosition!.dx) / dayWidth).round();
+    final dayOffset = Duration(days: deltaDays);
+    final newStart = _dragStartTime!.add(deltaDuration).add(dayOffset);
+    final duration = event.endDateTime.difference(event.startDateTime);
+
+    setState(() {
+      _dragPreviewEvent = event.copyWith(
+        startDateTime: newStart,
+        endDateTime: newStart.add(duration),
       );
     });
   }
@@ -3985,6 +4643,15 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     );
   }
 
+  void _openEventForSingleTap(CalendarEvent event) {
+    final description = plainDescriptionText(event.description).trim();
+    if (description.isEmpty) {
+      unawaited(_showEditEventModal(event));
+    } else {
+      unawaited(_showEventDetailsPopover(event));
+    }
+  }
+
   Future<void> _deleteEvent(CalendarEvent event) async {
     try {
       await _repository.deleteEvent(event.id);
@@ -4204,7 +4871,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       if (!mounted || _mobileDuplicateDragEventId == eventId) return;
       final event = _eventsMap[eventId];
       if (event == null) return;
-      unawaited(_showEventDetailsPopover(event));
+      _openEventForSingleTap(event);
       _clearMobileTapSequence();
     });
   }
@@ -4235,7 +4902,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       if (!mounted) return;
       final event = _eventsMap[eventId];
       if (event == null) return;
-      unawaited(_showEventDetailsPopover(event));
+      _openEventForSingleTap(event);
       _pendingDesktopSingleTapTimer = null;
     });
   }
@@ -4430,13 +5097,13 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
             ),
           ),
           _buildOverviewMetricTile(
-            icon: Icons.schedule_rounded,
+            icon: HugeIcon(icon: HugeIcons.strokeRoundedTime03),
             title: 'Free Time',
             value: _formatDurationMinutes(summary.freeMinutes),
           ),
           const SizedBox(height: 8),
           _buildOverviewMetricTile(
-            icon: Icons.event_note_rounded,
+            icon: HugeIcon(icon: HugeIcons.strokeRoundedCalendar01),
             title: 'Scheduled Events',
             value: '${summary.eventCount}',
           ),
@@ -4452,7 +5119,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   }
 
   Widget _buildOverviewMetricTile({
-    required IconData icon,
+    required Object icon,
     required String title,
     required String value,
   }) {
@@ -4465,7 +5132,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       ),
       child: Row(
         children: [
-          Icon(icon, size: 23, color: AppColors.onSurface),
+          _buildOverviewMetricIcon(icon),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
@@ -4488,6 +5155,22 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
         ],
       ),
     );
+  }
+
+  Widget _buildOverviewMetricIcon(Object icon) {
+    if (icon is IconData) {
+      return Icon(icon, size: 23, color: AppColors.onSurface);
+    }
+    if (icon is HugeIcon) {
+      return HugeIcon(
+        icon: icon.icon,
+        size: icon.size ?? 23,
+        color: icon.color ?? AppColors.onSurface,
+        strokeWidth: icon.strokeWidth ?? 2,
+      );
+    }
+    if (icon is Widget) return icon;
+    return const SizedBox(width: 23, height: 23);
   }
 
   ({int eventCount, int freeMinutes, int overlapCount}) _todayOverviewSummary(

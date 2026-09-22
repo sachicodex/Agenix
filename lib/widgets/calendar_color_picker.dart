@@ -6,6 +6,7 @@ import '../theme/app_colors.dart';
 import '../services/calendar_palette_sync_service.dart';
 import 'app_popup.dart';
 import '../utils/platform_focus.dart';
+import 'Glass Card/glass_carrd.dart';
 
 const _baseCalendarColors = AppColors.calendarPalette;
 
@@ -300,21 +301,24 @@ class _CustomColorDialogState extends State<_CustomColorDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Row(
-        children: [
-          const Expanded(child: Text('')),
-          IconButton(
-            onPressed: () => Navigator.pop(context),
-            icon: Icon(Icons.close, color: AppColors.onSurface),
-          ),
-        ],
-      ),
-      content: SizedBox(
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      insetPadding: appPopupInsetPadding(context),
+      child: GlassCard(
         width: appPopupWidth(context, 360),
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+        borderRadius: BorderRadius.circular(28),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            Align(
+              alignment: Alignment.topRight,
+              child: IconButton(
+                onPressed: () => Navigator.pop(context),
+                icon: Icon(Icons.close, color: AppColors.onSurface),
+              ),
+            ),
             // Directly use flutter_colorpicker's wheel component without
             // its extra slider/labels; this keeps the picker clean.
             SizedBox(

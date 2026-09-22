@@ -160,7 +160,7 @@ Return ONLY the description:
     final apiKey = await _apiKeyStorage.getApiKey();
     if (apiKey == null || apiKey.trim().isEmpty) {
       throw Exception(
-        'AI API key not configured. Please set up your API key in Settings.',
+        'API key not configured. Please set up your API key in Settings.',
       );
     }
 

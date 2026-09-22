@@ -52,6 +52,7 @@ class LargeTextField extends StatelessWidget {
   final bool aiLoading;
   final bool hasError;
   final ValueChanged<String>? onChanged;
+  final VoidCallback? onSubmitted;
   final Color backgroundColor;
 
   const LargeTextField({
@@ -68,7 +69,8 @@ class LargeTextField extends StatelessWidget {
     this.aiLoading = false,
     this.hasError = false,
     this.onChanged,
-    this.backgroundColor = AppColors.surface,
+    this.onSubmitted,
+    this.backgroundColor = Colors.transparent,
   });
 
   Widget? _buildAiOverlayButton() {
@@ -115,52 +117,87 @@ class LargeTextField extends StatelessWidget {
     final aiOverlayButton = _buildAiOverlayButton();
     final rightPadding = aiOverlayButton == null ? 16.0 : 56.0;
 
+    Widget textField = TextField(
+      controller: controller,
+      focusNode: focusNode,
+      autofocus: autofocus && shouldAutofocusTextInput,
+      minLines: minLines,
+      maxLines: maxLines,
+      onChanged: onChanged,
+      onSubmitted: onSubmitted == null ? null : (_) => onSubmitted!(),
+      textInputAction: onSubmitted == null ? null : TextInputAction.done,
+      decoration: InputDecoration(
+        hintText: focusNode?.hasFocus == true ? null : hint,
+        labelText: label,
+        labelStyle: AppTextStyles.bodyText1.copyWith(
+          color: AppColors.onSurface.withValues(alpha: 0.7),
+        ),
+        hintStyle: AppTextStyles.bodyText1.copyWith(
+          color: AppColors.onSurface.withValues(alpha: 0.5),
+        ),
+        filled: true,
+        fillColor: backgroundColor,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: hasError
+              ? const BorderSide(color: Colors.red, width: 1)
+              : const BorderSide(color: AppColors.glassBorder),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: hasError
+              ? const BorderSide(color: Colors.red, width: 1)
+              : const BorderSide(color: AppColors.glassBorder),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(
+            color: AppColors.glassBorderFocus,
+            width: 1.2,
+          ),
+        ),
+        contentPadding: EdgeInsets.fromLTRB(16, 16, rightPadding, 16),
+      ),
+      style: AppTextStyles.bodyText1,
+    );
+
+    if (onSubmitted != null) {
+      textField = Shortcuts(
+        shortcuts: <ShortcutActivator, Intent>{
+          const SingleActivator(LogicalKeyboardKey.enter):
+              const _SubmitLargeTextFieldIntent(),
+        },
+        child: Actions(
+          actions: <Type, Action<Intent>>{
+            _SubmitLargeTextFieldIntent: CallbackAction<Intent>(
+              onInvoke: (_) {
+                onSubmitted!();
+                return null;
+              },
+            ),
+          },
+          child: textField,
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: Stack(
         children: [
           AnimatedBuilder(
             animation: focusNode ?? _unfocused,
-            builder: (context, _) => TextField(
-              controller: controller,
-              focusNode: focusNode,
-              autofocus: autofocus && shouldAutofocusTextInput,
-              minLines: minLines,
-              maxLines: maxLines,
-              onChanged: onChanged,
-              decoration: InputDecoration(
-                hintText: focusNode?.hasFocus == true ? null : hint,
-                labelText: label,
-                labelStyle: AppTextStyles.bodyText1.copyWith(
-                  color: AppColors.onSurface.withValues(alpha: 0.7),
-                ),
-                hintStyle: AppTextStyles.bodyText1.copyWith(
-                  color: AppColors.onSurface.withValues(alpha: 0.5),
-                ),
-                filled: true,
-                fillColor: backgroundColor,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: hasError
-                      ? const BorderSide(color: Colors.red, width: 1)
-                      : const BorderSide(color: AppColors.borderColor),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: hasError
-                      ? const BorderSide(color: Colors.red, width: 1)
-                      : const BorderSide(color: AppColors.borderColor),
-                ),
-                contentPadding: EdgeInsets.fromLTRB(16, 16, rightPadding, 16),
-              ),
-              style: AppTextStyles.bodyText1,
-            ),
+            builder: (context, _) => textField,
           ),
           if (aiOverlayButton != null) Positioned.fill(child: aiOverlayButton),
         ],
       ),
     );
   }
+}
+
+class _SubmitLargeTextFieldIntent extends Intent {
+  const _SubmitLargeTextFieldIntent();
 }
 
 class ExpandableDescription extends StatefulWidget {
@@ -182,7 +219,7 @@ class ExpandableDescription extends StatefulWidget {
     this.onAIClick,
     this.aiLoading = false,
     this.onExpansionChanged,
-    this.backgroundColor = AppColors.surface,
+    this.backgroundColor = Colors.transparent,
   });
 
   @override
@@ -604,7 +641,6 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
   Widget _formatButton(
     IconData icon,
     VoidCallback onPressed, {
-    String? tooltip,
     bool isActive = false,
   }) {
     return Container(
@@ -618,7 +654,6 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
             : null,
       ),
       child: IconButton(
-        tooltip: tooltip,
         onPressed: onPressed,
         icon: Icon(icon, size: 18),
         color: isActive
@@ -636,17 +671,14 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
     final attributes = selectionStyle.attributes;
     bool isActive(Attribute attribute) => attributes[attribute.key] != null;
     final activeList = attributes[Attribute.list.key]?.value;
+    final isMobile = MediaQuery.sizeOf(context).width < 700;
 
     return Container(
       height: 42,
       padding: const EdgeInsets.symmetric(horizontal: 8),
       decoration: BoxDecoration(
-        color: widget.backgroundColor.withValues(alpha: 0.72),
-        border: Border(
-          bottom: BorderSide(
-            color: AppColors.borderColor.withValues(alpha: 0.65),
-          ),
-        ),
+        color: Colors.transparent,
+        border: Border(bottom: BorderSide(color: AppColors.glassBorder)),
       ),
       child: Row(
         children: [
@@ -666,7 +698,7 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
             isActive: isActive(Attribute.underline),
           ),
           const SizedBox(width: 4),
-          Container(width: 1, height: 22, color: AppColors.borderColor),
+          Container(width: 1, height: 22, color: AppColors.glassBorder),
           const SizedBox(width: 4),
           _formatButton(
             Icons.format_list_numbered,
@@ -679,10 +711,10 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
             isActive: activeList == Attribute.ul.value,
           ),
           const SizedBox(width: 4),
-          Container(width: 1, height: 22, color: AppColors.borderColor),
+          Container(width: 1, height: 22, color: AppColors.glassBorder),
           const SizedBox(width: 4),
           _formatButton(Icons.link, _addLink),
-          _formatButton(Icons.format_clear, _clearFormatting),
+          if (!isMobile) _formatButton(Icons.format_clear, _clearFormatting),
           const Spacer(),
           _formatButton(Icons.keyboard_arrow_up, _toggleExpanded),
           if (widget.onAIClick != null)
@@ -730,7 +762,7 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
                   decoration: BoxDecoration(
                     color: widget.backgroundColor,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.borderColor),
+                    border: Border.all(color: AppColors.glassBorder),
                   ),
                   child: Row(
                     children: [
@@ -764,7 +796,7 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
               decoration: BoxDecoration(
                 color: widget.backgroundColor,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.borderColor),
+                border: Border.all(color: AppColors.glassBorder),
               ),
               clipBehavior: Clip.antiAlias,
               child: Column(

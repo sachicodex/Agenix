@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../theme/app_colors.dart';
 
 /// Reusable text input with configurable icons and dark app defaults.
 class AppInput extends StatelessWidget {
@@ -18,9 +19,9 @@ class AppInput extends StatelessWidget {
     this.suffixIcon,
     this.showPrefixIcon = true,
     this.showSuffixIcon = true,
-    this.backgroundColor = const Color(0xFF101010),
-    this.borderColor = const Color(0xFF2A2A2A),
-    this.focusedBorderColor = const Color(0xFF3A3A3A),
+    this.backgroundColor = Colors.transparent,
+    this.borderColor = AppColors.glassBorder,
+    this.focusedBorderColor = AppColors.glassBorderFocus,
     this.borderRadius = const BorderRadius.all(Radius.circular(12)),
     this.borderWidth = 1,
     this.focusedBorderWidth = 1.2,

@@ -13,7 +13,7 @@ class DateTimeField extends StatelessWidget {
     required this.label,
     required this.dateTime,
     required this.onTap,
-    this.backgroundColor = AppColors.surface,
+    this.backgroundColor = Colors.transparent,
   });
 
   @override
@@ -30,7 +30,18 @@ class DateTimeField extends StatelessWidget {
           fillColor: backgroundColor,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none,
+            borderSide: const BorderSide(color: AppColors.glassBorder),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: AppColors.glassBorder),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(
+              color: AppColors.glassBorderFocus,
+              width: 1.2,
+            ),
           ),
         ),
         child: Text(

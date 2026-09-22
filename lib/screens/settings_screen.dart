@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:agenix/widgets/Custom%20App%20Bar/custom_app_bar.dart';
 import 'package:agenix/widgets/Custom%20Card/custom_card.dart';
 import 'package:agenix/widgets/Custom%20Dialog/reusable_dialog.dart';
-import 'package:agenix/widgets/Custom%20Surface/custom_surface.dart';
 import 'package:agenix/widgets/Custom%20Text/custom_text.dart';
 import 'package:agenix/widgets/Glass%20Card/glass_carrd.dart';
 import 'package:agenix/widgets/Primary%20Button/primary_button.dart';
@@ -92,9 +91,14 @@ class _SettingsCreateCalendarDialogState
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
-    content: SizedBox(
+  Widget build(BuildContext context) => Dialog(
+    backgroundColor: Colors.transparent,
+    elevation: 0,
+    insetPadding: appPopupInsetPadding(context),
+    child: GlassCard(
       width: appPopupWidth(context, 360),
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
+      borderRadius: BorderRadius.circular(24),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -110,7 +114,7 @@ class _SettingsCreateCalendarDialogState
                 color: AppColors.onSurface.withValues(alpha: 0.7),
               ),
               filled: true,
-              fillColor: Color(0XFF101010),
+              fillColor: Colors.transparent,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: _nameBorder,
@@ -134,35 +138,34 @@ class _SettingsCreateCalendarDialogState
             selectedColor: _selectedColor,
             onChanged: (color) => setState(() => _selectedColor = color),
           ),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: SecondaryButton(
+                    width: double.infinity,
+                    onPressed: () => Navigator.pop(context),
+                    label: 'Cancel',
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: PrimaryButton(
+                    width: double.infinity,
+                    onPressed: _saving ? null : _save,
+                    label: 'Save',
+                    loading: _saving,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     ),
-    actions: [
-      SizedBox(
-        width: double.infinity,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Expanded(
-              child: SecondaryButton(
-                width: double.infinity,
-                onPressed: () => Navigator.pop(context),
-                label: 'Cancel',
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: PrimaryButton(
-                width: double.infinity,
-                onPressed: _saving ? null : _save,
-                label: 'Save',
-                loading: _saving,
-              ),
-            ),
-          ],
-        ),
-      ),
-    ],
   );
 
   BorderSide get _nameBorder => _showNameError
@@ -171,7 +174,7 @@ class _SettingsCreateCalendarDialogState
 
   BorderSide get _focusedNameBorder => _showNameError
       ? const BorderSide(color: Colors.red, width: 1)
-      : const BorderSide(color: AppColors.borderFocusColor, width: 1.2);
+      : const BorderSide(color: AppColors.glassBorderFocus, width: 1.2);
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen>
@@ -1012,23 +1015,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     final content = ListView(
       padding: EdgeInsets.all(isWide ? 24 : 16),
       children: [
-        CustomCard(
-          padding: const EdgeInsets.all(18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildAccountAndServicesSection(),
-              const SizedBox(height: 32),
-              if (_signedIn || Platform.isWindows) ...[
-                _buildAppPreferencesSection(),
-                const SizedBox(height: 32),
-              ],
-              _buildAboutSection(),
-              const SizedBox(height: 32),
-              _buildLogoutSection(),
-            ],
-          ),
-        ),
+        _buildAccountAndServicesSection(),
+        const SizedBox(height: 32),
+        if (_signedIn || Platform.isWindows) ...[
+          _buildAppPreferencesSection(),
+          const SizedBox(height: 32),
+        ],
+        _buildAboutSection(),
+        const SizedBox(height: 32),
+        _buildLogoutSection(),
       ],
     );
 
@@ -1052,36 +1047,40 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     required AppIconData icon,
     required List<Widget> children,
   }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Container(
-              width: 22,
-              height: 22,
-              decoration: BoxDecoration(
-                color: AppColors.onSurface.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(14),
+    return CustomCard(
+      padding: const EdgeInsets.all(20),
+      borderRadius: BorderRadius.circular(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 22,
+                height: 22,
+                decoration: BoxDecoration(
+                  color: AppColors.onSurface.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: AppIcon(
+                  icon: icon,
+                  color: AppColors.onBackground,
+                  size: 5,
+                ),
               ),
-              child: AppIcon(
-                icon: icon,
-                color: AppColors.onBackground,
-                size: 5,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [CustomTextHeading(title)],
+                ),
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [CustomTextHeading(title)],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 18),
-        ...children,
-      ],
+            ],
+          ),
+          const SizedBox(height: 18),
+          ...children,
+        ],
+      ),
     );
   }
 
@@ -1185,9 +1184,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       onDelete: _deleteCalendar,
       onColorChanged: _changeCalendarColor,
       onNameChanged: _changeCalendarName,
-      addTooltip: _creatingCalendar
-          ? 'Creating calendar...'
-          : 'Create calendar',
       onChanged: (value) {
         if (value == _selectedCalendarId) return;
         setState(() => _selectedCalendarId = value);
@@ -1211,7 +1207,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     return AppInput(
       controller: _apiKeyController,
       autofocus: shouldAutofocusTextInput,
-      hintText: 'Enter your AI API key',
+      hintText: 'Enter your API key',
       hintStyle: AppTextStyles.bodyText1.copyWith(
         color: AppColors.onSurface.withValues(alpha: 0.5),
       ),
@@ -1386,7 +1382,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
         leading: AppPressFeedback(
           child: IconButton(
             icon: const Icon(Icons.arrow_back_ios_rounded),
-            tooltip: '',
             iconSize: 20,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 28, minHeight: 28),

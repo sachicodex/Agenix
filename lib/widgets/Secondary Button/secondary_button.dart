@@ -83,11 +83,11 @@ class _SecondaryButtonState extends State<SecondaryButton> {
     if (icon is! HugeIcon) return icon;
     return HugeIcon(
       icon: icon.icon,
-      color: icon.color,
+      color: icon.color ?? widget.foregroundColor,
       secondaryColor: icon.secondaryColor,
       disableSecondaryOpacity: icon.disableSecondaryOpacity,
-      size: widget.iconSize,
-      strokeWidth: widget.iconStrokeWidth,
+      size: icon.size ?? widget.iconSize,
+      strokeWidth: icon.strokeWidth ?? widget.iconStrokeWidth,
     );
   }
 

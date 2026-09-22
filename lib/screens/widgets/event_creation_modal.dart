@@ -2,18 +2,23 @@ import 'dart:async';
 
 import 'package:agenix/widgets/Secondary%20Button/secondary_button.dart';
 import 'package:agenix/widgets/primary_button/primary_button.dart';
+import 'package:agenix/widgets/Primary%20Button/primary_button.dart'
+    as dialog_buttons;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hugeicons/hugeicons.dart';
 import '../../models/calendar_event.dart';
 import '../../services/google_calendar_service.dart';
 import '../../services/groq_service.dart';
 import '../../services/api_key_storage_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/app_snackbar.dart';
+import '../../widgets/Custom%20Dialog/reusable_dialog.dart';
 import '../../widgets/form_fields.dart';
 import '../../widgets/Glass Card/glass_carrd.dart';
 import '../../widgets/date_time_field.dart';
+import '../../widgets/app_date_picker.dart';
 import '../../widgets/primary_action_button.dart';
 import '../../widgets/app_select_field.dart';
 import '../../widgets/app_popup.dart';
@@ -360,24 +365,27 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
   void _showAISetupPopup() {
     showAppDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('AI Features Not Configured'),
-        content: const Text(
-          'AI features are not configured yet. Please set up your AI API key in Settings to use this feature.',
+      builder: (context) => CustomTwoActionDialog(
+        title: 'AI Features Not Configured',
+        description:
+            'AI features are not configured yet. Please set up your API key in Settings to use this feature.',
+        centerContent: true,
+        centerTitle: true,
+        titleDescriptionSpacing: 12,
+        showCloseButton: false,
+        secondaryButton: SecondaryButton(
+          label: 'Cancel',
+          onPressed: () => Navigator.of(context).pop(),
+          backgroundColor: Colors.transparent,
+          borderSide: const BorderSide(color: AppColors.glassBorder),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              Navigator.pushNamed(context, SettingsScreen.routeName);
-            },
-            child: const Text('Setup AI Features'),
-          ),
-        ],
+        primaryButton: dialog_buttons.PrimaryButton(
+          label: 'Setup AI Features',
+          onPressed: () {
+            Navigator.of(context).pop();
+            Navigator.pushNamed(context, SettingsScreen.routeName);
+          },
+        ),
       ),
     );
   }
@@ -490,7 +498,7 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
 
   Future<void> _pickDateTime(bool isStart) async {
     final initial = isStart ? _startTime : _endTime;
-    final pickedDate = await showDatePicker(
+    final pickedDate = await showAppDatePicker(
       context: context,
       initialDate: initial,
       firstDate: DateTime(2000),
@@ -499,7 +507,7 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
     if (pickedDate == null) return;
     if (!mounted) return;
 
-    final pickedTime = await showTimePicker(
+    final pickedTime = await showAppTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(initial),
     );
@@ -705,51 +713,7 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Expanded(
-              child: Row(
-                children: [
-                  SizedBox(width: 15),
-                  Text(
-                    widget.existingEvent == null
-                        ? 'Create Event'
-                        : 'Edit Event',
-                    style: AppTextStyles.headline2,
-                  ),
-                ],
-              ),
-            ),
-            if (widget.existingEvent != null)
-              IconButton(
-                onPressed: _deleting ? null : _deleteEvent,
-                iconSize: 22,
-                style: IconButton.styleFrom(
-                  foregroundColor: AppColors.error,
-                  disabledForegroundColor: AppColors.error.withValues(
-                    alpha: 0.45,
-                  ),
-                  minimumSize: const Size(44, 44),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-                icon: _deleting
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const AppIcon(
-                        icon: AppIconData.huge(HugeIcons.strokeRoundedDelete03),
-                        size: 20,
-                        strokeWidth: 2.2,
-                      ),
-              ),
-          ],
-        ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 4),
         LargeTextField(
           controller: _titleController,
           focusNode: _titleFocusNode,
@@ -764,6 +728,7 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
           onChanged: (_) {
             if (_showTitleError) setState(() => _showTitleError = false);
           },
+          onSubmitted: () => unawaited(_saveEvent()),
           onAIClick: _optimizeTitle,
           aiLoading: _titleAILoading,
         ),
@@ -859,14 +824,66 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
   }
 
   Widget _buildSaveButton() {
+    final isEditing = widget.existingEvent != null;
     return Row(
       children: [
+        if (isEditing) ...[
+          SizedBox(
+            width: 49,
+            height: 49,
+            child: IconButton(
+              onPressed: _deleting ? null : _deleteEvent,
+              style: IconButton.styleFrom(
+                foregroundColor: AppColors.error,
+                disabledForegroundColor: AppColors.error.withValues(
+                  alpha: 0.45,
+                ),
+                backgroundColor: AppColors.error.withValues(alpha: 0.10),
+                side: BorderSide(
+                  color: AppColors.error.withValues(alpha: 0.65),
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              icon: _deleting
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const AppIcon(
+                      icon: AppIconData.huge(HugeIcons.strokeRoundedDelete03),
+                      size: 20,
+                      strokeWidth: 2.2,
+                    ),
+            ),
+          ),
+          const SizedBox(width: 12),
+        ],
         Expanded(
           child: PrimaryButton(
             onPressed: _saving || _creatingCalendar ? null : _saveEvent,
             minimumSize: const Size.fromHeight(44),
-            label: _saving ? 'Saving...' : 'Save',
+            label: _saving
+                ? 'Saving...'
+                : isEditing
+                ? 'Update Event'
+                : 'Schedule Event',
             loading: _saving,
+            padding: EdgeInsets.symmetric(horizontal: 0, vertical: 20),
+            textStyle: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            icon: isEditing
+                ? HugeIcon(
+                    icon: HugeIcons.strokeRoundedWave,
+                    strokeWidth: 2,
+                    size: 20,
+                  )
+                : HugeIcon(
+                    icon: HugeIcons.strokeRoundedClock02,
+                    strokeWidth: 2,
+                    size: 20,
+                  ),
           ),
         ),
       ],
@@ -1121,9 +1138,14 @@ class _CreateCalendarDialogState extends State<_CreateCalendarDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      content: SizedBox(
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      insetPadding: appPopupInsetPadding(context),
+      child: GlassCard(
         width: appPopupWidth(context, 360),
+        padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
+        borderRadius: BorderRadius.circular(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1142,7 +1164,7 @@ class _CreateCalendarDialogState extends State<_CreateCalendarDialog> {
                   color: AppColors.onSurface.withValues(alpha: 0.5),
                 ),
                 filled: true,
-                fillColor: AppColors.surface,
+                fillColor: Colors.transparent,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: _nameBorder,
@@ -1153,7 +1175,7 @@ class _CreateCalendarDialogState extends State<_CreateCalendarDialog> {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: _nameBorder,
+                  borderSide: _nameFocusedBorder,
                 ),
               ),
               onChanged: (_) {
@@ -1166,43 +1188,42 @@ class _CreateCalendarDialogState extends State<_CreateCalendarDialog> {
               selectedColor: _selectedColor,
               onChanged: (color) => setState(() => _selectedColor = color),
             ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: SecondaryButton(
+                      width: double.infinity,
+                      onPressed: () => Navigator.pop(context),
+                      label: 'Cancel',
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 17,
+                        horizontal: 25,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: PrimaryButton(
+                      width: double.infinity,
+                      onPressed: _saving ? null : _save,
+                      label: 'Save',
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 17,
+                        horizontal: 25,
+                      ),
+                      loading: _saving,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
       ),
-      actions: [
-        SizedBox(
-          width: double.infinity,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: SecondaryButton(
-                  width: double.infinity,
-                  onPressed: () => Navigator.pop(context),
-                  label: 'Cancel',
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 17,
-                    horizontal: 25,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: PrimaryButton(
-                  width: double.infinity,
-                  onPressed: _saving ? null : _save,
-                  label: 'Save',
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 17,
-                    horizontal: 25,
-                  ),
-                  loading: _saving,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
     );
   }
 
@@ -1223,7 +1244,11 @@ class _CreateCalendarDialogState extends State<_CreateCalendarDialog> {
 
   BorderSide get _nameBorder => _showNameError
       ? const BorderSide(color: Colors.red, width: 1)
-      : const BorderSide(color: AppColors.borderColor);
+      : const BorderSide(color: AppColors.glassBorder);
+
+  BorderSide get _nameFocusedBorder => _showNameError
+      ? const BorderSide(color: Colors.red, width: 1)
+      : const BorderSide(color: AppColors.glassBorderFocus, width: 1.2);
 }
 
 class _EventFormSnapshot {

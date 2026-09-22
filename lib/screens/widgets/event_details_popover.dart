@@ -6,11 +6,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:hugeicons/hugeicons.dart';
 import '../../models/calendar_event.dart';
 import '../../theme/app_colors.dart';
 import '../../providers/event_providers.dart';
 import '../../widgets/app_snackbar.dart';
 import '../../widgets/app_popup.dart';
+import '../../widgets/Glass Card/glass_carrd.dart';
+import '../../widgets/app_date_picker.dart';
 import '../../widgets/primary_action_button.dart';
 import 'event_creation_modal.dart';
 import '../../utils/platform_focus.dart';
@@ -26,11 +29,22 @@ class EventDetailsPopover extends StatelessWidget {
   });
 
   Future<void> _editEvent(BuildContext context) async {
-    Navigator.pop(context);
-    final isMobile = MediaQuery.of(context).size.width < 700;
+    final navigator = Navigator.of(context, rootNavigator: true);
+    final popupContext = navigator.context;
+    navigator.pop();
+
+    // Let the current popup close and unregister from the popup stack before
+    // opening the edit modal. Opening immediately here can remove the new
+    // dialog's barrier and make the calendar remain visually interactive.
+    await Future<void>.delayed(Duration.zero);
+    await WidgetsBinding.instance.endOfFrame;
+    if (!navigator.mounted) return;
+    if (!popupContext.mounted) return;
+
+    final isMobile = MediaQuery.of(popupContext).size.width < 700;
     if (isMobile) {
       await showAppModalBottomSheet<void>(
-        context: context,
+        context: popupContext,
         isScrollControlled: true,
         useSafeArea: true,
         enableDrag: true,
@@ -44,7 +58,7 @@ class EventDetailsPopover extends StatelessWidget {
       );
     } else {
       await showAppDialog(
-        context: context,
+        context: popupContext,
         builder: (context) => EventCreationModal(
           existingEvent: event,
           onEventCreated: onEventUpdated,
@@ -61,8 +75,9 @@ class EventDetailsPopover extends StatelessWidget {
             _editEvent(context),
       },
       child: Dialog(
-        backgroundColor: AppColors.surface,
-        child: Container(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        child: GlassCard(
           width: appPopupWidth(context, 400),
           padding: const EdgeInsets.all(24),
           child: Column(
@@ -80,10 +95,23 @@ class EventDetailsPopover extends StatelessWidget {
               // Actions
               SizedBox(
                 width: double.infinity,
-                child: FilledButton.icon(
+                child: OutlinedButton.icon(
                   onPressed: () => _editEvent(context),
-                  icon: const Icon(Icons.edit),
-                  label: const Text('Edit'),
+                  icon: const HugeIcon(
+                    icon: HugeIcons.strokeRoundedLinkSquare02,
+                    size: 20,
+                    color: AppColors.onBackground,
+                    strokeWidth: 2,
+                  ),
+                  label: const Text('Edit Mode'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.onBackground,
+                    backgroundColor: AppColors.primary.withValues(alpha: 0.08),
+                    side: BorderSide(
+                      color: AppColors.primary.withValues(alpha: 0.5),
+                    ),
+                    minimumSize: const Size.fromHeight(48),
+                  ),
                 ),
               ),
             ],
@@ -232,7 +260,7 @@ class _EventEditModalState extends ConsumerState<EventEditModal> {
   }
 
   Future<void> _selectStartTime() async {
-    final picked = await showTimePicker(
+    final picked = await showAppTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(_startTime),
     );
@@ -254,7 +282,7 @@ class _EventEditModalState extends ConsumerState<EventEditModal> {
   }
 
   Future<void> _selectEndTime() async {
-    final picked = await showTimePicker(
+    final picked = await showAppTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(_endTime),
     );
@@ -276,7 +304,7 @@ class _EventEditModalState extends ConsumerState<EventEditModal> {
   }
 
   Future<void> _selectDate() async {
-    final picked = await showDatePicker(
+    final picked = await showAppDatePicker(
       context: context,
       initialDate: _startTime,
       firstDate: DateTime(2000),
@@ -334,8 +362,9 @@ class _EventEditModalState extends ConsumerState<EventEditModal> {
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      backgroundColor: AppColors.surface,
-      child: Container(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      child: GlassCard(
         width: appPopupWidth(context, 500),
         padding: const EdgeInsets.all(24),
         child: Form(
@@ -462,10 +491,7 @@ class _EventEditModalState extends ConsumerState<EventEditModal> {
                     child: const Text('Cancel'),
                   ),
                   const SizedBox(width: 8),
-                    PrimaryButton(
-                      onPressed: _saveEvent,
-                      label: 'Save',
-                    ),
+                  PrimaryButton(onPressed: _saveEvent, label: 'Save'),
                 ],
               ),
             ],

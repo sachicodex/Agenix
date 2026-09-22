@@ -169,7 +169,6 @@ class _WindowsTitleBarState extends State<_WindowsTitleBar>
                   ),
                 ),
         ),
-        tooltip: '',
         padding: EdgeInsets.zero,
         constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
         splashRadius: 18,

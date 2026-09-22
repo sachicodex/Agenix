@@ -11,6 +11,7 @@ import 'app_icon.dart';
 import 'app_popup.dart';
 import 'calendar_color_picker.dart';
 import '../utils/platform_focus.dart';
+import 'Glass Card/glass_carrd.dart';
 
 class AppSelectOption<T> {
   const AppSelectOption({required this.value, required this.label, this.color});
@@ -33,7 +34,6 @@ class AppSelectField<T> extends StatelessWidget {
     this.enabled = true,
     this.searchable = true,
     this.onAddPressed,
-    this.addTooltip = 'Create calendar',
     this.showAddInField = true,
     this.onDelete,
     this.hasError = false,
@@ -45,7 +45,7 @@ class AppSelectField<T> extends StatelessWidget {
       fontWeight: FontWeight.w500,
       color: AppColors.onBackground,
     ),
-    this.backgroundColor = AppColors.surface,
+    this.backgroundColor = Colors.transparent,
   });
 
   final String label;
@@ -56,7 +56,6 @@ class AppSelectField<T> extends StatelessWidget {
   final bool enabled;
   final bool searchable;
   final VoidCallback? onAddPressed;
-  final String addTooltip;
   final bool showAddInField;
   final Future<bool> Function(T value)? onDelete;
   final bool hasError;
@@ -73,7 +72,7 @@ class AppSelectField<T> extends StatelessWidget {
         .firstOrNull;
     final borderSide = hasError
         ? const BorderSide(color: Colors.red, width: 1)
-        : const BorderSide(color: AppColors.borderColor);
+        : const BorderSide(color: AppColors.glassBorder);
     return InkWell(
       onTap: !enabled || onChanged == null
           ? null
@@ -86,7 +85,6 @@ class AppSelectField<T> extends StatelessWidget {
                   selected: value,
                   searchable: searchable,
                   onAddPressed: onAddPressed,
-                  addTooltip: addTooltip,
                   listTextStyle: listTextStyle,
                   onDelete: onDelete,
                   onColorChanged: onColorChanged,
@@ -108,7 +106,6 @@ class AppSelectField<T> extends StatelessWidget {
           suffixIcon: onAddPressed == null || !showAddInField
               ? null
               : IconButton(
-                  tooltip: addTooltip,
                   onPressed: enabled ? onAddPressed : null,
                   icon: const Icon(Icons.add),
                 ),
@@ -119,6 +116,13 @@ class AppSelectField<T> extends StatelessWidget {
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: borderSide,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(
+              color: AppColors.glassBorderFocus,
+              width: 1.2,
+            ),
           ),
         ),
         child: _OptionRow(
@@ -138,7 +142,6 @@ class _AppSelectDialog<T> extends StatefulWidget {
     required this.selected,
     required this.searchable,
     required this.onAddPressed,
-    required this.addTooltip,
     required this.listTextStyle,
     required this.onDelete,
     required this.onColorChanged,
@@ -150,7 +153,6 @@ class _AppSelectDialog<T> extends StatefulWidget {
   final T? selected;
   final bool searchable;
   final VoidCallback? onAddPressed;
-  final String addTooltip;
   final TextStyle listTextStyle;
   final Future<bool> Function(T value)? onDelete;
   final Future<Color?> Function(T value, Color currentColor)? onColorChanged;
@@ -243,11 +245,13 @@ class _AppSelectDialogState<T> extends State<_AppSelectDialog<T>> {
     return Focus(
       onKeyEvent: _handleKeyboard,
       child: Dialog(
-        backgroundColor: AppColors.surface,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         insetPadding: appPopupInsetPadding(context),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        child: SizedBox(
+        child: GlassCard(
           width: dialogWidth,
+          padding: EdgeInsets.zero,
+          borderRadius: BorderRadius.circular(18),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxHeight: 520),
             child: Padding(
@@ -256,7 +260,7 @@ class _AppSelectDialogState<T> extends State<_AppSelectDialog<T>> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Material(
-                    color: AppColors.surface,
+                    color: Colors.transparent,
                     child: Row(
                       children: [
                         Expanded(
@@ -306,7 +310,7 @@ class _AppSelectDialogState<T> extends State<_AppSelectDialog<T>> {
                   const SizedBox(height: 8),
                   Expanded(
                     child: Material(
-                      color: AppColors.surface,
+                      color: Colors.transparent,
                       clipBehavior: Clip.hardEdge,
                       child: ClipRect(
                         child: options.isEmpty
@@ -650,9 +654,14 @@ class _CalendarColorDialogState extends State<_CalendarColorDialog> {
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
-    content: SizedBox(
+  Widget build(BuildContext context) => Dialog(
+    backgroundColor: Colors.transparent,
+    elevation: 0,
+    insetPadding: appPopupInsetPadding(context),
+    child: GlassCard(
       width: appPopupWidth(context, 420),
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
+      borderRadius: BorderRadius.circular(24),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -669,40 +678,41 @@ class _CalendarColorDialogState extends State<_CalendarColorDialog> {
             selectedColor: _color,
             onChanged: (color) => setState(() => _color = color),
           ),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: SecondaryButton(
+                    width: double.infinity,
+                    onPressed: () => Navigator.pop(context),
+                    label: 'Cancel',
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: PrimaryButton(
+                    width: double.infinity,
+                    onPressed: () {
+                      final name = _name.text.trim();
+                      if (name.isNotEmpty) {
+                        Navigator.pop(
+                          context,
+                          _CalendarEditResult(name, _color),
+                        );
+                      }
+                    },
+                    label: 'Save',
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     ),
-
-    actions: [
-      SizedBox(
-        width: double.infinity,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Expanded(
-              child: SecondaryButton(
-                width: double.infinity,
-                onPressed: () => Navigator.pop(context),
-                label: 'Cancel',
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: PrimaryButton(
-                width: double.infinity,
-                onPressed: () {
-                  final name = _name.text.trim();
-                  if (name.isNotEmpty) {
-                    Navigator.pop(context, _CalendarEditResult(name, _color));
-                  }
-                },
-                label: 'Save',
-              ),
-            ),
-          ],
-        ),
-      ),
-    ],
   );
 }
 

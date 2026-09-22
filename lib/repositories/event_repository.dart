@@ -16,6 +16,10 @@ class EventRepository {
     return _localStore.watchEvents(range);
   }
 
+  Future<List<CalendarEvent>> getAllActiveEvents() {
+    return _localStore.getAllActiveEvents();
+  }
+
   Future<CalendarEvent> createEvent(CalendarEvent event) async {
     final watch = DebugPerfLogger.start('EventRepository', 'createEvent');
     final localId = event.id.isNotEmpty

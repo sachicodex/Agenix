@@ -97,20 +97,20 @@ class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: AppColors.surface,
+        fillColor: Colors.transparent,
         labelStyle: const TextStyle(fontFamily: 'GoogleSans'),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadius.control),
-          borderSide: const BorderSide(color: AppColors.borderColor),
+          borderSide: const BorderSide(color: AppColors.glassBorder),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadius.control),
-          borderSide: const BorderSide(color: AppColors.borderColor),
+          borderSide: const BorderSide(color: AppColors.glassBorder),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadius.control),
           borderSide: const BorderSide(
-            color: AppColors.borderFocusColor,
+            color: AppColors.glassBorderFocus,
             width: 1.2,
           ),
         ),
