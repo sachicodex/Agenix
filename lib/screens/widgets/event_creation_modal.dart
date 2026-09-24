@@ -239,10 +239,9 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
         description: message,
         centerTitle: true,
         centerContent: true,
-        primaryButton: dialog_buttons.PrimaryButton(
-          label: 'OK',
-          onPressed: () => Navigator.of(context).pop(),
-        ),
+        cancelAsText: true,
+        cancelLabel: 'OK',
+        cancelTextColor: AppColors.primary,
       ),
     );
   }
@@ -370,7 +369,7 @@ class _EventCreationModalState extends ConsumerState<EventCreationModal> {
             'AI features are not configured yet. Please set up your API key in Settings to use this feature.',
         centerContent: true,
         centerTitle: true,
-        titleDescriptionSpacing: 12,
+        titleDescriptionSpacing: 5,
         showCloseButton: false,
         secondaryButton: SecondaryButton(
           label: 'Cancel',

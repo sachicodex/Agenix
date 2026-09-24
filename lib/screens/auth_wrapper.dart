@@ -156,6 +156,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
     final choice = await showAppDialog<String>(
       context: context,
       barrierDismissible: false,
+      barrierColor: Colors.transparent,
       builder: (ctx) => CustomTwoActionDialog(
         title: 'No Internet',
         description:
@@ -167,7 +168,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
         ),
         centerTitle: true,
         centerContent: true,
-        titleDescriptionSpacing: 12,
+        titleDescriptionSpacing: 5,
+        contentAboveDescription: true,
         showCloseButton: false,
         secondaryButton: SecondaryButton(
           label: 'Continue',

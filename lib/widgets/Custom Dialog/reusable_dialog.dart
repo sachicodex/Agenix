@@ -2,7 +2,6 @@ import 'package:agenix/widgets/Custom%20Text/custom_text.dart';
 import 'package:agenix/widgets/Primary%20Button/primary_button.dart';
 import 'package:flutter/material.dart';
 
-
 import '../Secondary Button/secondary_button.dart';
 import '../Text Only Button/text_only_button.dart';
 import '../Glass Card/glass_carrd.dart';
@@ -30,13 +29,14 @@ abstract class _DialogBase extends StatelessWidget {
     this.borderColor = const Color(0xFF2A2A2A),
     this.borderRadius = const BorderRadius.all(Radius.circular(18)),
     this.contentPadding = const EdgeInsets.fromLTRB(22, 18, 22, 18),
-    this.actionsPadding = const EdgeInsets.fromLTRB(22, 0, 22, 18),
+    this.actionsPadding = const EdgeInsets.fromLTRB(0, 0, 0, 18),
     this.titleStyle = const TextStyle(
       fontSize: 25,
       fontWeight: FontWeight.w800,
     ),
     this.centerContent = false,
     this.centerTitle = false,
+    this.contentAboveDescription = false,
     this.titleDescriptionSpacing = 0,
     this.showCloseButton = true,
     this.descriptionStyle,
@@ -63,6 +63,7 @@ abstract class _DialogBase extends StatelessWidget {
   final TextStyle titleStyle;
   final bool centerContent;
   final bool centerTitle;
+  final bool contentAboveDescription;
   final double titleDescriptionSpacing;
   final bool showCloseButton;
   final TextStyle? descriptionStyle;
@@ -103,6 +104,12 @@ abstract class _DialogBase extends StatelessWidget {
           if ((title != null && title!.trim().isNotEmpty) ||
               (eyebrow != null && eyebrow!.trim().isNotEmpty))
             SizedBox(height: titleDescriptionSpacing),
+          if (contentAboveDescription && content != null)
+            centerContent
+                ? Center(child: content)
+                : Align(alignment: Alignment.centerLeft, child: content),
+          if (contentAboveDescription && content != null)
+            const SizedBox(height: 12),
           if (description != null && description!.trim().isNotEmpty)
             centerContent
                 ? SizedBox(
@@ -114,11 +121,12 @@ abstract class _DialogBase extends StatelessWidget {
                     ),
                   )
                 : CustomTextDescription(description!, style: descriptionStyle),
-          if (description != null &&
+          if (!contentAboveDescription &&
+              description != null &&
               description!.trim().isNotEmpty &&
               content != null)
             const SizedBox(height: 12),
-          if (content != null)
+          if (!contentAboveDescription && content != null)
             centerContent
                 ? Center(child: content)
                 : Align(alignment: Alignment.centerLeft, child: content),

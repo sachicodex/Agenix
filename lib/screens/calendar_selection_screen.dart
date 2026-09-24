@@ -7,7 +7,6 @@ import '../widgets/app_animations.dart';
 import '../widgets/modern_splash_screen.dart';
 import '../widgets/app_popup.dart';
 import '../widgets/Custom Dialog/reusable_dialog.dart';
-import '../widgets/Primary Button/primary_button.dart' as dialog_buttons;
 
 /// Screen for selecting default calendar on first login
 class CalendarSelectionScreen extends StatefulWidget {
@@ -150,10 +149,9 @@ class _CalendarSelectionScreenState extends State<CalendarSelectionScreen> {
         description: message,
         centerTitle: true,
         centerContent: true,
-        primaryButton: dialog_buttons.PrimaryButton(
-          label: 'OK',
-          onPressed: () => Navigator.of(context).pop(),
-        ),
+        cancelAsText: true,
+        cancelLabel: 'OK',
+        cancelTextColor: AppColors.primary,
       ),
     );
   }

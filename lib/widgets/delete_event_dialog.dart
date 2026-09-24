@@ -23,7 +23,7 @@ Future<DeleteEventChoice> showDeleteEventDialog(
         centerTitle: true,
         centerContent: true,
         showCloseButton: false,
-        titleDescriptionSpacing: 12,
+        titleDescriptionSpacing: 5,
         content: isRecurring
             ? SecondaryButton(
                 width: double.infinity,

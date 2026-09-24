@@ -142,7 +142,7 @@ class _CalendarColorPaletteState extends State<CalendarColorPalette> {
                           description: 'Remove this color from the palette?',
                           centerTitle: true,
                           centerContent: true,
-                          titleDescriptionSpacing: 12,
+                          titleDescriptionSpacing: 5,
                           showCloseButton: false,
                           secondaryButton: SecondaryButton(
                             label: 'Cancel',

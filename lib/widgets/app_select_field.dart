@@ -383,7 +383,7 @@ class _AppSelectDialogState<T> extends State<_AppSelectDialog<T>> {
                                             'This calendar will be permanently deleted.',
                                         centerTitle: true,
                                         centerContent: true,
-                                        titleDescriptionSpacing: 12,
+                                        titleDescriptionSpacing: 5,
                                         primaryButton: PrimaryButton(
                                           label: 'Yes, Delete Calendar',
                                           isDeleteButton: true,

@@ -4,7 +4,6 @@ import '../services/google_calendar_service.dart';
 import '../services/google_sign_in_error.dart';
 import '../widgets/app_popup.dart';
 import '../widgets/Custom Dialog/reusable_dialog.dart';
-import '../widgets/Primary Button/primary_button.dart' as dialog_buttons;
 import '../theme/app_colors.dart';
 import '../widgets/app_animations.dart';
 
@@ -28,10 +27,9 @@ class _SignInScreenState extends State<SignInScreen> {
         description: message,
         centerTitle: true,
         centerContent: true,
-        primaryButton: dialog_buttons.PrimaryButton(
-          label: 'OK',
-          onPressed: () => Navigator.of(context).pop(),
-        ),
+        cancelAsText: true,
+        cancelLabel: 'OK',
+        cancelTextColor: AppColors.primary,
       ),
     );
   }

@@ -243,6 +243,17 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
       document: _documentFromStoredText(widget.controller?.text ?? ''),
       selection: const TextSelection.collapsed(offset: 0),
       keepStyleOnNewLine: true,
+      // ignore: experimental_member_use
+      config: const QuillControllerConfig(
+        // ignore: experimental_member_use
+        clipboardConfig: QuillClipboardConfig(
+          // The Windows native HTML clipboard bridge can return a null
+          // pointer for ordinary text clipboard data. Let Quill use its
+          // internal Delta clipboard and plain-text fallback instead.
+          // ignore: experimental_member_use
+          enableExternalRichPaste: false,
+        ),
+      ),
     )..addListener(_handleQuillChanged);
     widget.controller?.addListener(_handleTextChanged);
     _focusNode.addListener(_handleFocusChanged);
@@ -326,23 +337,15 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
   }
 
   void _format(Attribute attribute) {
+    if (attribute == Attribute.ul || attribute == Attribute.ol) {
+      _formatList(attribute);
+      return;
+    }
+
     final currentAttribute = _quillController
         .getSelectionStyle()
         .attributes[attribute.key];
-    final isActive = attribute == Attribute.ul || attribute == Attribute.ol
-        ? currentAttribute?.value == attribute.value
-        : currentAttribute != null;
-
-    if (!isActive && (attribute == Attribute.ul || attribute == Attribute.ol)) {
-      _insertListSpacerIfNeeded();
-    }
-
-    if (isActive &&
-        (attribute == Attribute.ul || attribute == Attribute.ol) &&
-        _exitEmptyListItemIfNeeded()) {
-      _focusNode.requestFocus();
-      return;
-    }
+    final isActive = currentAttribute != null;
 
     _quillController.formatSelection(
       isActive ? Attribute.clone(attribute, null) : attribute,
@@ -350,38 +353,270 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
     _focusNode.requestFocus();
   }
 
-  bool _exitEmptyListItemIfNeeded() {
+  void _formatList(Attribute listAttribute) {
     final selection = _quillController.selection;
-    if (!selection.isValid || !selection.isCollapsed) return false;
+    if (!selection.isValid) return;
 
-    final plainText = _quillController.document.toPlainText();
-    final cursor = selection.start.clamp(0, plainText.length);
-    final lineStart = plainText.lastIndexOf('\n', cursor - 1) + 1;
-    final lineEnd = plainText.indexOf('\n', cursor);
-    final lineText = plainText.substring(
-      lineStart,
-      lineEnd == -1 ? plainText.length : lineEnd,
-    );
-    if (lineText.trim().isNotEmpty) return false;
-
-    final node = _quillController.document.queryChild(lineStart).node;
-    if (node is! Line ||
-        !node.style.attributes.containsKey(Attribute.list.key)) {
-      return false;
+    final lineStart = _lineStart(selection.start);
+    final line = _lineAt(lineStart);
+    if (line == null) {
+      // An empty Quill document can briefly report no line while focus is
+      // moving. Applying the list attribute to the selection is safe and
+      // lets Quill create its default paragraph/list line.
+      _quillController.formatSelection(listAttribute);
+      _focusNode.requestFocus();
+      return;
     }
 
-    _quillController.formatText(
-      selection.start,
-      1,
+    final currentList = line.style.attributes[Attribute.list.key]?.value;
+    final currentLevel = _lineIndent(line);
+    final isSameList = currentList == listAttribute.value;
+
+    if (isSameList && _isEmptyLine(lineStart)) {
+      _removeCurrentListLevel(lineStart, line);
+      _focusNode.requestFocus();
+      return;
+    }
+
+    if (isSameList) {
+      _formatLineAttribute(
+        lineStart,
+        line,
+        Attribute.clone(Attribute.list, null),
+      );
+      _formatLineAttribute(
+        lineStart,
+        line,
+        Attribute.clone(Attribute.indent, null),
+      );
+      _focusNode.requestFocus();
+      return;
+    }
+
+    // Changing list type inside a list creates a child list. Quill carries
+    // the line attributes to the next line, so this also makes Enter continue
+    // the newly selected nested list naturally.
+    if (currentList != null && !isSameList) {
+      _formatLineAttribute(
+        lineStart,
+        line,
+        Attribute.getIndentLevel(currentLevel + 1),
+      );
+      _formatLineAttribute(lineStart, line, listAttribute);
+    } else {
+      _insertListSpacerIfNeeded();
+      _quillController.formatSelection(listAttribute);
+    }
+    _focusNode.requestFocus();
+  }
+
+  int _lineStart(int offset) {
+    final text = _quillController.document.toPlainText();
+    final cursor = offset.clamp(0, text.length);
+    if (cursor == 0) return 0;
+    return text.lastIndexOf('\n', cursor - 1) + 1;
+  }
+
+  Line? _lineAt(int lineStart) {
+    Line? result;
+    for (final line in _documentLines()) {
+      if (line.documentOffset == lineStart) {
+        result = line;
+        break;
+      }
+    }
+    return result;
+  }
+
+  List<Line> _documentLines() {
+    final lines = <Line>[];
+    void visit(Node node) {
+      if (node is Line) {
+        lines.add(node);
+      } else if (node is Block) {
+        for (final child in node.children) {
+          visit(child);
+        }
+      }
+    }
+
+    for (final node in _quillController.document.root.children) {
+      visit(node);
+    }
+    return lines;
+  }
+
+  int _lineEnd(int lineStart) {
+    final text = _quillController.document.toPlainText();
+    final end = text.indexOf('\n', lineStart);
+    return end == -1 ? text.length : end;
+  }
+
+  int _lineIndent(Line line) {
+    final value = line.style.attributes[Attribute.indent.key]?.value;
+    return value is int ? value : int.tryParse('$value') ?? 0;
+  }
+
+  bool _isEmptyLine(int lineStart) => _quillController.document
+      .toPlainText()
+      .substring(lineStart, _lineEnd(lineStart))
+      .trim()
+      .isEmpty;
+
+  void _formatLineAttribute(int lineStart, Line line, Attribute attribute) {
+    final length = _lineEnd(lineStart) - lineStart + 1;
+    _quillController.formatText(lineStart, length, attribute);
+  }
+
+  Line? _parentListLine(Line line, int level) {
+    final lines = _documentLines();
+    final currentIndex = lines.indexOf(line);
+    var previous = currentIndex > 0 ? lines[currentIndex - 1] : null;
+    while (previous != null) {
+      final previousList = previous.style.attributes[Attribute.list.key];
+      if (previousList != null && _lineIndent(previous) < level) {
+        return previous;
+      }
+      final index = lines.indexOf(previous);
+      previous = index > 0 ? lines[index - 1] : null;
+    }
+    return null;
+  }
+
+  void _removeCurrentListLevel(int lineStart, Line line) {
+    final currentLevel = _lineIndent(line);
+    final currentList = line.style.attributes[Attribute.list.key]?.value;
+    final parent = currentLevel > 0
+        ? _parentListLine(line, currentLevel)
+        : _implicitParentNumberedLine(line);
+    final parentList = parent?.style.attributes[Attribute.list.key];
+
+    _logListDebug(
+      'remove-start cursor=${_quillController.selection.start} '
+      'lineStart=$lineStart lineText="${line.toPlainText().replaceAll('\n', r'\n')}" '
+      'list=$currentList level=$currentLevel '
+      'parentList=${parentList?.value} '
+      'parentText="${parent?.toPlainText().replaceAll('\n', r'\n')}"',
+    );
+
+    // Quill may omit the indent attribute on an empty nested bullet. If its
+    // nearest list parent is numbered, treat Backspace as returning to that
+    // numbered list rather than removing list formatting entirely.
+    if (currentLevel == 0 &&
+        currentList == Attribute.ul.value &&
+        parent != null &&
+        parentList?.value == Attribute.ol.value) {
+      _formatLineAttribute(lineStart, line, Attribute.ol);
+      _quillController.updateSelection(
+        TextSelection.collapsed(offset: lineStart),
+        ChangeSource.local,
+      );
+      _logListDebug('branch=implicit-parent-numbered cursor=$lineStart');
+      return;
+    }
+
+    if (currentLevel == 0 && currentList != null && _isEmptyLine(lineStart)) {
+      // Keep a blank paragraph between the last root-list item and the new
+      // normal paragraph. This makes the end of the list visually distinct
+      // while keeping the caret on the following line.
+      _quillController.replaceText(
+        lineStart,
+        0,
+        '\n',
+        TextSelection.collapsed(offset: lineStart + 1),
+      );
+      final nextLineStart = lineStart + 1;
+      // Format the terminators directly instead of looking up the shifted
+      // Line node; Quill may rebuild that node during replaceText.
+      for (final start in <int>[lineStart, nextLineStart]) {
+        _quillController.formatText(
+          start,
+          1,
+          Attribute.clone(Attribute.list, null),
+        );
+        _quillController.formatText(
+          start,
+          1,
+          Attribute.clone(Attribute.indent, null),
+        );
+      }
+      _quillController.updateSelection(
+        TextSelection.collapsed(offset: nextLineStart),
+        ChangeSource.local,
+      );
+      _logListDebug(
+        'branch=root-empty-exit blankStart=$lineStart '
+        'cursor=$nextLineStart delta=${_quillController.document.toDelta().toJson()}',
+      );
+      return;
+    }
+
+    if (currentLevel > 0) {
+      // Convert the current line in place. Do not insert a temporary spacer:
+      // Quill may rebuild its block tree immediately, making the old offset
+      // point at no line and leaving the caret on the wrong paragraph.
+      final targetStart = lineStart;
+      _formatLineAttribute(
+        targetStart,
+        line,
+        parentList ?? line.style.attributes[Attribute.list.key]!,
+      );
+      _formatLineAttribute(
+        targetStart,
+        line,
+        currentLevel == 1
+            ? Attribute.clone(Attribute.indent, null)
+            : Attribute.getIndentLevel(currentLevel - 1),
+      );
+      // Formatting the line can leave the selection on the temporary spacer
+      // inserted above it. Put the caret at the start of the converted parent
+      // item so Quill renders it immediately after the new list marker.
+      if (currentLevel == 1 && parent != null) {
+        _quillController.updateSelection(
+          TextSelection.collapsed(offset: targetStart),
+          ChangeSource.local,
+        );
+      }
+      _logListDebug(
+        'branch=nested-exit targetStart=$targetStart '
+        'cursor=${_quillController.selection.start} '
+        'delta=${_quillController.document.toDelta().toJson()}',
+      );
+      return;
+    }
+
+    _formatLineAttribute(
+      lineStart,
+      line,
       Attribute.clone(Attribute.list, null),
     );
-    _quillController.replaceText(
-      selection.start,
-      0,
-      '\n',
-      TextSelection.collapsed(offset: selection.start + 1),
+    _formatLineAttribute(
+      lineStart,
+      line,
+      Attribute.clone(Attribute.indent, null),
     );
-    return true;
+    _logListDebug(
+      'branch=root-nonempty-exit cursor=${_quillController.selection.start} '
+      'delta=${_quillController.document.toDelta().toJson()}',
+    );
+  }
+
+  void _logListDebug(String message) {
+    debugPrint('[DescriptionEditor][List] $message');
+  }
+
+  Line? _implicitParentNumberedLine(Line line) {
+    final lines = _documentLines();
+    final currentIndex = lines.indexOf(line);
+    var previous = currentIndex > 0 ? lines[currentIndex - 1] : null;
+    while (previous != null) {
+      final list = previous.style.attributes[Attribute.list.key]?.value;
+      if (list == Attribute.ol.value) return previous;
+      if (list == null) return null;
+      final index = lines.indexOf(previous);
+      previous = index > 0 ? lines[index - 1] : null;
+    }
+    return null;
   }
 
   void _insertListSpacerIfNeeded() {
@@ -410,11 +645,23 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
   }
 
   Line? _previousLine(Line line) {
-    if (!line.isFirst) return line.previous as Line?;
+    // Quill can group lines in Block nodes. A line's previous sibling is not
+    // guaranteed to be another Line, so never cast it directly.
+    final previousSibling = line.previous;
+    final previousLine = _lastLineIn(previousSibling);
+    if (previousLine != null) return previousLine;
+
     final parent = line.parent;
-    final previousBlock = parent is Block ? parent.previous : null;
-    if (previousBlock is Block) return previousBlock.last as Line?;
-    return previousBlock is Line ? previousBlock : null;
+    return _lastLineIn(parent?.previous);
+  }
+
+  Line? _lastLineIn(Node? node) {
+    if (node is Line) return node;
+    if (node is Block && node.isNotEmpty) {
+      final last = node.last;
+      return _lastLineIn(last);
+    }
+    return null;
   }
 
   void _clearFormatting() {
@@ -446,15 +693,14 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
         final textController = TextEditingController(text: selectedText);
         final urlController = TextEditingController();
         return CustomTwoActionDialog(
-          title: 'Add link',
-          centerTitle: true,
+          showCloseButton: false,
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
                 controller: textController,
                 autofocus: selectedText.isEmpty,
-                decoration: const InputDecoration(labelText: 'Text to show'),
+                decoration: const InputDecoration(hintText: 'Text to show'),
               ),
               const SizedBox(height: 12),
               TextField(
@@ -473,10 +719,10 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
           ),
           primaryButton: dialog_buttons.PrimaryButton(
             label: 'Apply',
-              onPressed: () => Navigator.pop(context, (
-                textController.text.trim(),
-                urlController.text.trim(),
-              )),
+            onPressed: () => Navigator.pop(context, (
+              textController.text.trim(),
+              urlController.text.trim(),
+            )),
           ),
         );
       },
@@ -496,19 +742,84 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
     _focusNode.requestFocus();
   }
 
+  int _orderedListIndex(Line line, int level) {
+    var index = 1;
+    var previous = _previousLine(line);
+    while (previous != null) {
+      final previousLevel = _lineIndent(previous);
+      final previousList = previous.style.attributes[Attribute.list.key]?.value;
+      if (previousLevel < level) break;
+      if (previousLevel == level && previousList == Attribute.ol.value) {
+        index++;
+      }
+      previous = _previousLine(previous);
+    }
+    return index;
+  }
+
+  String _formatOrderedMarker(int index, int level) {
+    if (level % 3 == 1) {
+      final result = StringBuffer();
+      var value = index;
+      while (value > 0) {
+        value--;
+        result.write(String.fromCharCode((value % 26) + 97));
+        value ~/= 26;
+      }
+      return result.toString().split('').reversed.join();
+    }
+    if (level % 3 == 2) {
+      const values = <int, String>{
+        1000: 'm',
+        900: 'cm',
+        500: 'd',
+        400: 'cd',
+        100: 'c',
+        90: 'xc',
+        50: 'l',
+        40: 'xl',
+        10: 'x',
+        9: 'ix',
+        5: 'v',
+        4: 'iv',
+        1: 'i',
+      };
+      var value = index;
+      final result = StringBuffer();
+      for (final entry in values.entries) {
+        while (value >= entry.key) {
+          result.write(entry.value);
+          value -= entry.key;
+        }
+      }
+      return result.toString();
+    }
+    return '$index';
+  }
+
   QuillEditorConfig _editorConfig() {
+    final defaultStyles = DefaultStyles.getInstance(context);
     return QuillEditorConfig(
       autoFocus: false,
       padding: const EdgeInsets.all(16),
       scrollable: true,
       scrollPhysics: const ClampingScrollPhysics(),
       placeholder: null,
+      customStyles: defaultStyles.merge(
+        DefaultStyles(
+          link: defaultStyles.link?.copyWith(decoration: TextDecoration.none),
+        ),
+      ),
       // Quill styles ordered-list markers from the line style, while bold is
       // usually an inline style on the text. Mirror an all-bold list item on
       // its marker so the number visually belongs to the formatted text.
       // ignore: experimental_member_use
       customLeadingBlockBuilder: (node, config) {
         if (config.attribute != Attribute.ol || node is! Line) return null;
+
+        final level = _lineIndent(node);
+        final orderedIndex = _orderedListIndex(node, level);
+        final marker = _formatOrderedMarker(orderedIndex, level);
 
         final textChildren = node.children
             .where((child) => child.toPlainText().isNotEmpty)
@@ -518,13 +829,13 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
             textChildren.every(
               (child) => child.style.containsKey(Attribute.bold.key),
             );
-        if (!isEntireLineBold) return null;
-
         return QuillNumberPoint(
-          index: config.getIndexNumberByIndent!,
+          index: marker,
           indentLevelCounts: config.indentLevelCounts,
           count: config.count,
-          style: config.style!.copyWith(fontWeight: FontWeight.bold),
+          style: isEntireLineBold
+              ? config.style!.copyWith(fontWeight: FontWeight.bold)
+              : config.style!,
           attrs: config.attrs,
           width: config.width!,
           padding: config.padding!,
@@ -586,55 +897,44 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
       onKeyPressed: (event, _) {
         final selection = _quillController.selection;
         if (event is KeyDownEvent &&
+            event.logicalKey == LogicalKeyboardKey.enter &&
+            selection.isCollapsed) {
+          final lineStart = _lineStart(selection.start);
+          final line = _lineAt(lineStart);
+          if (line != null &&
+              line.style.attributes.containsKey(Attribute.list.key) &&
+              _isEmptyLine(lineStart)) {
+            _removeCurrentListLevel(lineStart, line);
+            _focusNode.requestFocus();
+            return KeyEventResult.handled;
+          }
+        }
+        if (event is KeyDownEvent &&
             event.logicalKey == LogicalKeyboardKey.backspace &&
             selection.isCollapsed) {
           final plainText = _quillController.document.toPlainText();
           final cursor = selection.start.clamp(0, plainText.length);
-          final lineStart = plainText.lastIndexOf('\n', cursor - 1) + 1;
-          final lineEnd = plainText.indexOf('\n', cursor);
-          final lineText = plainText.substring(
-            lineStart,
-            lineEnd == -1 ? plainText.length : lineEnd,
+          final lineStart = _lineStart(cursor);
+          final line = _lineAt(lineStart);
+          _logListDebug(
+            'backspace cursor=${selection.start} clamped=$cursor '
+            'lineStart=$lineStart lineFound=${line != null} '
+            'lineText="${line?.toPlainText().replaceAll('\n', r'\n')}" '
+            'attrs=${line?.style.attributes}',
           );
-          final node = _quillController.document.queryChild(lineStart).node;
-          final isListLine =
-              node is Line &&
-              node.style.attributes.containsKey(Attribute.list.key);
-          final characterBeforeCaret =
-              cursor > 0 && plainText[cursor - 1] != '\n'
-              ? plainText[cursor - 1]
-              : null;
-
-          debugPrint(
-            '[DescriptionEditor] Backspace: cursor=$cursor '
-            'lineStart=$lineStart line="${lineText.replaceAll('\n', r'\n')}" '
-            'charBefore=$characterBeforeCaret isList=$isListLine',
-          );
-
-          if (!isListLine) return null;
-
-          // Handle character deletion ourselves for list lines. This prevents
-          // Quill from interpreting deletion of the final character as an
-          // empty-list exit in the same key event.
-          if (characterBeforeCaret != null) {
-            _quillController.replaceText(
-              cursor - 1,
-              1,
-              '',
-              TextSelection.collapsed(offset: cursor - 1),
-            );
-            debugPrint(
-              '[DescriptionEditor] Deleted list character '
-              '"$characterBeforeCaret"; list remains active',
-            );
-            return KeyEventResult.handled;
+          if (line == null ||
+              !line.style.attributes.containsKey(Attribute.list.key)) {
+            _logListDebug('backspace branch=not-list-or-line-missing');
+            return null;
           }
 
-          if (_exitEmptyListItemIfNeeded()) {
-            debugPrint(
-              '[DescriptionEditor] Empty list item exited; '
-              'inserted spaced normal line',
-            );
+          // Let Quill delete normal characters. At a list boundary, however,
+          // remove one list level first so Backspace never eats the previous
+          // item's content unexpectedly.
+          if (cursor == lineStart) {
+            _logListDebug('backspace branch=list-boundary');
+            _removeCurrentListLevel(lineStart, line);
+            _focusNode.requestFocus();
             return KeyEventResult.handled;
           }
         }

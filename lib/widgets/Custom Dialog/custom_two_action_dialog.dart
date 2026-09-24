@@ -30,6 +30,7 @@ class CustomTwoActionDialog extends _DialogBase {
     super.useGlassCard,
     super.centerContent = false,
     super.centerTitle = false,
+    super.contentAboveDescription = false,
   });
 
   final PrimaryButton primaryButton;
