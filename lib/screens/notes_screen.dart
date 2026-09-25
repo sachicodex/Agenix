@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:agenix/widgets/Custom%20Input/custom_input.dart';
@@ -11,17 +13,19 @@ import 'package:hugeicons/hugeicons.dart';
 import 'package:reorderable_grid/reorderable_grid.dart';
 
 import '../services/firebase_notes_service.dart';
+import '../services/google_calendar_service.dart';
+import '../services/local_notes_store.dart';
 import '../services/groq_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_snackbar.dart';
 import '../widgets/app_popup.dart';
 import '../widgets/form_fields.dart';
+import '../widgets/Custom App Bar/custom_app_bar.dart';
 import '../widgets/Glass Card/glass_carrd.dart';
 import '../widgets/expandable_action_fab.dart';
 import '../widgets/Primary Button/primary_button.dart' as dialog_buttons;
-import 'calendar_day_view_screen.dart';
 
-enum _NotesSection { notes, pinned, archive, trash }
+enum _NotesSection { notes, pinned }
 
 class NotesScreen extends StatefulWidget {
   const NotesScreen({
@@ -45,6 +49,9 @@ class _NotesScreenState extends State<NotesScreen> {
   final GroqService _groqService = GroqService();
   final TextEditingController _searchController = TextEditingController();
   User? _user;
+  String? _userPhotoUrl;
+  List<FirebaseNote> _localNotes = const <FirebaseNote>[];
+  final Set<String> _locallyDeletedNoteIds = <String>{};
   Stream<List<FirebaseNote>>? _notesStream;
   final _NotesSection _section = _NotesSection.notes;
   String _query = '';
@@ -55,8 +62,10 @@ class _NotesScreenState extends State<NotesScreen> {
   void initState() {
     super.initState();
     _user = FirebaseAuth.instance.currentUser;
+    _loadProfilePhoto();
     if (_user != null) {
       _notesStream = _notesService.streamNotes(_user!.uid);
+      _loadLocalNotes(_user!.uid);
     }
     _searchController.addListener(() {
       if (mounted) setState(() => _query = _searchController.text.trim());
@@ -70,6 +79,148 @@ class _NotesScreenState extends State<NotesScreen> {
         }
       });
     }
+  }
+
+  Future<void> _loadLocalNotes(String uid) async {
+    final notes = await LocalNotesStore.instance.load(uid);
+    if (!mounted) return;
+    setState(() => _localNotes = notes);
+    for (final note in notes.where((note) => note.id.startsWith('local_'))) {
+      _syncNote(note, create: true);
+    }
+  }
+
+  void _replaceLocalNote(FirebaseNote note) {
+    final notes = List<FirebaseNote>.of(_localNotes);
+    final index = notes.indexWhere((item) => item.id == note.id);
+    if (index == -1) {
+      notes.add(note);
+    } else {
+      notes[index] = note;
+    }
+    setState(() => _localNotes = notes);
+    final uid = _user?.uid;
+    if (uid != null) unawaited(LocalNotesStore.instance.save(uid, notes));
+  }
+
+  void _removeLocalNote(String noteId) {
+    final notes = _localNotes.where((note) => note.id != noteId).toList();
+    setState(() {
+      _localNotes = notes;
+      _locallyDeletedNoteIds.add(noteId);
+    });
+    final uid = _user?.uid;
+    if (uid != null) unawaited(LocalNotesStore.instance.save(uid, notes));
+  }
+
+  List<FirebaseNote> _mergeLocalNotes(List<FirebaseNote> remoteNotes) {
+    final merged = <String, FirebaseNote>{
+      for (final note in remoteNotes) note.id: note,
+    };
+    for (final deletedId in _locallyDeletedNoteIds) {
+      merged.remove(deletedId);
+    }
+    for (final local in _localNotes) {
+      final remote = merged[local.id];
+      if (remote == null ||
+          (local.updatedAt != null &&
+              (remote.updatedAt == null ||
+                  local.updatedAt!.isAfter(remote.updatedAt!)))) {
+        merged[local.id] = local;
+      }
+    }
+    return merged.values.toList(growable: false);
+  }
+
+  void _syncNote(FirebaseNote note, {required bool create}) {
+    unawaited(
+      (create
+              ? _notesService.createNote(
+                  noteId: note.id,
+                  title: note.title,
+                  content: note.content,
+                  noteType: note.noteType,
+                  checklist: note.checklist,
+                  colorValue: note.colorValue,
+                  pinned: note.pinned,
+                  archived: note.archived,
+                  trashed: note.trashed,
+                  labels: note.labels,
+                  order: note.order,
+                )
+              : _notesService.updateNote(
+                  noteId: note.id,
+                  title: note.title,
+                  content: note.content,
+                  noteType: note.noteType,
+                  checklist: note.checklist,
+                  colorValue: note.colorValue,
+                  pinned: note.pinned,
+                  archived: note.archived,
+                  trashed: note.trashed,
+                  labels: note.labels,
+                  order: note.order,
+                ))
+          .catchError((error) {
+            debugPrint('Background note sync failed: $error');
+          }),
+    );
+  }
+
+  Future<void> _loadProfilePhoto() async {
+    try {
+      final accountDetails = await GoogleCalendarService.instance
+          .getAccountDetails();
+      if (mounted) setState(() => _userPhotoUrl = accountDetails['photoUrl']);
+    } catch (_) {
+      if (mounted) setState(() => _userPhotoUrl = _user?.photoURL);
+    }
+  }
+
+  Widget _buildProfileButton() {
+    ImageProvider<Object>? imageProvider;
+    final photoUrl = _userPhotoUrl;
+    if (photoUrl != null && photoUrl.isNotEmpty) {
+      if (photoUrl.startsWith('http://') || photoUrl.startsWith('https://')) {
+        imageProvider = NetworkImage(
+          photoUrl,
+          headers: const {'Cache-Control': 'max-age=3600'},
+        );
+      } else {
+        try {
+          final file = File(photoUrl);
+          if (file.existsSync()) imageProvider = FileImage(file);
+        } catch (_) {}
+      }
+    }
+
+    return IconButton(
+      tooltip: 'Profile',
+      icon: SizedBox(
+        width: 32,
+        height: 32,
+        child: imageProvider == null
+            ? const Icon(Icons.account_circle, size: 32)
+            : CircleAvatar(
+                radius: 16,
+                backgroundColor: Colors.transparent,
+                child: ClipOval(
+                  child: Image(
+                    image: imageProvider,
+                    width: 32,
+                    height: 32,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) =>
+                        const Icon(Icons.account_circle, size: 32),
+                  ),
+                ),
+              ),
+      ),
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+      splashRadius: 18,
+      onPressed: () => Navigator.pushNamed(context, '/settings'),
+    );
   }
 
   @override
@@ -87,8 +238,7 @@ class _NotesScreenState extends State<NotesScreen> {
     var noteType = note?.noteType ?? (checklistMode ? 'checklist' : 'text');
     var colorValue = note?.colorValue ?? 0xFF1A1A1A;
     var pinned = note?.pinned ?? false;
-    var archived = note?.archived ?? false;
-    var trashed = note?.trashed ?? false;
+    var deleteRequested = false;
     var aiLoading = false;
     var checklist = note?.checklist.toList() ?? <FirebaseChecklistItem>[];
     final checklistControllers = <TextEditingController>[];
@@ -118,8 +268,12 @@ class _NotesScreenState extends State<NotesScreen> {
         builder: (dialogContext) => StatefulBuilder(
           builder: (context, setDialogState) {
             final isChecklist = noteType == 'checklist';
-            final dialogHeight = (MediaQuery.sizeOf(context).height - 48)
-                .clamp(380.0, 560.0)
+            final mediaQuery = MediaQuery.of(context);
+            final isMobile = mediaQuery.size.width < 700;
+            final availableHeight =
+                mediaQuery.size.height - mediaQuery.viewInsets.bottom;
+            final dialogHeight = (availableHeight - 48)
+                .clamp(mediaQuery.viewInsets.bottom > 0 ? 260.0 : 380.0, 560.0)
                 .toDouble();
             return Dialog(
               backgroundColor: Colors.transparent,
@@ -143,9 +297,9 @@ class _NotesScreenState extends State<NotesScreen> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Expanded(
-                        child: SingleChildScrollView(
-                          child: isChecklist
-                              ? Column(
+                        child: isChecklist
+                            ? SingleChildScrollView(
+                                child: Column(
                                   children: [
                                     for (
                                       var index = 0;
@@ -210,43 +364,51 @@ class _NotesScreenState extends State<NotesScreen> {
                                       ),
                                     ),
                                   ],
-                                )
-                              : ExpandableDescription(
-                                  controller: contentController,
-                                  hint: 'Take a note...',
-                                  minLines: 5,
-                                  maxLines: 14,
-                                  editorHeight: (dialogHeight - 150)
-                                      .clamp(180.0, 390.0)
-                                      .toDouble(),
-                                  initiallyExpanded: true,
-                                  backgroundColor: Colors.transparent,
-                                  aiLoading: aiLoading,
-                                  onAIClick: () async {
-                                    setDialogState(() => aiLoading = true);
-                                    try {
-                                      final improved = await _groqService
-                                          .optimizeNote(
-                                            plainDescriptionText(
-                                              contentController.text,
-                                            ),
-                                          );
-                                      contentController.text = improved;
-                                    } catch (error) {
-                                      if (mounted) {
-                                        showAppSnackBar(
-                                          this.context,
-                                          'Could not improve note: $error',
-                                        );
-                                      }
-                                    } finally {
-                                      if (dialogContext.mounted) {
-                                        setDialogState(() => aiLoading = false);
-                                      }
-                                    }
-                                  },
                                 ),
-                        ),
+                              )
+                            : LayoutBuilder(
+                                builder: (context, constraints) {
+                                  final editorHeight =
+                                      (constraints.maxHeight - 54)
+                                          .clamp(100.0, 390.0)
+                                          .toDouble();
+                                  return ExpandableDescription(
+                                    controller: contentController,
+                                    hint: 'Take a note...',
+                                    minLines: 5,
+                                    maxLines: 14,
+                                    editorHeight: editorHeight,
+                                    initiallyExpanded: true,
+                                    backgroundColor: Colors.transparent,
+                                    aiLoading: aiLoading,
+                                    onAIClick: () async {
+                                      setDialogState(() => aiLoading = true);
+                                      try {
+                                        final improved = await _groqService
+                                            .optimizeNote(
+                                              plainDescriptionText(
+                                                contentController.text,
+                                              ),
+                                            );
+                                        contentController.text = improved;
+                                      } catch (error) {
+                                        if (mounted) {
+                                          showAppSnackBar(
+                                            this.context,
+                                            'Could not improve note: $error',
+                                          );
+                                        }
+                                      } finally {
+                                        if (dialogContext.mounted) {
+                                          setDialogState(
+                                            () => aiLoading = false,
+                                          );
+                                        }
+                                      }
+                                    },
+                                  );
+                                },
+                              ),
                       ),
                       const SizedBox(height: 12),
                       Container(
@@ -265,6 +427,7 @@ class _NotesScreenState extends State<NotesScreen> {
                                     ? HugeIcons.strokeRoundedPin
                                     : HugeIcons.strokeRoundedPinOff,
                                 size: 22,
+                                strokeWidth: 2.4,
                                 color: pinned
                                     ? AppColors.primary
                                     : AppColors.onSurface,
@@ -285,6 +448,7 @@ class _NotesScreenState extends State<NotesScreen> {
                                       ? HugeIcons.strokeRoundedNote
                                       : HugeIcons.strokeRoundedCheckList,
                                   size: 22,
+                                  strokeWidth: 2.4,
                                 ),
                                 onPressed: () => setDialogState(() {
                                   noteType = isChecklist ? 'text' : 'checklist';
@@ -305,20 +469,24 @@ class _NotesScreenState extends State<NotesScreen> {
                             if (note != null)
                               _EditorActionButton(
                                 icon: const HugeIcon(
-                                  icon: HugeIcons.strokeRoundedTrash,
+                                  icon: HugeIcons.strokeRoundedDelete03,
                                   size: 22,
                                   color: Colors.redAccent,
+                                  strokeWidth: 2.3,
                                 ),
                                 onPressed: () {
-                                  trashed = true;
+                                  deleteRequested = true;
                                   Navigator.pop(dialogContext, true);
                                 },
                               ),
+
                             const Spacer(),
                             dialog_buttons.PrimaryButton(
                               label: 'Done',
                               height: 42,
-                              width: 108,
+                              width: 120,
+                              padding: EdgeInsets.symmetric(vertical: 10),
+                              textStyle: TextStyle(fontSize: 15),
                               borderRadius: BorderRadius.circular(12),
                               onPressed: () =>
                                   Navigator.pop(dialogContext, true),
@@ -336,6 +504,15 @@ class _NotesScreenState extends State<NotesScreen> {
       );
 
       if (saved != true || !mounted) return;
+      if (deleteRequested && note != null) {
+        _removeLocalNote(note.id);
+        unawaited(
+          _notesService.deleteNote(note.id).catchError((error) {
+            debugPrint('Background note delete failed: $error');
+          }),
+        );
+        return;
+      }
       final cleanedChecklist = checklist
           .map(
             (item) => FirebaseChecklistItem(
@@ -355,30 +532,36 @@ class _NotesScreenState extends State<NotesScreen> {
                 ? '${contentTitle.substring(0, 72).trim()}…'
                 : contentTitle);
       if (note == null) {
-        await _notesService.createNote(
+        final localNote = FirebaseNote(
+          id: 'local_${DateTime.now().microsecondsSinceEpoch}',
           title: generatedTitle,
           content: contentController.text,
           noteType: noteType,
           checklist: cleanedChecklist,
           colorValue: colorValue,
           pinned: pinned,
-          archived: archived,
-          trashed: trashed,
+          archived: false,
+          trashed: false,
+          labels: const <String>[],
+          order: DateTime.now().microsecondsSinceEpoch,
+          updatedAt: DateTime.now(),
         );
+        _replaceLocalNote(localNote);
+        _syncNote(localNote, create: true);
       } else {
-        await _notesService.updateNote(
-          noteId: note.id,
+        final localNote = note.copyWith(
           title: generatedTitle,
           content: contentController.text,
           noteType: noteType,
           checklist: cleanedChecklist,
           colorValue: colorValue,
           pinned: pinned,
-          archived: archived,
-          trashed: trashed,
-          labels: note.labels,
-          order: note.order,
+          archived: false,
+          trashed: false,
+          updatedAt: DateTime.now(),
         );
+        _replaceLocalNote(localNote);
+        _syncNote(localNote, create: false);
       }
     } catch (error) {
       if (mounted) showAppSnackBar(context, 'Could not save note: $error');
@@ -400,11 +583,8 @@ class _NotesScreenState extends State<NotesScreen> {
               note.checklist.any((item) => item.text.trim().isNotEmpty);
           if (!hasContent) return false;
           final sectionMatches = switch (_section) {
-            _NotesSection.notes => !note.archived && !note.trashed,
-            _NotesSection.pinned =>
-              note.pinned && !note.archived && !note.trashed,
-            _NotesSection.archive => note.archived && !note.trashed,
-            _NotesSection.trash => note.trashed,
+            _NotesSection.notes => true,
+            _NotesSection.pinned => note.pinned,
           };
           if (!sectionMatches) return false;
           if (_query.isEmpty) return true;
@@ -471,7 +651,9 @@ class _NotesScreenState extends State<NotesScreen> {
     }
 
     // Keep a small safety margin for font fallback and platform text metrics.
-    return math.max(56, contentHeight + verticalPadding + 12);
+    // Formatted spans can be a little taller than TextPainter's baseline
+    // metrics on some platforms. Leave room for font fallback and rounding.
+    return math.max(56, contentHeight + verticalPadding + 48);
   }
 
   List<FirebaseNote> _applyLocalOrder(List<FirebaseNote> notes) {
@@ -511,13 +693,25 @@ class _NotesScreenState extends State<NotesScreen> {
     reordered.insert(destination, moved);
     final order = reordered.map((note) => note.id).toList(growable: false);
 
-    setState(() => _localOrderIds = order);
-    try {
-      await _notesService.updateNoteOrder(order);
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _localOrderIds = notes.map((note) => note.id).toList());
-      showAppSnackBar(context, 'Could not save note order: $error');
+    final now = DateTime.now();
+    final updatedById = <String, FirebaseNote>{
+      for (var index = 0; index < reordered.length; index++)
+        reordered[index].id: reordered[index].copyWith(
+          order: reordered.length - index,
+          updatedAt: now,
+        ),
+    };
+    final localNotes = _localNotes
+        .map((note) => updatedById[note.id] ?? note)
+        .toList(growable: false);
+    setState(() {
+      _localOrderIds = order;
+      _localNotes = localNotes;
+    });
+    final uid = _user?.uid;
+    if (uid != null) unawaited(LocalNotesStore.instance.save(uid, localNotes));
+    for (final note in updatedById.values) {
+      _syncNote(note, create: note.id.startsWith('local_'));
     }
   }
 
@@ -546,42 +740,63 @@ class _NotesScreenState extends State<NotesScreen> {
             ),
           ],
         ),
+        clipBehavior: Clip.antiAlias,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (isChecklist)
-              ...note.checklist
-                  .take(6)
-                  .map(
-                    (item) => Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: Row(
-                        children: [
-                          Icon(
-                            item.checked
-                                ? Icons.check_box_rounded
-                                : Icons.check_box_outline_blank_rounded,
-                            size: 18,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              item.text,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                decoration: item.checked
-                                    ? TextDecoration.lineThrough
-                                    : null,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  )
-            else
-              _RichNotePreview(value: note.content),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: isChecklist
+                      ? Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: note.checklist
+                              .take(6)
+                              .map(
+                                (item) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 6),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        item.checked
+                                            ? Icons.check_box_rounded
+                                            : Icons
+                                                  .check_box_outline_blank_rounded,
+                                        size: 18,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          item.text,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            decoration: item.checked
+                                                ? TextDecoration.lineThrough
+                                                : null,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                        )
+                      : _RichNotePreview(value: note.content),
+                ),
+                if (note.pinned) ...[
+                  const SizedBox(width: 8),
+                  HugeIcon(
+                    icon: HugeIcons.strokeRoundedPin,
+                    size: 20,
+                    color: AppColors.primary,
+                    strokeWidth: 2.8,
+                  ),
+                ],
+              ],
+            ),
           ],
         ),
       ),
@@ -589,36 +804,21 @@ class _NotesScreenState extends State<NotesScreen> {
   }
 
   Widget _buildNotesTopBar() {
-    return Container(
-      height: 60,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: const BoxDecoration(
-        color: AppColors.card,
-        border: Border(bottom: BorderSide(color: AppColors.borderColor)),
+    return CustomAppBar(
+      title: const Text(
+        'Agenix Notes',
+        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
       ),
-      child: Row(
-        children: [
-          IconButton(
-            tooltip: 'Open calendar',
-            icon: const Icon(Icons.calendar_month_rounded, size: 20),
-            onPressed: () =>
-                Navigator.pushReplacementNamed(context, '/calendar'),
-          ),
-          const Expanded(
-            child: Center(
-              child: Text(
-                'Agenix Notes',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-              ),
-            ),
-          ),
-          IconButton(
-            tooltip: 'Settings',
-            icon: const Icon(Icons.settings_outlined, size: 20),
-            onPressed: () => Navigator.pushNamed(context, '/settings'),
-          ),
-        ],
+      leading: IconButton(
+        tooltip: 'Back',
+        icon: const Icon(Icons.arrow_back_ios_rounded, size: 20),
+        onPressed: () => Navigator.pushReplacementNamed(context, '/calendar'),
       ),
+      actions: [_buildProfileButton()],
+      backgroundColor: AppColors.card,
+      borderColor: AppColors.borderColor,
+      showBottomBorder: true,
+      centerTitle: true,
     );
   }
 
@@ -734,12 +934,10 @@ class _NotesScreenState extends State<NotesScreen> {
           ),
           onPressed: () {
             setState(() => _isFabExpanded = false);
-            Navigator.pushReplacement(
+            Navigator.pushReplacementNamed(
               context,
-              MaterialPageRoute<void>(
-                builder: (_) =>
-                    const CalendarDayViewScreen(autoOpenCreateEvent: true),
-              ),
+              '/calendar',
+              arguments: true,
             );
           },
         ),
@@ -897,12 +1095,13 @@ class _NotesScreenState extends State<NotesScreen> {
   Widget build(BuildContext context) {
     if (widget.editorOnly) return const SizedBox(width: 1, height: 1);
     final user = _user;
+    final isWindows = Theme.of(context).platform == TargetPlatform.windows;
     return Scaffold(
       backgroundColor: AppColors.background,
       floatingActionButton: _buildExpandableFab(),
       body: Column(
         children: [
-          _buildNotesTopBar(),
+          if (!isWindows) _buildNotesTopBar(),
           Expanded(
             child: user == null
                 ? const Center(child: Text('Sign in to view your notes.'))
@@ -910,17 +1109,15 @@ class _NotesScreenState extends State<NotesScreen> {
                     stream: _notesStream!,
                     builder: (context, snapshot) {
                       if (snapshot.hasError) {
-                        return Center(
-                          child: Text(
-                            'Could not load notes: ${snapshot.error}',
-                          ),
+                        return _buildSimpleNotesContent(
+                          context,
+                          _applyLocalOrder(_filterNotes(_localNotes)),
                         );
                       }
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
+                      final remoteNotes =
+                          snapshot.data ?? const <FirebaseNote>[];
                       final notes = _applyLocalOrder(
-                        _filterNotes(snapshot.data ?? const <FirebaseNote>[]),
+                        _filterNotes(_mergeLocalNotes(remoteNotes)),
                       );
                       return _buildSimpleNotesContent(context, notes);
                       /* return LayoutBuilder(
@@ -956,16 +1153,6 @@ class _NotesScreenState extends State<NotesScreen> {
                                           icon: Icons.push_pin_outlined,
                                           label: 'Pinned',
                                           value: _NotesSection.pinned,
-                                        ),
-                                        _sectionButton(
-                                          icon: Icons.archive_outlined,
-                                          label: 'Archive',
-                                          value: _NotesSection.archive,
-                                        ),
-                                        _sectionButton(
-                                          icon: Icons.delete_outline_rounded,
-                                          label: 'Trash',
-                                          value: _NotesSection.trash,
                                         ),
                                       ],
                                     ),
@@ -1452,6 +1639,8 @@ class _RichNotePreview extends StatelessWidget {
     if (lines == null) {
       return Text(
         plainDescriptionText(value).trim(),
+        softWrap: true,
+        overflow: TextOverflow.clip,
         style: const TextStyle(fontSize: 16, height: 1.42),
       );
     }
@@ -1484,6 +1673,9 @@ class _RichNotePreview extends StatelessWidget {
                         style: const TextStyle(fontSize: 16, height: 1.42),
                         children: line.spans,
                       ),
+                      softWrap: true,
+                      overflow: TextOverflow.clip,
+                      textWidthBasis: TextWidthBasis.parent,
                     ),
                   ),
                 ],

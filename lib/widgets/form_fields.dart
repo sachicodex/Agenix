@@ -247,7 +247,6 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
   final _focusNode = FocusNode();
   late final QuillController _quillController;
   bool _syncingExternalText = false;
-  double _editorFontSize = 16;
 
   @override
   void initState() {
@@ -799,10 +798,7 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
   QuillEditorConfig _editorConfig() {
     final defaultStyles = DefaultStyles.getInstance(context);
     final paragraphStyle = defaultStyles.paragraph?.copyWith(
-      style: defaultStyles.paragraph!.style.copyWith(
-        fontSize: _editorFontSize,
-        height: 1.25,
-      ),
+      style: defaultStyles.paragraph!.style.copyWith(height: 1.25),
     );
     return QuillEditorConfig(
       autoFocus: false,
@@ -1019,7 +1015,6 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
       nextSize.toString(),
     );
     if (attribute == null) return;
-    setState(() => _editorFontSize = nextSize);
     _quillController.formatSelection(attribute);
     _focusNode.requestFocus();
   }
@@ -1072,7 +1067,6 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
         const SizedBox(width: 4),
         _formatButton(Icons.link, _addLink),
         if (!isMobile) const Spacer(),
-        _formatButton(Icons.keyboard_arrow_up, _toggleExpanded),
         if (widget.onAIClick != null)
           IconButton(
             onPressed: widget.aiLoading ? null : widget.onAIClick,

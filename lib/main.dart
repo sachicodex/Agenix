@@ -22,7 +22,39 @@ import 'services/google_calendar_service.dart';
 import 'services/settings_sync_coordinator.dart';
 import 'services/system_tray_service.dart';
 import 'theme/app_theme.dart';
+import 'widgets/modern_splash_screen.dart';
 import 'widgets/windows_title_bar.dart';
+
+class _NavigationSplash extends StatefulWidget {
+  const _NavigationSplash({required this.page, required this.settings});
+
+  final Widget page;
+  final RouteSettings settings;
+
+  @override
+  State<_NavigationSplash> createState() => _NavigationSplashState();
+}
+
+class _NavigationSplashState extends State<_NavigationSplash> {
+  @override
+  void initState() {
+    super.initState();
+    Future<void>.delayed(const Duration(seconds: 3), () {
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        PageRouteBuilder<void>(
+          settings: widget.settings,
+          transitionDuration: Duration.zero,
+          reverseTransitionDuration: Duration.zero,
+          pageBuilder: (context, animation, secondaryAnimation) => widget.page,
+        ),
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => const ModernSplashScreen();
+}
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -114,11 +146,21 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
     scrollBehavior: const MaterialScrollBehavior().copyWith(scrollbars: false),
     home: const AuthWrapper(),
     navigatorObservers: [appRouteObserver],
-    routes: {
-      SyncFeedbackScreen.routeName: (_) => const SyncFeedbackScreen(),
-      SettingsScreen.routeName: (_) => const SettingsScreen(),
-      '/calendar': (_) => const CalendarDayViewScreen(),
-      NotesScreen.routeName: (_) => const NotesScreen(),
+    onGenerateRoute: (settings) {
+      final Widget? page = switch (settings.name) {
+        SyncFeedbackScreen.routeName => const SyncFeedbackScreen(),
+        SettingsScreen.routeName => const SettingsScreen(),
+        '/calendar' => CalendarDayViewScreen(
+          autoOpenCreateEvent: settings.arguments == true,
+        ),
+        NotesScreen.routeName => const NotesScreen(),
+        _ => null,
+      };
+      if (page == null) return null;
+      return MaterialPageRoute<void>(
+        settings: settings,
+        builder: (_) => _NavigationSplash(page: page, settings: settings),
+      );
     },
   );
 }

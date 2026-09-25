@@ -1134,9 +1134,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
 
   Widget _buildAppPreferencesSection() {
     final children = <Widget>[];
-    if (_signedIn) {
+    if (_signedIn && !Platform.isWindows) {
       children.add(_buildNotesNavigationRow());
       children.add(const SizedBox(height: 18));
+    }
+    if (_signedIn) {
       children.add(_buildCalendarContent());
     }
     if (_signedIn && Platform.isWindows) {

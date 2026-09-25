@@ -32,6 +32,85 @@ class FirebaseNote {
   final bool trashed;
   final List<String> labels;
 
+  FirebaseNote copyWith({
+    String? id,
+    String? title,
+    String? content,
+    DateTime? updatedAt,
+    int? order,
+    String? noteType,
+    List<FirebaseChecklistItem>? checklist,
+    int? colorValue,
+    bool? pinned,
+    bool? archived,
+    bool? trashed,
+    List<String>? labels,
+  }) {
+    return FirebaseNote(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      content: content ?? this.content,
+      updatedAt: updatedAt ?? this.updatedAt,
+      order: order ?? this.order,
+      noteType: noteType ?? this.noteType,
+      checklist: checklist ?? this.checklist,
+      colorValue: colorValue ?? this.colorValue,
+      pinned: pinned ?? this.pinned,
+      archived: archived ?? this.archived,
+      trashed: trashed ?? this.trashed,
+      labels: labels ?? this.labels,
+    );
+  }
+
+  Map<String, dynamic> toLocalMap() => {
+    'id': id,
+    'title': title,
+    'content': content,
+    'updatedAt': updatedAt?.toIso8601String(),
+    'order': order,
+    'noteType': noteType,
+    'checklist': checklist
+        .map((item) => {'text': item.text, 'checked': item.checked})
+        .toList(growable: false),
+    'colorValue': colorValue,
+    'pinned': pinned,
+    'archived': archived,
+    'trashed': trashed,
+    'labels': labels,
+  };
+
+  factory FirebaseNote.fromLocalMap(Map<String, dynamic> data) {
+    final rawChecklist = data['checklist'];
+    return FirebaseNote(
+      id: data['id'] as String? ?? '',
+      title: data['title'] as String? ?? 'Untitled note',
+      content: data['content'] as String? ?? '',
+      updatedAt: DateTime.tryParse(data['updatedAt'] as String? ?? ''),
+      order: data['order'] is int ? data['order'] as int : 0,
+      noteType: data['noteType'] as String? ?? 'text',
+      checklist: rawChecklist is List
+          ? rawChecklist
+                .whereType<Map>()
+                .map(
+                  (item) => FirebaseChecklistItem(
+                    text: item['text'] as String? ?? '',
+                    checked: item['checked'] == true,
+                  ),
+                )
+                .toList(growable: false)
+          : const <FirebaseChecklistItem>[],
+      colorValue: data['colorValue'] is int
+          ? data['colorValue'] as int
+          : 0xFF1A1A1A,
+      pinned: data['pinned'] == true,
+      archived: data['archived'] == true,
+      trashed: data['trashed'] == true,
+      labels: data['labels'] is List
+          ? (data['labels'] as List).whereType<String>().toList(growable: false)
+          : const <String>[],
+    );
+  }
+
   factory FirebaseNote.fromDocument(
     DocumentSnapshot<Map<String, dynamic>> document,
   ) {
@@ -107,6 +186,7 @@ class FirebaseNotesService {
   }
 
   Future<void> createNote({
+    String? noteId,
     required String title,
     required String content,
     String noteType = 'text',
@@ -125,7 +205,7 @@ class FirebaseNotesService {
     }
 
     final firestore = _firestore ?? FirebaseFirestore.instance;
-    await firestore.collection(_collection).add({
+    final data = {
       'uid': user.uid,
       'title': title.trim(),
       'content': content.trim(),
@@ -141,7 +221,12 @@ class FirebaseNotesService {
       'order': order ?? DateTime.now().microsecondsSinceEpoch,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
-    });
+    };
+    if (noteId == null || noteId.isEmpty) {
+      await firestore.collection(_collection).add(data);
+    } else {
+      await firestore.collection(_collection).doc(noteId).set(data);
+    }
   }
 
   Future<void> updateNote({

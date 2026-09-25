@@ -41,7 +41,7 @@ class CustomInput extends StatelessWidget {
     ),
     this.hintStyle = const TextStyle(
       fontFamily: 'GoogleSans',
-      color: Color(0x99D4D4D8),
+      color: Color(0xFFa1a1aa),
     ),
     this.labelStyle = const TextStyle(fontFamily: 'GoogleSans'),
     this.enabled = true,

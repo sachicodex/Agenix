@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../navigation/app_navigator.dart';
+import '../navigation/app_route_observer.dart';
 import '../screens/settings_screen.dart';
 import '../services/google_calendar_service.dart';
 import 'app_animations.dart';
@@ -127,6 +128,35 @@ class _WindowsTitleBarState extends State<_WindowsTitleBar>
     await _loadUserProfile();
   }
 
+  Widget _buildScreenToggle() {
+    return AnimatedBuilder(
+      animation: appRouteObserver,
+      builder: (context, child) {
+        final routeName = appRouteObserver.currentRouteName;
+        // Day View is initially rendered by AuthWrapper as the app home, so
+        // it has no named route yet. Treat that unnamed home route as Day
+        // View for the Windows screen toggle.
+        final isCalendar =
+            routeName == '/calendar' || routeName == '/' || routeName == null;
+        final isNotes = routeName == '/notes';
+        if (!isCalendar && !isNotes) return const SizedBox.shrink();
+
+        return _TitleBarButton(
+          icon: isCalendar
+              ? Icons.note_outlined
+              : Icons.calendar_month_outlined,
+          onPressed: () async {
+            final navigator = appNavigatorKey.currentState;
+            if (navigator == null) return;
+            await navigator.pushReplacementNamed(
+              isCalendar ? '/notes' : '/calendar',
+            );
+          },
+        );
+      },
+    );
+  }
+
   Widget _buildProfileButton() {
     ImageProvider<Object>? imageProvider;
     final photoUrl = _userPhotoUrl;
@@ -237,6 +267,8 @@ class _WindowsTitleBarState extends State<_WindowsTitleBar>
                     ),
                   ),
                   const SizedBox(width: 10),
+                  _buildScreenToggle(),
+                  const SizedBox(width: 8),
                   _buildProfileButton(),
                 ],
               ),

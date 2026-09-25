@@ -2920,7 +2920,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
             icon: HugeIcon(
               icon: HugeIcons.strokeRoundedAdd01,
               size: 20,
-              strokeWidth: 2.8,
+              strokeWidth: 2.5,
             ),
             label: 'Create',
             onTap: _handleSidebarAddEvent,
