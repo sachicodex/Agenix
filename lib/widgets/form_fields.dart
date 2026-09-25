@@ -42,6 +42,14 @@ class _AddLinkIntent extends Intent {
   const _AddLinkIntent();
 }
 
+class _IncreaseFontSizeIntent extends Intent {
+  const _IncreaseFontSizeIntent();
+}
+
+class _DecreaseFontSizeIntent extends Intent {
+  const _DecreaseFontSizeIntent();
+}
+
 class LargeTextField extends StatelessWidget {
   static final ValueNotifier<bool> _unfocused = ValueNotifier<bool>(false);
   final TextEditingController? controller;
@@ -213,6 +221,8 @@ class ExpandableDescription extends StatefulWidget {
   final bool aiLoading;
   final ValueChanged<bool>? onExpansionChanged;
   final Color backgroundColor;
+  final bool initiallyExpanded;
+  final double editorHeight;
 
   const ExpandableDescription({
     super.key,
@@ -224,6 +234,8 @@ class ExpandableDescription extends StatefulWidget {
     this.aiLoading = false,
     this.onExpansionChanged,
     this.backgroundColor = Colors.transparent,
+    this.initiallyExpanded = false,
+    this.editorHeight = 180,
   });
 
   @override
@@ -231,14 +243,16 @@ class ExpandableDescription extends StatefulWidget {
 }
 
 class _ExpandableDescriptionState extends State<ExpandableDescription> {
-  bool _isExpanded = false;
+  late bool _isExpanded;
   final _focusNode = FocusNode();
   late final QuillController _quillController;
   bool _syncingExternalText = false;
+  double _editorFontSize = 16;
 
   @override
   void initState() {
     super.initState();
+    _isExpanded = widget.initiallyExpanded;
     _quillController = QuillController(
       document: _documentFromStoredText(widget.controller?.text ?? ''),
       selection: const TextSelection.collapsed(offset: 0),
@@ -664,21 +678,6 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
     return null;
   }
 
-  void _clearFormatting() {
-    for (final Attribute attribute in <Attribute>[
-      Attribute.bold,
-      Attribute.italic,
-      Attribute.underline,
-      Attribute.strikeThrough,
-      Attribute.link,
-      Attribute.color,
-      Attribute.background,
-    ]) {
-      _quillController.formatSelection(Attribute.clone(attribute, null));
-    }
-    _focusNode.requestFocus();
-  }
-
   Future<void> _addLink() async {
     final selection = _quillController.selection;
     final selectedText = selection.isValid && !selection.isCollapsed
@@ -799,6 +798,12 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
 
   QuillEditorConfig _editorConfig() {
     final defaultStyles = DefaultStyles.getInstance(context);
+    final paragraphStyle = defaultStyles.paragraph?.copyWith(
+      style: defaultStyles.paragraph!.style.copyWith(
+        fontSize: _editorFontSize,
+        height: 1.25,
+      ),
+    );
     return QuillEditorConfig(
       autoFocus: false,
       padding: const EdgeInsets.all(16),
@@ -807,6 +812,7 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
       placeholder: null,
       customStyles: defaultStyles.merge(
         DefaultStyles(
+          paragraph: paragraphStyle,
           link: defaultStyles.link?.copyWith(decoration: TextDecoration.none),
         ),
       ),
@@ -856,6 +862,17 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
         ): const _ToggleNumberListIntent(),
         const SingleActivator(LogicalKeyboardKey.keyL, control: true):
             const _AddLinkIntent(),
+        const SingleActivator(
+          LogicalKeyboardKey.equal,
+          control: true,
+          shift: true,
+        ): const _IncreaseFontSizeIntent(),
+        const SingleActivator(LogicalKeyboardKey.numpadAdd, control: true):
+            const _IncreaseFontSizeIntent(),
+        const SingleActivator(LogicalKeyboardKey.minus, control: true):
+            const _DecreaseFontSizeIntent(),
+        const SingleActivator(LogicalKeyboardKey.numpadSubtract, control: true):
+            const _DecreaseFontSizeIntent(),
         const SingleActivator(LogicalKeyboardKey.keyK, control: true):
             const _IgnoreEditorShortcutIntent(),
         const SingleActivator(
@@ -888,6 +905,18 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
         _AddLinkIntent: CallbackAction<_AddLinkIntent>(
           onInvoke: (_) {
             _addLink();
+            return null;
+          },
+        ),
+        _IncreaseFontSizeIntent: CallbackAction<_IncreaseFontSizeIntent>(
+          onInvoke: (_) {
+            _changeFontSize(2);
+            return null;
+          },
+        ),
+        _DecreaseFontSizeIntent: CallbackAction<_DecreaseFontSizeIntent>(
+          onInvoke: (_) {
+            _changeFontSize(-2);
             return null;
           },
         ),
@@ -971,6 +1000,30 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
     );
   }
 
+  void _changeFontSize(double delta) {
+    final value = _quillController
+        .getSelectionStyle()
+        .attributes[Attribute.size.key]
+        ?.value;
+    final currentSize = switch (value) {
+      'small' => 14.0,
+      'large' => 18.0,
+      'huge' => 24.0,
+      num size => size.toDouble(),
+      String size => double.tryParse(size) ?? 16.0,
+      _ => 16.0,
+    };
+    final nextSize = (currentSize + delta).clamp(10.0, 48.0).toDouble();
+    final attribute = Attribute.fromKeyValue(
+      Attribute.size.key,
+      nextSize.toString(),
+    );
+    if (attribute == null) return;
+    setState(() => _editorFontSize = nextSize);
+    _quillController.formatSelection(attribute);
+    _focusNode.requestFocus();
+  }
+
   Widget _formattingToolbar() {
     final selectionStyle = _quillController.getSelectionStyle();
     final attributes = selectionStyle.attributes;
@@ -981,6 +1034,11 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
     final toolbar = Row(
       mainAxisSize: isMobile ? MainAxisSize.min : MainAxisSize.max,
       children: [
+        _formatButton(Icons.text_increase_rounded, () => _changeFontSize(2)),
+        _formatButton(Icons.text_decrease_rounded, () => _changeFontSize(-2)),
+        const SizedBox(width: 4),
+        Container(width: 1, height: 22, color: AppColors.glassBorder),
+        const SizedBox(width: 4),
         _formatButton(
           Icons.format_bold,
           () => _format(Attribute.bold),
@@ -1013,7 +1071,6 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
         Container(width: 1, height: 22, color: AppColors.glassBorder),
         const SizedBox(width: 4),
         _formatButton(Icons.link, _addLink),
-        if (!isMobile) _formatButton(Icons.format_clear, _clearFormatting),
         if (!isMobile) const Spacer(),
         _formatButton(Icons.keyboard_arrow_up, _toggleExpanded),
         if (widget.onAIClick != null)
@@ -1116,7 +1173,7 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
                 children: [
                   _formattingToolbar(),
                   SizedBox(
-                    height: 180,
+                    height: widget.editorHeight,
                     child: QuillEditor.basic(
                       controller: _quillController,
                       focusNode: _focusNode,

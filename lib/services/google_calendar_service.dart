@@ -51,6 +51,10 @@ class _DesktopTokenRefreshException implements Exception {
 }
 
 class GoogleCalendarService {
+  /// Scopes used by the regular Agenix sign-in flow.
+  static const List<String> _googleScopes = <String>[
+    calendar.CalendarApi.calendarScope,
+  ];
   static bool _isHiddenCalendar(Map<String, dynamic> calendar) {
     final id = (calendar['id'] as String? ?? '').toLowerCase();
     final name = (calendar['name'] as String? ?? '').trim().toLowerCase();
@@ -114,9 +118,7 @@ class GoogleCalendarService {
   /// Returns a map with displayName, email and photoUrl if available.
   Future<Map<String, String?>> getAccountDetails() async {
     if (Platform.isAndroid || Platform.isIOS) {
-      _googleSignIn ??= GoogleSignIn(
-        scopes: [calendar.CalendarApi.calendarScope],
-      );
+      _googleSignIn ??= GoogleSignIn(scopes: _googleScopes);
       try {
         final acc = await _googleSignIn!.signInSilently();
         if (acc == null) {
@@ -389,9 +391,7 @@ class GoogleCalendarService {
   Future<void> _initializeInternal() async {
     if (Platform.isAndroid || Platform.isIOS) {
       // For Android/iOS, google_sign_in handles persistence automatically
-      _googleSignIn ??= GoogleSignIn(
-        scopes: [calendar.CalendarApi.calendarScope],
-      );
+      _googleSignIn ??= GoogleSignIn(scopes: _googleScopes);
       // Try silent sign-in to restore session
       try {
         final account = await _googleSignIn!.signInSilently();
@@ -478,7 +478,7 @@ class GoogleCalendarService {
         _storedCredentials = auth_io.AccessCredentials(
           token,
           refreshToken,
-          scopes.isNotEmpty ? scopes : [calendar.CalendarApi.calendarScope],
+          scopes.isNotEmpty ? scopes : _googleScopes,
         );
         _authClient = auth_io.authenticatedClient(
           http.Client(),
@@ -539,9 +539,7 @@ class GoogleCalendarService {
     String? userPhotoUrl,
     String? idToken,
   }) async {
-    final resolvedScopes = scopes.isNotEmpty
-        ? scopes
-        : [calendar.CalendarApi.calendarScope];
+    final resolvedScopes = scopes.isNotEmpty ? scopes : _googleScopes;
 
     if (accessToken != null && accessToken.isNotEmpty && tokenExpiry != null) {
       final token = auth_io.AccessToken('Bearer', accessToken, tokenExpiry);
@@ -604,7 +602,7 @@ class GoogleCalendarService {
       _storedCredentials = auth_io.AccessCredentials(
         token,
         newRefreshToken,
-        scopes.isNotEmpty ? scopes : [calendar.CalendarApi.calendarScope],
+        scopes.isNotEmpty ? scopes : _googleScopes,
       );
 
       _authClient = auth_io.authenticatedClient(
@@ -721,9 +719,7 @@ class GoogleCalendarService {
   /// This should be called before showing any sign-in UI to avoid bad UX.
   Future<bool> trySilentSignIn() async {
     if (Platform.isAndroid || Platform.isIOS) {
-      _googleSignIn ??= GoogleSignIn(
-        scopes: [calendar.CalendarApi.calendarScope],
-      );
+      _googleSignIn ??= GoogleSignIn(scopes: _googleScopes);
       try {
         final account = await _googleSignIn!.signInSilently();
         if (account != null) {
@@ -748,9 +744,7 @@ class GoogleCalendarService {
     }
 
     if (Platform.isAndroid || Platform.isIOS) {
-      _googleSignIn ??= GoogleSignIn(
-        scopes: [calendar.CalendarApi.calendarScope],
-      );
+      _googleSignIn ??= GoogleSignIn(scopes: _googleScopes);
       return await _googleSignIn!.isSignedIn();
     }
 
@@ -781,9 +775,7 @@ class GoogleCalendarService {
     final alreadySignedIn = await isSignedIn();
     if (alreadySignedIn) {
       if (Platform.isAndroid || Platform.isIOS) {
-        _googleSignIn ??= GoogleSignIn(
-          scopes: [calendar.CalendarApi.calendarScope],
-        );
+        _googleSignIn ??= GoogleSignIn(scopes: _googleScopes);
         try {
           final account = await _googleSignIn!.signInSilently();
           if (account != null) {
@@ -802,9 +794,7 @@ class GoogleCalendarService {
     }
 
     if (Platform.isAndroid || Platform.isIOS) {
-      _googleSignIn ??= GoogleSignIn(
-        scopes: [calendar.CalendarApi.calendarScope],
-      );
+      _googleSignIn ??= GoogleSignIn(scopes: _googleScopes);
       final account = await _googleSignIn!.signIn();
       if (account == null) throw Exception('Sign in aborted by user');
       await _ensureFirebaseSignedIn(account);
@@ -1014,9 +1004,7 @@ class GoogleCalendarService {
   /// closed by callers when appropriate.
   Future<http.Client> _getAuthenticatedClient() async {
     if (Platform.isAndroid || Platform.isIOS) {
-      _googleSignIn ??= GoogleSignIn(
-        scopes: [calendar.CalendarApi.calendarScope],
-      );
+      _googleSignIn ??= GoogleSignIn(scopes: _googleScopes);
 
       final silent = await _googleSignIn!.signInSilently();
       if (silent == null && !_allowInteractiveSignIn) {
@@ -1722,9 +1710,7 @@ class GoogleCalendarService {
     }
 
     if (Platform.isAndroid || Platform.isIOS) {
-      _googleSignIn ??= GoogleSignIn(
-        scopes: [calendar.CalendarApi.calendarScope],
-      );
+      _googleSignIn ??= GoogleSignIn(scopes: _googleScopes);
       try {
         final account =
             await _googleSignIn!.signInSilently() ??
@@ -1774,9 +1760,7 @@ class GoogleCalendarService {
     }
 
     if (Platform.isAndroid || Platform.isIOS) {
-      _googleSignIn ??= GoogleSignIn(
-        scopes: [calendar.CalendarApi.calendarScope],
-      );
+      _googleSignIn ??= GoogleSignIn(scopes: _googleScopes);
       try {
         final account = await _googleSignIn!.signInSilently();
         if (account != null) {
@@ -2069,9 +2053,7 @@ class GoogleCalendarService {
   /// Return a human-readable account label when available (displayName or email).
   Future<String?> getAccountDisplayName() async {
     if (Platform.isAndroid || Platform.isIOS) {
-      _googleSignIn ??= GoogleSignIn(
-        scopes: [calendar.CalendarApi.calendarScope],
-      );
+      _googleSignIn ??= GoogleSignIn(scopes: _googleScopes);
       final acc = await _googleSignIn!.signInSilently();
       return acc?.displayName ?? acc?.email;
     }
@@ -2372,9 +2354,9 @@ class GoogleCalendarService {
         ),
         primaryButton: dialog_buttons.PrimaryButton(
           label: 'Submit',
-          onPressed: () => Navigator.of(ctx).pop(
-            controller.text.trim().isEmpty ? null : controller.text.trim(),
-          ),
+          onPressed: () => Navigator.of(
+            ctx,
+          ).pop(controller.text.trim().isEmpty ? null : controller.text.trim()),
         ),
       ),
     );

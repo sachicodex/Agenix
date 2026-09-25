@@ -13,6 +13,7 @@ import 'navigation/app_route_observer.dart';
 import 'providers/event_providers.dart';
 import 'screens/auth_wrapper.dart';
 import 'screens/calendar_day_view_screen.dart';
+import 'screens/notes_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/sync_feedback_screen.dart';
 import 'services/background_event_sync.dart';
@@ -117,6 +118,7 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
       SyncFeedbackScreen.routeName: (_) => const SyncFeedbackScreen(),
       SettingsScreen.routeName: (_) => const SettingsScreen(),
       '/calendar': (_) => const CalendarDayViewScreen(),
+      NotesScreen.routeName: (_) => const NotesScreen(),
     },
   );
 }

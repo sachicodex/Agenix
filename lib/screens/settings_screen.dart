@@ -1135,6 +1135,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   Widget _buildAppPreferencesSection() {
     final children = <Widget>[];
     if (_signedIn) {
+      children.add(_buildNotesNavigationRow());
+      children.add(const SizedBox(height: 18));
       children.add(_buildCalendarContent());
     }
     if (_signedIn && Platform.isWindows) {
@@ -1148,6 +1150,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       title: 'App Preferences',
       icon: AppIconData.huge(HugeIcons.strokeRoundedSettings01),
       children: children,
+    );
+  }
+
+  Widget _buildNotesNavigationRow() {
+    return _buildSettingRow(
+      title: 'Agenix Notes',
+      subtitle: 'View and manage your saved notes.',
+      trailing: IconButton(
+        tooltip: 'Open notes',
+        icon: const Icon(Icons.arrow_forward_ios_rounded, size: 18),
+        onPressed: () => Navigator.of(context).pushNamed('/notes'),
+      ),
     );
   }
 

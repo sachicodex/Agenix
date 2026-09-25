@@ -29,7 +29,9 @@ import '../widgets/timeline_hour_ruler.dart';
 import '../widgets/timeline_zoom_viewport.dart';
 import '../widgets/form_fields.dart';
 import '../widgets/Glass Card/glass_carrd.dart';
+import '../widgets/expandable_action_fab.dart';
 import 'settings_screen.dart';
+import 'notes_screen.dart';
 
 class _NoStretchScrollBehavior extends MaterialScrollBehavior {
   const _NoStretchScrollBehavior();
@@ -197,8 +199,14 @@ enum _EventSearchRange { day, week, month, weekAfter, forever }
 class CalendarDayViewScreen extends ConsumerStatefulWidget {
   final VoidCallback? onSignOut;
   final VoidCallback? onInitialReady;
+  final bool autoOpenCreateEvent;
 
-  const CalendarDayViewScreen({super.key, this.onSignOut, this.onInitialReady});
+  const CalendarDayViewScreen({
+    super.key,
+    this.onSignOut,
+    this.onInitialReady,
+    this.autoOpenCreateEvent = false,
+  });
 
   @override
   ConsumerState<CalendarDayViewScreen> createState() =>
@@ -251,6 +259,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
   final bool _keyboardShortcutsEnabled = true;
   bool _isLoading = true;
   bool _hasLoadedEventsOnce = false;
+  bool _isFabExpanded = false;
   bool _isSyncing = false;
   bool _isUserTriggeredSyncActive = false;
   DateTime? _loadingStartedAt;
@@ -381,6 +390,11 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     );
 
     _initialize();
+    if (widget.autoOpenCreateEvent) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_showCreateEventModal());
+      });
+    }
     _syncStatusSub = ref.listenManual<AsyncValue<SyncStatus>>(
       syncStatusProvider,
       (previous, next) {
@@ -1574,6 +1588,147 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
     await _handleDateChange(selectedDate);
   }
 
+  Widget _buildExpandableFab() {
+    return ExpandableActionFab(
+      expanded: _isFabExpanded,
+      onToggle: () => setState(() => _isFabExpanded = !_isFabExpanded),
+      actions: [
+        ExpandableFabAction(
+          icon: const HugeIcon(icon: HugeIcons.strokeRoundedNote, size: 26),
+          onPressed: () {
+            setState(() => _isFabExpanded = false);
+            unawaited(_showCreateNoteDialog());
+          },
+        ),
+        ExpandableFabAction(
+          icon: const HugeIcon(
+            icon: HugeIcons.strokeRoundedCalendar01,
+            size: 26,
+          ),
+          onPressed: () {
+            setState(() => _isFabExpanded = false);
+            unawaited(_showCreateEventModal());
+          },
+        ),
+      ],
+    );
+    /*
+    Widget actionButton({
+      required Widget icon,
+      String? tooltip,
+      required VoidCallback onPressed,
+      required double bottom,
+    }) {
+      final normalizedIcon = icon is HugeIcon
+          ? HugeIcon(
+              icon: icon.icon,
+              color: icon.color,
+              secondaryColor: icon.secondaryColor,
+              disableSecondaryOpacity: icon.disableSecondaryOpacity,
+              size: 22,
+              strokeWidth: icon.strokeWidth,
+            )
+          : IconTheme.merge(data: const IconThemeData(size: 22), child: icon);
+      final iconContent = tooltip == null
+          ? normalizedIcon
+          : Tooltip(message: tooltip, child: normalizedIcon);
+
+      return AnimatedPositioned(
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        right: 0,
+        bottom: _isFabExpanded ? bottom : 4,
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 150),
+          opacity: _isFabExpanded ? 1 : 0,
+          child: IgnorePointer(
+            ignoring: !_isFabExpanded,
+            child: GlassCard(
+              width: 55,
+              height: 55,
+              padding: EdgeInsets.zero,
+              borderRadius: BorderRadius.circular(15),
+              blurSigma: 22,
+              tintColor: AppColors.card,
+              tintOpacity: 0.16,
+              borderColor: AppColors.glassBorder,
+              borderOpacity: 0.45,
+              borderWidth: 2,
+              boxShadow: const [
+                BoxShadow(
+                  color: Colors.black38,
+                  blurRadius: 18,
+                  offset: Offset(0, 8),
+                ),
+              ],
+              onTap: onPressed,
+              child: Center(child: iconContent),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return SizedBox(
+      width: 130,
+      height: 220,
+      child: Stack(
+        alignment: Alignment.bottomRight,
+        clipBehavior: Clip.none,
+        children: [
+          actionButton(
+            icon: HugeIcon(icon: HugeIcons.strokeRoundedCalendar01),
+            bottom: 134,
+            onPressed: () {
+              setState(() => _isFabExpanded = false);
+              unawaited(_showCreateEventModal());
+            },
+          ),
+          actionButton(
+            icon: HugeIcon(icon: HugeIcons.strokeRoundedNote),
+            bottom: 70,
+            onPressed: () {
+              setState(() => _isFabExpanded = false);
+              unawaited(_showCreateNoteDialog());
+            },
+          ),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(15),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.28),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: SizedBox(
+              width: 55,
+              height: 55,
+              child: FloatingActionButton(
+                backgroundColor: AppColors.primary,
+                foregroundColor: AppColors.onPrimary,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                onPressed: () =>
+                    setState(() => _isFabExpanded = !_isFabExpanded),
+                child: AnimatedRotation(
+                  turns: _isFabExpanded ? 0.125 : 0,
+                  duration: const Duration(milliseconds: 220),
+                  child: const Icon(Icons.add_rounded, size: 30),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    */
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -1594,37 +1749,7 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
               Scaffold(
                 key: _scaffoldKey,
                 backgroundColor: AppColors.background,
-                floatingActionButton: DecoratedBox(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(15),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.28),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: SizedBox(
-                    width: 55,
-                    height: 55,
-                    child: FloatingActionButton(
-                      backgroundColor: AppColors.primary,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(15),
-                      ),
-                      onPressed: () {
-                        unawaited(_showCreateEventModal());
-                      },
-                      child: const Icon(
-                        Icons.add_rounded,
-                        color: AppColors.onPrimary,
-                        size: 30,
-                      ),
-                    ),
-                  ),
-                ),
+                floatingActionButton: _buildExpandableFab(),
                 body: SafeArea(
                   child: Column(
                     children: [
@@ -4603,6 +4728,25 @@ class _CalendarDayViewScreenState extends ConsumerState<CalendarDayViewScreen>
       _pendingCreateStartTime = null;
       _pendingCreateEndTime = null;
     });
+  }
+
+  Future<void> _showCreateNoteDialog() async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      // The note editor creates its own app-standard barrier. This launcher
+      // route must stay transparent so the calendar is not dimmed twice.
+      barrierColor: Colors.transparent,
+      builder: (dialogContext) => NotesScreen(
+        autoOpenComposer: true,
+        editorOnly: true,
+        onComposerClosed: () {
+          if (dialogContext.mounted) {
+            Navigator.of(dialogContext).pop();
+          }
+        },
+      ),
+    );
   }
 
   FocusNode _getEventFocusNode(String eventId) {

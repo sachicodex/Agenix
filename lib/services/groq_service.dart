@@ -141,6 +141,31 @@ Return ONLY the description:
     }
   }
 
+  /// Improves a note while preserving its meaning and useful details.
+  Future<String> optimizeNote(String content) async {
+    if (content.trim().isEmpty) return content;
+
+    final prompt =
+        '''
+You are a personal notes editor.
+
+Rewrite the note below to be clearer, concise, and easier to scan.
+Preserve the original meaning, names, numbers, links, and important details.
+Use short paragraphs or simple bullet lines when that improves readability.
+Do not invent facts or add a title.
+Return only the improved note text.
+
+Note:
+$content
+''';
+
+    try {
+      return _cleanAIResponse(await _callGroqAPI(prompt));
+    } catch (e) {
+      throw Exception('Failed to improve note: $e');
+    }
+  }
+
   /// Call Groq API with the given prompt
   /// Uses Groq API format: https://console.groq.com/docs
   /// Uses llama-3.1-8b-instant model for fast, high-quality text generation

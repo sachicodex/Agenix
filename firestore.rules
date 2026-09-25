@@ -1,8 +1,60 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
     match /user_settings/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Agenix note schema. Checklist items are maps with text and checked.
+    function isValidNote(data) {
+      return data.keys().hasOnly([
+          'uid', 'title', 'content', 'noteType', 'checklist', 'colorValue',
+          'pinned', 'archived', 'trashed', 'labels', 'order', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasAll([
+          'uid', 'title', 'content', 'noteType', 'checklist', 'colorValue',
+          'pinned', 'archived', 'trashed', 'labels', 'order', 'createdAt', 'updatedAt'
+        ])
+        && data.uid is string
+        && data.uid == request.auth.uid
+        && data.title is string
+        && data.title.size() <= 200
+        && data.content is string
+        && data.content.size() <= 20000
+        && data.noteType in ['text', 'checklist']
+        && data.checklist is list
+        && data.checklist.size() <= 200
+        && data.colorValue is int
+        && data.pinned is bool
+        && data.archived is bool
+        && data.trashed is bool
+        && data.labels is list
+        && data.labels.size() <= 20
+        && data.order is int
+        && data.order >= 0
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /user_notes/{noteId} {
+      allow create: if isAuthenticated()
+        && isValidNote(request.resource.data);
+
+      allow read: if isAuthenticated()
+        && resource.data.uid == request.auth.uid;
+
+      allow update: if isAuthenticated()
+        && resource.data.uid == request.auth.uid
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.createdAt == resource.data.createdAt
+        && isValidNote(request.resource.data);
+
+      allow delete: if isAuthenticated()
+        && resource.data.uid == request.auth.uid;
     }
   }
 }
