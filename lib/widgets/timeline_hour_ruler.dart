@@ -9,7 +9,8 @@ class TimelineScale {
 
   /// Minutes between minor grid lines (60 = hour lines only).
   static int subdivisionMinutes(double hourHeight) {
-    if (hourHeight >= 150) return 5;
+    // Keep the 15-minute ruler clean until the user zooms in further.
+    if (hourHeight >= 240) return 5;
     if (hourHeight >= 100) return 15;
     if (hourHeight >= 56) return 30;
     return 60;
@@ -29,6 +30,7 @@ class TimelineScale {
 
   static double subdivisionLineHeight(double hourHeight) {
     final minutes = subdivisionMinutes(hourHeight);
+    if (minutes <= 5) return 0.8;
     if (minutes >= 60) return 1;
     if (minutes <= 15) return 0.5;
     return 0.75;
@@ -37,6 +39,9 @@ class TimelineScale {
   static Color subdivisionLineColor(double hourHeight) {
     if (subdivisionMinutes(hourHeight) >= 60) {
       return AppColors.dividerColor;
+    }
+    if (subdivisionMinutes(hourHeight) <= 5) {
+      return AppColors.dividerColor.withValues(alpha: 0.8);
     }
     return AppColors.dividerColor.withValues(alpha: 0.55);
   }
@@ -48,6 +53,7 @@ class TimelineScale {
   }
 
   static String formatSubdivisionLabel(int hour, int minute) {
+    if (minute % 15 != 0) return '-';
     return minute.toString().padLeft(2, '0');
   }
 
@@ -58,7 +64,7 @@ class TimelineScale {
 
     final subdivision = subdivisionMinutes(hourHeight);
     if (subdivision <= 5) {
-      return minute % 15 == 0;
+      return true;
     }
     return true;
   }

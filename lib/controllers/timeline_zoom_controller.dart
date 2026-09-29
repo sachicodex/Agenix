@@ -23,7 +23,8 @@ class TimelineZoomController {
 
   static const double defaultHourHeight = 60;
   static const double minHourHeightDefault = 30;
-  static const double maxHourHeightDefault = 180;
+  // Allows the timeline to zoom well beyond the 5-minute grid threshold.
+  static const double maxHourHeightDefault = 480;
   static const double wheelZoomSensitivityDefault = 0.0016;
   static const double interpolationSpeedDefault = 18;
   static const int hourCount = 24;

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hugeicons/hugeicons.dart';
 import '../theme/app_colors.dart';
 import 'app_popup.dart';
 import 'Custom Dialog/reusable_dialog.dart';
@@ -15,40 +16,45 @@ Future<DeleteEventChoice> showDeleteEventDialog(
     context: context,
     barrierDismissible: true,
     builder: (context) {
+      if (!isRecurring) {
+        return CustomOneActionDialog(
+          title: 'Delete event?',
+          description: 'Are you sure you want to delete this event?',
+          centerTitle: true,
+          centerContent: true,
+          primaryButton: dialog_buttons.PrimaryButton(
+            label: 'Delete',
+            isDeleteButton: true,
+            onPressed: () =>
+                Navigator.of(context).pop(DeleteEventChoice.thisEvent),
+          ),
+        );
+      }
+
       return CustomTwoActionDialog(
         title: 'Delete Event?',
-        description: isRecurring
-            ? 'This is part of a recurring event. What would you like to delete?'
-            : 'Are you sure you want to delete this event?',
+        description: 'Delete only this event or the entire series?',
         centerTitle: true,
         centerContent: true,
-        showCloseButton: false,
         titleDescriptionSpacing: 5,
-        content: isRecurring
-            ? SecondaryButton(
-                width: double.infinity,
-                label: 'This event only',
-                onPressed: () =>
-                    Navigator.of(context).pop(DeleteEventChoice.thisEvent),
-                backgroundColor: Colors.transparent,
-                borderSide: const BorderSide(color: AppColors.glassBorder),
-              )
-            : null,
         secondaryButton: SecondaryButton(
-          label: 'Cancel',
-          onPressed: () => Navigator.of(context).pop(DeleteEventChoice.cancel),
-          backgroundColor: Colors.transparent,
-          borderSide: const BorderSide(color: AppColors.glassBorder),
+          label: 'This event ',
+          onPressed: () =>
+              Navigator.of(context).pop(DeleteEventChoice.thisEvent),
+          icon: HugeIcon(icon: HugeIcons.strokeRoundedDelete03, size: 18),
+          backgroundColor: const Color(0x1AEF4444),
+          foregroundColor: const Color(0xFFEF4444),
+          borderSide: const BorderSide(color: Color(0xFFEF4444)),
         ),
         primaryButton: dialog_buttons.PrimaryButton(
-          label: isRecurring ? 'All events' : 'Delete',
-          isDeleteButton: true,
-          onPressed: () => Navigator.of(context).pop(
-            isRecurring
-                ? DeleteEventChoice.allEvents
-                : DeleteEventChoice.thisEvent,
-          ),
+          label: 'All events',
+          backgroundColor: Colors.transparent,
+          foregroundColor: const Color(0xFFF4F4F5),
+          borderSide: const BorderSide(color: AppColors.glassBorder),
+          onPressed: () =>
+              Navigator.of(context).pop(DeleteEventChoice.allEvents),
         ),
+        primaryButtonFirst: true,
       );
     },
   );

@@ -9,6 +9,7 @@ class CustomTwoActionDialog extends _DialogBase {
     required this.primaryButton,
     required this.secondaryButton,
     this.verticalActions = false,
+    this.primaryButtonFirst = false,
     super.eyebrow,
     super.dialogWidth,
     super.maxDialogWidth,
@@ -36,12 +37,22 @@ class CustomTwoActionDialog extends _DialogBase {
   final PrimaryButton primaryButton;
   final SecondaryButton secondaryButton;
   final bool verticalActions;
+  final bool primaryButtonFirst;
   @override
   Widget buildActions() {
     if (verticalActions) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [primaryButton, const SizedBox(height: 10), secondaryButton],
+      );
+    }
+    if (primaryButtonFirst) {
+      return Row(
+        children: [
+          Expanded(child: primaryButton),
+          const SizedBox(width: 10),
+          Expanded(child: secondaryButton),
+        ],
       );
     }
     return Row(
